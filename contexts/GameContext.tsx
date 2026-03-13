@@ -504,7 +504,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
                 silice: newState.resources.silice,
                 xenogas: newState.resources.xenogas,
                 energy: newState.resources.energy,
-              });
+              }, { onConflict: 'planet_id' });
               await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planetId);
               await syncTimersToTable(capturedUserId, planetId, capturedTimers);
               await syncShipyardQueueToTable(planetId, capturedQueue);
@@ -517,7 +517,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
                   silice: colony.resources.silice,
                   xenogas: colony.resources.xenogas,
                   energy: colony.resources.energy,
-                });
+                }, { onConflict: 'planet_id' });
                 await supabase.from('planets').update({ last_update: Date.now() }).eq('id', colony.id);
                 const colBuildingTimers = (colony.activeTimers ?? []).filter(t => t.type === 'building');
                 if (colBuildingTimers.length > 0) {
