@@ -8,7 +8,7 @@ import { TutorialReward } from '@/constants/tutorial';
 import { calculateProduction, calculateCost, canAfford, calculateSolarCost, getResourceStorageCapacity, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime } from '@/utils/gameCalculations';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES, DEFAULT_STATE } from '@/constants/gameData';
 import { supabase } from '@/utils/supabase';
-import { removeColonyFromPlanetsTable, loadFullStateFromTables, syncTimersToTable, syncShipyardQueueToTable, getMainPlanetId } from '@/utils/tableSync';
+import { removeColonyFromPlanetsTable, loadFullStateFromTables, syncTimersToTable, syncShipyardQueueToTable, getMainPlanetId, syncFullStateToTables } from '@/utils/tableSync';
 import { trpcClient } from '@/lib/trpc';
 
 const STORAGE_KEY = 'solaris_game_state';
@@ -244,6 +244,12 @@ export const [GameProvider, useGame] = createContextHook(() => {
           savedAt: Date.now(),
         };
         await saveStateToSupabase(userId, newState, userEmail);
+        try {
+          await syncFullStateToTables(userId, newState);
+          console.log('[GameContext] New player: all tables initialized (planets, resources, buildings, etc.)');
+        } catch (e) {
+          console.log('[GameContext] Error initializing new player tables:', e);
+        }
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newState));
         return newState;
       }
@@ -492,11 +498,27 @@ export const [GameProvider, useGame] = createContextHook(() => {
           try {
             const planetId = await getMainPlanetId(capturedUserId);
             if (planetId) {
+              await supabase.from('planet_resources').upsert({
+                planet_id: planetId,
+                fer: newState.resources.fer,
+                silice: newState.resources.silice,
+                xenogas: newState.resources.xenogas,
+                energy: newState.resources.energy,
+              });
+              await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planetId);
               await syncTimersToTable(capturedUserId, planetId, capturedTimers);
               await syncShipyardQueueToTable(planetId, capturedQueue);
             }
             if (capturedColonies && capturedColonies.length > 0) {
               for (const colony of capturedColonies) {
+                await supabase.from('planet_resources').upsert({
+                  planet_id: colony.id,
+                  fer: colony.resources.fer,
+                  silice: colony.resources.silice,
+                  xenogas: colony.resources.xenogas,
+                  energy: colony.resources.energy,
+                });
+                await supabase.from('planets').update({ last_update: Date.now() }).eq('id', colony.id);
                 const colBuildingTimers = (colony.activeTimers ?? []).filter(t => t.type === 'building');
                 if (colBuildingTimers.length > 0) {
                   await supabase.from('active_timers').delete().eq('planet_id', colony.id);
@@ -517,7 +539,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
               }
             }
           } catch (e) {
-            console.log('[GameContext] Error in deferred timer sync:', e);
+            console.log('[GameContext] Error in deferred save:', e);
           }
         })();
       });
