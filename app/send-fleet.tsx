@@ -53,13 +53,17 @@ export default function SendFleetScreen() {
   }, [state.ships]);
 
   const isEspionage = missionType === 'espionage';
+  const isColonize = missionType === 'colonize';
 
   const fleetForCalc = useMemo(() => {
     if (isEspionage) {
       return { spectreSonde: selectedShips.spectreSonde ?? 0 };
     }
+    if (isColonize) {
+      return { colonyShip: selectedShips.colonyShip ?? 0 };
+    }
     return selectedShips;
-  }, [selectedShips, isEspionage]);
+  }, [selectedShips, isEspionage, isColonize]);
 
   const hasShips = useMemo(() => {
     return Object.values(fleetForCalc).some(c => c > 0);
@@ -103,6 +107,14 @@ export default function SendFleetScreen() {
       const mantaCount = fleetForCalc.mantaRecup ?? 0;
       if (mantaCount <= 0) {
         showGameAlert('Pas de Manta Recup', 'Sélectionnez au moins un Manta Recup pour une mission de recyclage.');
+        return;
+      }
+    }
+
+    if (missionType === 'colonize') {
+      const colonyCount = fleetForCalc.colonyShip ?? 0;
+      if (colonyCount <= 0) {
+        showGameAlert('Pas de Barge Coloniale', 'Vous devez posséder au moins une Barge Coloniale pour lancer une mission de colonisation.');
         return;
       }
     }
@@ -211,7 +223,7 @@ export default function SendFleetScreen() {
             </View>
 
             <Text style={styles.sectionTitle}>
-              {isEspionage ? 'Sondes à envoyer' : 'Sélection des vaisseaux'}
+              {isEspionage ? 'Sondes à envoyer' : isColonize ? 'Barge coloniale' : 'Sélection des vaisseaux'}
             </Text>
 
             {isEspionage ? (
@@ -238,6 +250,35 @@ export default function SendFleetScreen() {
                   <TouchableOpacity
                     style={styles.maxBtn}
                     onPress={() => setAllShips('spectreSonde')}
+                  >
+                    <Text style={styles.maxText}>MAX</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : isColonize ? (
+              <View style={styles.shipRow}>
+                <View style={styles.shipInfo}>
+                  <Globe size={16} color={Colors.xenogas} />
+                  <Text style={styles.shipName}>Barge Coloniale</Text>
+                  <Text style={styles.shipAvailable}>({state.ships.colonyShip ?? 0})</Text>
+                </View>
+                <View style={styles.shipControls}>
+                  <TouchableOpacity
+                    style={styles.ctrlBtn}
+                    onPress={() => updateShipCount('colonyShip', -1)}
+                  >
+                    <Minus size={14} color={Colors.text} />
+                  </TouchableOpacity>
+                  <Text style={styles.shipCount}>{selectedShips.colonyShip ?? 0}</Text>
+                  <TouchableOpacity
+                    style={styles.ctrlBtn}
+                    onPress={() => updateShipCount('colonyShip', 1)}
+                  >
+                    <Plus size={14} color={Colors.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.maxBtn}
+                    onPress={() => setAllShips('colonyShip')}
                   >
                     <Text style={styles.maxText}>MAX</Text>
                   </TouchableOpacity>
@@ -341,7 +382,7 @@ export default function SendFleetScreen() {
                 <Text style={styles.summaryLabel}>Retour estimé</Text>
                 <Text style={styles.summaryValue}>{hasShips ? formatTime(travelTime * 2) : '--'}</Text>
               </View>
-              {missionType !== 'espionage' && (
+              {missionType !== 'espionage' && missionType !== 'colonize' && (
                 <View style={styles.summaryRow}>
                   <Package size={14} color={Colors.success} />
                   <Text style={styles.summaryLabel}>Capacité fret</Text>
