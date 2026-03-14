@@ -69,12 +69,12 @@ BEGIN
   v_xenogas := CASE WHEN v_res.xenogas >= p_storage_xenogas THEN v_res.xenogas
                ELSE LEAST(v_res.xenogas + (p_prod_xenogas_h / 3600.0) * v_elapsed, p_storage_xenogas) END;
 
-  -- Check no duplicate timer
-  SELECT EXISTS(
-    SELECT 1 FROM active_timers
+  -- Check no duplicate timer (with row lock to prevent race conditions)
+  PERFORM 1 FROM active_timers
     WHERE user_id = p_user_id AND target_id = p_building_id AND timer_type = 'building'
-      AND (planet_id = p_planet_id)
-  ) INTO v_already;
+      AND planet_id = p_planet_id
+    FOR UPDATE;
+  v_already := FOUND;
 
   IF v_already THEN
     RETURN json_build_object('success', false, 'error', 'Already upgrading');
@@ -161,11 +161,11 @@ BEGIN
   v_xenogas := CASE WHEN v_res.xenogas >= p_storage_xenogas THEN v_res.xenogas
                ELSE LEAST(v_res.xenogas + (p_prod_xenogas_h / 3600.0) * v_elapsed, p_storage_xenogas) END;
 
-  -- Check no duplicate research timer (global, not per planet)
-  SELECT EXISTS(
-    SELECT 1 FROM active_timers
+  -- Check no duplicate research timer (global, not per planet, with row lock)
+  PERFORM 1 FROM active_timers
     WHERE user_id = p_user_id AND target_id = p_research_id AND timer_type = 'research'
-  ) INTO v_already;
+    FOR UPDATE;
+  v_already := FOUND;
 
   IF v_already THEN
     RETURN json_build_object('success', false, 'error', 'Already researching');
