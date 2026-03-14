@@ -427,36 +427,44 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
   const targetCoords = mission.target_coords as number[];
   const ships = mission.ships as Record<string, number>;
 
-  console.log('[WorldTick][Espionage] Start processing mission', mission.id, 'sender:', senderId, 'targetCoords:', JSON.stringify(targetCoords), 'targetPlayerId:', targetPlayerId, 'ships:', JSON.stringify(ships));
-
-  const senderResearch = await loadResearchFromDB(senderId);
-  console.log('[WorldTick][Espionage] Sender research:', JSON.stringify(senderResearch));
+  console.log('[WorldTick][Espionage] === START === mission', mission.id, 'sender:', senderId, 'targetCoords:', JSON.stringify(targetCoords), 'targetPlayerId:', targetPlayerId, 'ships:', JSON.stringify(ships));
 
   const targetPlanetInfo = await getPlanetIdByCoords(targetCoords);
-  console.log('[WorldTick][Espionage] Target planet lookup result:', targetPlanetInfo ? `planetId=${targetPlanetInfo.planetId}, userId=${targetPlanetInfo.userId}` : 'NOT FOUND');
+  console.log('[WorldTick][Espionage] Target planet lookup:', targetPlanetInfo ? `planetId=${targetPlanetInfo.planetId}, userId=${targetPlanetInfo.userId}` : 'NOT FOUND');
 
-  if (!targetPlayerId && targetPlanetInfo) {
-    targetPlayerId = targetPlanetInfo.userId;
-    console.log('[WorldTick][Espionage] targetPlayerId was null, resolved from planet coords:', targetPlayerId);
+  if (!targetPlanetInfo) {
+    console.log('[WorldTick][Espionage] Target planet not found at coords', JSON.stringify(targetCoords), '- aborting, returning probes');
+    const travelTime = (mission.arrival_time as number) - (mission.departure_time as number);
+    await supabase.from('fleet_missions').update({
+      status: 'returning',
+      processed: true,
+      return_time: (mission.arrival_time as number) + travelTime,
+      result: { type: 'espionage', probes_sent: ships.spectreSonde ?? 1, probes_lost: 0 },
+    }).eq('id', mission.id);
+    return;
   }
 
+  if (!targetPlayerId) {
+    targetPlayerId = targetPlanetInfo.userId;
+    console.log('[WorldTick][Espionage] targetPlayerId resolved from coords:', targetPlayerId);
+  }
+
+  const senderResearch = await loadResearchFromDB(senderId);
+  console.log('[WorldTick][Espionage] Sender espionageTech:', senderResearch.espionageTech ?? 0);
+
   let targetState: Awaited<ReturnType<typeof loadPlanetState>> | null = null;
-  if (targetPlanetInfo) {
-    try {
-      targetState = await loadPlanetState(targetPlanetInfo.planetId, targetPlanetInfo.userId);
-      console.log('[WorldTick][Espionage] Target state loaded:', 'resources:', JSON.stringify(targetState.resources), 'buildings:', Object.keys(targetState.buildings).length, 'ships:', Object.keys(targetState.ships).length, 'defenses:', Object.keys(targetState.defenses).length);
-    } catch (e) {
-      console.log('[WorldTick][Espionage] ERROR loading target state:', e);
-    }
+  try {
+    targetState = await loadPlanetState(targetPlanetInfo.planetId, targetPlanetInfo.userId);
+    console.log('[WorldTick][Espionage] Target state loaded: resources=', JSON.stringify(targetState.resources), 'buildings=', Object.keys(targetState.buildings).length, 'ships=', Object.keys(targetState.ships).length, 'defenses=', Object.keys(targetState.defenses).length, 'planetName=', targetState.planetName);
+  } catch (e) {
+    console.log('[WorldTick][Espionage] ERROR loading target state:', e);
   }
 
   const probesSent = ships.spectreSonde ?? 1;
   const attackerEspionage = senderResearch.espionageTech ?? 0;
   const defenderEspionage = targetState?.research?.espionageTech ?? 0;
-  const techDiff = attackerEspionage - defenderEspionage;
-  const infoLevel = Math.max(0, probesSent + techDiff * 2);
 
-  console.log('[WorldTick][Espionage] probesSent:', probesSent, 'attackerEsp:', attackerEspionage, 'defenderEsp:', defenderEspionage, 'techDiff:', techDiff, 'infoLevel:', infoLevel);
+  console.log('[WorldTick][Espionage] probesSent:', probesSent, 'attackerEsp:', attackerEspionage, 'defenderEsp:', defenderEspionage);
 
   const espResult = processEspionage(
     attackerEspionage,
@@ -472,53 +480,60 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     },
   );
 
-  console.log('[WorldTick][Espionage] espResult:', 'resources:', espResult.resources !== null ? 'present' : 'NULL', 'buildings:', espResult.buildings !== null ? 'present' : 'NULL', 'research:', espResult.research !== null ? 'present' : 'NULL', 'ships:', espResult.ships !== null ? 'present' : 'NULL', 'defenses:', espResult.defenses !== null ? 'present' : 'NULL', 'probesLost:', espResult.probesLost);
+  const allProbesLost = espResult.probesLost >= probesSent;
+  console.log('[WorldTick][Espionage] espResult: probesLost=', espResult.probesLost, '/', probesSent, 'allLost=', allProbesLost, 'resources=', espResult.resources !== null ? 'present' : 'NULL', 'buildings=', espResult.buildings !== null ? 'present' : 'NULL', 'research=', espResult.research !== null ? 'present' : 'NULL', 'ships=', espResult.ships !== null ? 'present' : 'NULL', 'defenses=', espResult.defenses !== null ? 'present' : 'NULL');
 
-  const reportPlanetName = espResult.planetName || targetState?.planetName || 'Inconnue';
-  console.log('[WorldTick][Espionage] Inserting attacker report: planetName=', reportPlanetName, 'resources=', espResult.resources !== null ? 'present' : 'NULL', 'targetPlayerId=', targetPlayerId);
+  const targetPlanetName = espResult.planetName || targetState?.planetName || 'Inconnue';
 
-  const { error: attackerReportErr } = await supabase.from('espionage_reports').insert({
-    player_id: senderId,
-    target_player_id: targetPlayerId,
-    target_username: mission.target_username,
-    target_coords: targetCoords,
-    target_planet_id: targetPlanetInfo?.planetId ?? null,
-    target_planet_name: reportPlanetName,
-    resources: espResult.resources,
-    buildings: espResult.buildings,
-    research: espResult.research,
-    ships: espResult.ships,
-    defenses: espResult.defenses,
-    probes_sent: probesSent,
-    probes_lost: espResult.probesLost,
-  });
+  if (!allProbesLost) {
+    console.log('[WorldTick][Espionage] Inserting ATTACKER report for', senderId, 'planetName=', targetPlanetName);
+    const { error: attackerReportErr } = await supabase.from('espionage_reports').insert({
+      player_id: senderId,
+      target_player_id: targetPlayerId,
+      target_username: (mission.target_username as string) ?? null,
+      target_coords: targetCoords,
+      target_planet_id: targetPlanetInfo.planetId,
+      target_planet_name: targetPlanetName,
+      resources: espResult.resources,
+      buildings: espResult.buildings,
+      research: espResult.research,
+      ships: espResult.ships,
+      defenses: espResult.defenses,
+      probes_sent: probesSent,
+      probes_lost: espResult.probesLost,
+    });
 
-  if (attackerReportErr) {
-    console.log('[WorldTick][Espionage] ERROR inserting attacker report:', attackerReportErr.message, attackerReportErr.code);
+    if (attackerReportErr) {
+      console.log('[WorldTick][Espionage] ERROR inserting attacker report:', attackerReportErr.message, attackerReportErr.code, attackerReportErr.details);
+    } else {
+      console.log('[WorldTick][Espionage] Attacker report inserted OK');
+    }
   } else {
-    console.log('[WorldTick][Espionage] Attacker report inserted successfully');
+    console.log('[WorldTick][Espionage] All probes destroyed - NO attacker report');
   }
 
   if (targetPlayerId && targetPlayerId !== senderId) {
+    console.log('[WorldTick][Espionage] Inserting VICTIM alert for', targetPlayerId, 'planet=', targetPlanetName, 'coords=', JSON.stringify(targetCoords));
     const { error: victimReportErr } = await supabase.from('espionage_reports').insert({
       player_id: targetPlayerId,
       target_player_id: senderId,
-      target_username: (mission.sender_username as string) ?? null,
-      target_coords: mission.sender_coords as number[],
-      target_planet_name: null,
+      target_username: null,
+      target_coords: targetCoords,
+      target_planet_id: targetPlanetInfo.planetId,
+      target_planet_name: targetPlanetName,
       resources: null,
       buildings: null,
       research: null,
       ships: null,
       defenses: null,
-      probes_sent: probesSent,
+      probes_sent: 0,
       probes_lost: 0,
     });
 
     if (victimReportErr) {
-      console.log('[WorldTick][Espionage] ERROR inserting victim report:', victimReportErr.message, victimReportErr.code);
+      console.log('[WorldTick][Espionage] ERROR inserting victim report:', victimReportErr.message, victimReportErr.code, victimReportErr.details);
     } else {
-      console.log('[WorldTick][Espionage] Victim report inserted for:', targetPlayerId);
+      console.log('[WorldTick][Espionage] Victim alert inserted OK for:', targetPlayerId);
     }
   } else {
     console.log('[WorldTick][Espionage] No victim report: targetPlayerId=', targetPlayerId, 'senderId=', senderId);
@@ -537,7 +552,7 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     result: { type: 'espionage', probes_sent: probesSent, probes_lost: espResult.probesLost },
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Espionage processed:', mission.id, 'probes_lost:', espResult.probesLost);
+  console.log('[WorldTick][Espionage] === DONE === mission', mission.id, 'survivingProbes:', survivingProbes, 'status:', survivingProbes > 0 ? 'returning' : 'completed');
 }
 
 async function processAttackMission(mission: Record<string, unknown>): Promise<void> {
