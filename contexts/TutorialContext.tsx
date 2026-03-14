@@ -107,7 +107,7 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
   }, [tutorialState.completedSteps, checkStepCompletion]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !state.username) return;
     const newCompleted = Array.from(completedStepIds);
     if (newCompleted.length !== tutorialState.completedSteps.length) {
       const updated = { ...tutorialState, completedSteps: newCompleted };
@@ -115,7 +115,7 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
       persist(updated);
       console.log('[Tutorial] Auto-detected completions, total:', newCompleted.length);
     }
-  }, [completedStepIds, isLoaded, tutorialState, persist]);
+  }, [completedStepIds, isLoaded, tutorialState, persist, state.username]);
 
   const currentStepIndex = useMemo(() => {
     for (let i = 0; i < TUTORIAL_STEPS.length; i++) {

@@ -178,6 +178,7 @@ export default function TutorialWidget() {
     claimReward, dismissTutorial, toggleMinimized,
     completedCount, totalSteps, progress,
   } = useTutorial();
+  const { state } = useGame();
   const router = useRouter();
   const [showFullModal, setShowFullModal] = useState(false);
   const [showRewardAnimation, setShowRewardAnimation] = useState(false);
@@ -241,7 +242,7 @@ export default function TutorialWidget() {
     });
   }, [dismissTutorial, slideAnim]);
 
-  if (!isLoaded || isDismissed || isFinished || !currentStep) return null;
+  if (!isLoaded || isDismissed || isFinished || !currentStep || !state.username) return null;
 
   const category = TUTORIAL_CATEGORIES[currentStep.category];
   const canClaim = isCurrentStepCompleted && !isCurrentStepClaimed;
