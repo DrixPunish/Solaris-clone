@@ -52,6 +52,7 @@ interface GameCardProps {
   missingPrereqs?: string[];
   onAction: () => void;
   onRush?: () => void;
+  rushCooldownEnd?: number;
   onCancel?: () => void;
   cancelRefundInfo?: string;
   onInfo?: () => void;
@@ -80,6 +81,7 @@ export default React.memo(function GameCard({
   missingPrereqs,
   onAction,
   onRush,
+  rushCooldownEnd,
   onCancel,
   cancelRefundInfo,
   onInfo,
@@ -170,7 +172,24 @@ export default React.memo(function GameCard({
     : isQueueActive
       ? Math.max(1, Math.ceil(queueRemainingSeconds / 30))
       : 0;
-  const canRush = (isTimerActive || isQueueActive) && !!onRush && (solarBalance ?? 0) >= solarCost;
+  const [rushCooldownRemaining, setRushCooldownRemaining] = useState<number>(0);
+
+  useEffect(() => {
+    if (!rushCooldownEnd || rushCooldownEnd <= Date.now()) {
+      setRushCooldownRemaining(0);
+      return;
+    }
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((rushCooldownEnd - Date.now()) / 1000));
+      setRushCooldownRemaining(remaining);
+    };
+    tick();
+    const interval = setInterval(tick, 250);
+    return () => clearInterval(interval);
+  }, [rushCooldownEnd]);
+
+  const isRushOnCooldown = rushCooldownRemaining > 0;
+  const canRush = (isTimerActive || isQueueActive) && !!onRush && (solarBalance ?? 0) >= solarCost && !isRushOnCooldown;
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, {
@@ -283,7 +302,7 @@ export default React.memo(function GameCard({
               >
                 <Zap size={13} color={canRush ? Colors.solar : Colors.textMuted} />
                 <Text style={[styles.rushText, !canRush && styles.rushTextDisabled]}>
-                  Terminer : {solarCost} Solar
+                  {isRushOnCooldown ? `Accélérer (${rushCooldownRemaining}s)` : `Terminer : ${solarCost} Solar`}
                 </Text>
               </Pressable>
             )}
@@ -329,7 +348,7 @@ export default React.memo(function GameCard({
               >
                 <Zap size={13} color={canRush ? Colors.solar : Colors.textMuted} />
                 <Text style={[styles.rushText, !canRush && styles.rushTextDisabled]}>
-                  Tout terminer : {solarCost} Solar
+                  {isRushOnCooldown ? `Accélérer (${rushCooldownRemaining}s)` : `Tout terminer : ${solarCost} Solar`}
                 </Text>
               </Pressable>
             )}

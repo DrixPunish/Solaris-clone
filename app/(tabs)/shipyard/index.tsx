@@ -161,7 +161,7 @@ const qStyles = StyleSheet.create({
 });
 
 export default function ShipyardScreen() {
-  const { state, activePlanet, activeBuildShipQueue, activeBuildDefenseQueue, activeRushShipyardWithSolar, activeCancelShipyardQueue, activeGetMaxBuildableQuantity } = useGame();
+  const { state, activePlanet, activeBuildShipQueue, activeBuildDefenseQueue, activeRushShipyardWithSolar, activeCancelShipyardQueue, activeGetMaxBuildableQuantity, getSolarCooldownEnd } = useGame();
   const { tab, scrollTo, _t } = useLocalSearchParams<{ tab?: string; scrollTo?: string; _t?: string }>();
   const [activeTab, setActiveTab] = useState<TabMode>(tab === 'defenses' ? 'defenses' : 'ships');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -328,6 +328,7 @@ export default function ShipyardScreen() {
             missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
             onAction={() => activeBuildShipQueue(ship.id, qty)}
             onRush={queueItem ? () => handleShipyardRush(ship.id, 'ship') : undefined}
+            rushCooldownEnd={queueItem ? getSolarCooldownEnd(ship.id, 'ship') : undefined}
             onCancel={queueItem ? () => activeCancelShipyardQueue(ship.id, 'ship') : undefined}
             cancelRefundInfo={queueItem ? `Seules les ${queueItem.remainingQuantity} unité(s) restante(s) seront annulées. Les unités déjà construites ne sont pas affectées. 80% des ressources des unités annulées seront remboursées.` : undefined}
             onInfo={() => setInfoModal({ id: ship.id, type: 'ship' })}
@@ -345,7 +346,7 @@ export default function ShipyardScreen() {
         </View>
       );
     },
-    [activePlanet, state.solar, state.research, hasShipyard, shipyardLevel, activeBuildShipQueue, handleShipyardRush, activeCancelShipyardQueue, getQuantity, setQuantity, activeGetMaxBuildableQuantity, handleItemLayout],
+    [activePlanet, state.solar, state.research, hasShipyard, shipyardLevel, activeBuildShipQueue, handleShipyardRush, activeCancelShipyardQueue, getQuantity, setQuantity, activeGetMaxBuildableQuantity, handleItemLayout, getSolarCooldownEnd],
   );
 
   const renderDefense = useCallback(
@@ -414,6 +415,7 @@ export default function ShipyardScreen() {
             missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
             onAction={() => activeBuildDefenseQueue(defense.id, qty)}
             onRush={queueItem ? () => handleShipyardRush(defense.id, 'defense') : undefined}
+            rushCooldownEnd={queueItem ? getSolarCooldownEnd(defense.id, 'defense') : undefined}
             onCancel={queueItem ? () => activeCancelShipyardQueue(defense.id, 'defense') : undefined}
             cancelRefundInfo={queueItem ? `Seules les ${queueItem.remainingQuantity} unité(s) restante(s) seront annulées. Les unités déjà construites ne sont pas affectées. 80% des ressources des unités annulées seront remboursées.` : undefined}
             onInfo={() => setInfoModal({ id: defense.id, type: 'defense' })}
@@ -431,7 +433,7 @@ export default function ShipyardScreen() {
         </View>
       );
     },
-    [activePlanet, state.solar, state.research, hasShipyard, shipyardLevel, activeBuildDefenseQueue, handleShipyardRush, activeCancelShipyardQueue, getQuantity, setQuantity, activeGetMaxBuildableQuantity, handleItemLayout],
+    [activePlanet, state.solar, state.research, hasShipyard, shipyardLevel, activeBuildDefenseQueue, handleShipyardRush, activeCancelShipyardQueue, getQuantity, setQuantity, activeGetMaxBuildableQuantity, handleItemLayout, getSolarCooldownEnd],
   );
 
   const combatShips = SHIPS.filter(s => COMBAT_SHIP_IDS.includes(s.id));

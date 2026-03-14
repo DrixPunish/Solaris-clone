@@ -187,6 +187,8 @@ export const [GameProvider, useGame] = createContextHook(() => {
   const resourceSyncTimeRef = useRef(Date.now());
   const pendingActionsRef = useRef(new Set<string>());
   const [actionError, setActionError] = useState<string | null>(null);
+  const solarCooldownsRef = useRef<Map<string, number>>(new Map());
+  const SOLAR_COOLDOWN_MS = 3000;
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1848,6 +1850,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   }, [displayTick, activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies, state.research, state.productionPercentages]);
 
   const activeUpgradeBuilding = useCallback((buildingId: string) => {
+    solarCooldownsRef.current.set(`building:${buildingId}`, Date.now() + SOLAR_COOLDOWN_MS);
     if (!activePlanetId) {
       void upgradeBuilding(buildingId);
     } else {
@@ -1856,6 +1859,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   }, [activePlanetId, upgradeBuilding, upgradeColonyBuilding]);
 
   const activeUpgradeResearch = useCallback((researchId: string) => {
+    solarCooldownsRef.current.set(`research:${researchId}`, Date.now() + SOLAR_COOLDOWN_MS);
     if (!activePlanetId) {
       void upgradeResearch(researchId);
     } else {
@@ -1864,6 +1868,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   }, [activePlanetId, upgradeResearch, upgradeColonyResearch]);
 
   const activeBuildShipQueue = useCallback((shipId: string, quantity: number) => {
+    solarCooldownsRef.current.set(`ship:${shipId}`, Date.now() + SOLAR_COOLDOWN_MS);
     if (!activePlanetId) {
       void buildShipQueue(shipId, quantity);
     } else {
@@ -1872,6 +1877,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   }, [activePlanetId, buildShipQueue, buildColonyShipQueue]);
 
   const activeBuildDefenseQueue = useCallback((defenseId: string, quantity: number) => {
+    solarCooldownsRef.current.set(`defense:${defenseId}`, Date.now() + SOLAR_COOLDOWN_MS);
     if (!activePlanetId) {
       void buildDefenseQueue(defenseId, quantity);
     } else {
@@ -1998,6 +2004,16 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
   const clearActionError = useCallback(() => setActionError(null), []);
 
+  const getSolarCooldownEnd = useCallback((id: string, type: 'building' | 'research' | 'ship' | 'defense'): number => {
+    const key = `${type}:${id}`;
+    const end = solarCooldownsRef.current.get(key) ?? 0;
+    if (end <= Date.now()) {
+      solarCooldownsRef.current.delete(key);
+      return 0;
+    }
+    return end;
+  }, []);
+
   return useMemo(() => ({
     state,
     production,
@@ -2052,6 +2068,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     applyTutorialReward,
     actionError,
     clearActionError,
+    getSolarCooldownEnd,
   }), [
     state, production, upgradeBuilding, upgradeResearch, buildShipQueue, buildDefenseQueue,
     rushWithSolar, rushShipyardWithSolar, cancelUpgrade, cancelShipyardQueue, getTimerForId,
@@ -2066,6 +2083,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
     activeGetMaxBuildableQuantity, activeRenamePlanet, activeProduction, activeProductionPercentages,
     setActiveProductionPercentages,
     applyTutorialReward,
-    actionError, clearActionError,
+    actionError, clearActionError, getSolarCooldownEnd,
   ]);
 });

@@ -31,7 +31,7 @@ const BUILDING_ICONS: Record<string, { icon: React.ComponentType<{ size: number;
 };
 
 export default function BuildingsScreen() {
-  const { state, activePlanet, activeUpgradeBuilding, activeRushWithSolar, activeCancelUpgrade } = useGame();
+  const { state, activePlanet, activeUpgradeBuilding, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd } = useGame();
   const { scrollTo, _t } = useLocalSearchParams<{ scrollTo?: string; _t?: string }>();
   const [infoModal, setInfoModal] = useState<{ id: string; level: number } | null>(null);
   const [prereqModal, setPrereqModal] = useState<string | null>(null);
@@ -229,13 +229,14 @@ export default function BuildingsScreen() {
           missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
           onAction={() => activeUpgradeBuilding(building.id)}
           onRush={isCurrentlyUpgrading ? () => handleRush(building.id) : undefined}
+          rushCooldownEnd={isCurrentlyUpgrading ? getSolarCooldownEnd(building.id, 'building') : undefined}
           onCancel={isCurrentlyUpgrading ? () => activeCancelUpgrade(building.id, 'building') : undefined}
           onInfo={() => setInfoModal({ id: building.id, level })}
           onPrereqTree={!prereqsMet ? () => setPrereqModal(building.id) : undefined}
         />
       );
     },
-    [activePlanet, state.research, state.solar, activeUpgradeBuilding, handleRush, activeCancelUpgrade],
+    [activePlanet, state.research, state.solar, activeUpgradeBuilding, handleRush, activeCancelUpgrade, getSolarCooldownEnd],
   );
 
   return (

@@ -39,7 +39,7 @@ const PROPULSION_RESEARCH_IDS = ['chemicalDrive', 'impulseReactor', 'voidDrive']
 const ADVANCED_RESEARCH_IDS = ['computerTech', 'espionageTech', 'astrophysics', 'subspacialNodes', 'neuralMesh', 'gravitonTech'];
 
 export default function ResearchScreen() {
-  const { state, activePlanet, activeUpgradeResearch, activeRushWithSolar, activeCancelUpgrade } = useGame();
+  const { state, activePlanet, activeUpgradeResearch, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd } = useGame();
   const { scrollTo, _t } = useLocalSearchParams<{ scrollTo?: string; _t?: string }>();
   const labLevel = activePlanet.buildings.researchLab ?? 0;
   const hasLab = labLevel >= 1;
@@ -159,13 +159,14 @@ export default function ResearchScreen() {
           solarBalance={state.solar}
           onAction={() => activeUpgradeResearch(research.id)}
           onRush={timer ? () => handleRush(research.id) : undefined}
+          rushCooldownEnd={timer ? getSolarCooldownEnd(research.id, 'research') : undefined}
           onCancel={timer ? () => activeCancelUpgrade(research.id, 'research') : undefined}
           onInfo={() => setInfoModal({ id: research.id, level })}
           onPrereqTree={!prereqsMet ? () => setPrereqModal(research.id) : undefined}
         />
       );
     },
-    [state, activePlanet, hasLab, activeUpgradeResearch, handleRush, activeCancelUpgrade],
+    [state, activePlanet, hasLab, activeUpgradeResearch, handleRush, activeCancelUpgrade, getSolarCooldownEnd],
   );
 
   return (
