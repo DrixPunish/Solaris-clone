@@ -1,12 +1,9 @@
 import createContextHook from '@nkzw/create-context-hook';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useGame } from '@/contexts/GameContext';
 import { TUTORIAL_STEPS, TutorialStep, TutorialReward } from '@/constants/tutorial';
 import { supabase } from '@/utils/supabase';
-
-const TUTORIAL_STORAGE_KEY = 'solaris_tutorial';
 
 interface TutorialState {
   completedSteps: string[];
@@ -26,28 +23,96 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
   const [tutorialState, setTutorialState] = useState<TutorialState>(DEFAULT_TUTORIAL_STATE);
   const [isLoaded, setIsLoaded] = useState(false);
   const { state, userId } = useGame();
+  const savingRef = useRef(false);
+  const pendingSaveRef = useRef<TutorialState | null>(null);
 
   useEffect(() => {
     if (!userId) return;
-    const key = `${TUTORIAL_STORAGE_KEY}_${userId}`;
-    void AsyncStorage.getItem(key).then(stored => {
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as TutorialState;
-          setTutorialState(parsed);
-          console.log('[Tutorial] Loaded state, completed:', parsed.completedSteps.length, 'claimed:', parsed.claimedRewards.length);
-        } catch {
-          console.log('[Tutorial] Failed to parse stored state');
+    let cancelled = false;
+
+    const load = async () => {
+      console.log('[Tutorial] Loading state from Supabase for user:', userId);
+      try {
+        const { data, error } = await supabase
+          .from('player_tutorial')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (cancelled) return;
+
+        if (error && error.code === 'PGRST116') {
+          console.log('[Tutorial] No row found, creating default for user:', userId);
+          const { error: insertError } = await supabase
+            .from('player_tutorial')
+            .insert({ user_id: userId });
+          if (insertError) {
+            console.log('[Tutorial] Error creating default row:', insertError.message);
+          }
+          setIsLoaded(true);
+          return;
         }
+
+        if (error) {
+          console.log('[Tutorial] Error loading from Supabase:', error.message);
+          setIsLoaded(true);
+          return;
+        }
+
+        if (data) {
+          const loaded: TutorialState = {
+            completedSteps: Array.isArray(data.completed_steps) ? data.completed_steps : [],
+            claimedRewards: Array.isArray(data.claimed_rewards) ? data.claimed_rewards : [],
+            dismissed: data.dismissed ?? false,
+            minimized: data.minimized ?? false,
+          };
+          setTutorialState(loaded);
+          console.log('[Tutorial] Loaded from Supabase, completed:', loaded.completedSteps.length, 'claimed:', loaded.claimedRewards.length);
+        }
+        setIsLoaded(true);
+      } catch (err) {
+        console.log('[Tutorial] Unexpected error loading:', err);
+        if (!cancelled) setIsLoaded(true);
       }
-      setIsLoaded(true);
-    });
+    };
+
+    void load();
+    return () => { cancelled = true; };
   }, [userId]);
 
-  const persist = useCallback((newState: TutorialState) => {
+  const persistToSupabase = useCallback(async (newState: TutorialState) => {
     if (!userId) return;
-    const key = `${TUTORIAL_STORAGE_KEY}_${userId}`;
-    void AsyncStorage.setItem(key, JSON.stringify(newState));
+
+    if (savingRef.current) {
+      pendingSaveRef.current = newState;
+      return;
+    }
+
+    savingRef.current = true;
+    try {
+      console.log('[Tutorial] Persisting to Supabase...');
+      const { error } = await supabase
+        .from('player_tutorial')
+        .upsert({
+          user_id: userId,
+          completed_steps: newState.completedSteps,
+          claimed_rewards: newState.claimedRewards,
+          dismissed: newState.dismissed,
+          minimized: newState.minimized,
+        });
+      if (error) {
+        console.log('[Tutorial] Error persisting to Supabase:', error.message);
+      }
+    } catch (err) {
+      console.log('[Tutorial] Unexpected error persisting:', err);
+    } finally {
+      savingRef.current = false;
+      if (pendingSaveRef.current) {
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        void persistToSupabase(pending);
+      }
+    }
   }, [userId]);
 
   const sentMissionsQuery = useQuery({
@@ -112,10 +177,10 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     if (newCompleted.length !== tutorialState.completedSteps.length) {
       const updated = { ...tutorialState, completedSteps: newCompleted };
       setTutorialState(updated);
-      persist(updated);
+      void persistToSupabase(updated);
       console.log('[Tutorial] Auto-detected completions, total:', newCompleted.length);
     }
-  }, [completedStepIds, isLoaded, tutorialState, persist, state.username]);
+  }, [completedStepIds, isLoaded, tutorialState, persistToSupabase, state.username]);
 
   const currentStepIndex = useMemo(() => {
     for (let i = 0; i < TUTORIAL_STEPS.length; i++) {
@@ -154,29 +219,29 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
       claimedRewards: [...tutorialState.claimedRewards, stepId],
     };
     setTutorialState(updated);
-    persist(updated);
+    void persistToSupabase(updated);
     return step.reward;
-  }, [completedStepIds, tutorialState, persist]);
+  }, [completedStepIds, tutorialState, persistToSupabase]);
 
   const dismissTutorial = useCallback(() => {
     console.log('[Tutorial] Tutorial dismissed');
     const updated = { ...tutorialState, dismissed: true };
     setTutorialState(updated);
-    persist(updated);
-  }, [tutorialState, persist]);
+    void persistToSupabase(updated);
+  }, [tutorialState, persistToSupabase]);
 
   const reopenTutorial = useCallback(() => {
     console.log('[Tutorial] Tutorial reopened');
     const updated = { ...tutorialState, dismissed: false, minimized: false };
     setTutorialState(updated);
-    persist(updated);
-  }, [tutorialState, persist]);
+    void persistToSupabase(updated);
+  }, [tutorialState, persistToSupabase]);
 
   const toggleMinimized = useCallback(() => {
     const updated = { ...tutorialState, minimized: !tutorialState.minimized };
     setTutorialState(updated);
-    persist(updated);
-  }, [tutorialState, persist]);
+    void persistToSupabase(updated);
+  }, [tutorialState, persistToSupabase]);
 
   const totalSteps = TUTORIAL_STEPS.length;
   const completedCount = tutorialState.claimedRewards.length;

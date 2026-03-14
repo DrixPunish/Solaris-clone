@@ -1941,7 +1941,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     return calculateProduction(activePlanet.buildings, state.research, activePlanet.ships, pct);
   }, [activePlanet.buildings, activePlanet.isColony, state.research, activePlanet.ships, state.productionPercentages, state.colonies, activePlanetId]);
 
-  const applyTutorialReward = useCallback((reward: TutorialReward) => {
+  const applyTutorialReward = useCallback((reward: TutorialReward, stepId?: string) => {
     setState(prev => {
       let newState = { ...prev };
       if (reward.type === 'resources') {
@@ -1958,10 +1958,11 @@ export const [GameProvider, useGame] = createContextHook(() => {
       }
       return newState;
     });
-    if (userId && mainPlanetIdRef.current) {
+    if (userId && mainPlanetIdRef.current && stepId) {
       void trpcClient.actions.claimTutorialReward.mutate({
         userId,
         planetId: mainPlanetIdRef.current,
+        stepId,
         rewardType: reward.type,
         fer: reward.fer,
         silice: reward.silice,

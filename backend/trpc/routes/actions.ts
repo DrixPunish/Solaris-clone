@@ -708,6 +708,7 @@ export const actionsRouter = createTRPCRouter({
     .input(z.object({
       userId: z.string(),
       planetId: z.string(),
+      stepId: z.string(),
       rewardType: z.enum(["resources", "solar"]),
       fer: z.number().optional(),
       silice: z.number().optional(),
@@ -715,11 +716,12 @@ export const actionsRouter = createTRPCRouter({
       solar: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      console.log("[Actions] claimTutorialReward:", input.rewardType, "for", input.userId);
+      console.log("[Actions] claimTutorialReward:", input.stepId, input.rewardType, "for", input.userId);
 
       const { data, error } = await supabase.rpc("rpc_claim_tutorial_reward", {
         p_user_id: input.userId,
         p_planet_id: input.planetId,
+        p_step_id: input.stepId,
         p_reward_type: input.rewardType,
         p_fer: input.fer ?? 0,
         p_silice: input.silice ?? 0,
@@ -732,8 +734,12 @@ export const actionsRouter = createTRPCRouter({
         return { success: false, error: error.message };
       }
 
-      const result = data as { success: boolean; solar?: number };
-      console.log("[Actions] Tutorial reward claimed (atomic):", input.rewardType);
+      const result = data as { success: boolean; error?: string; solar?: number };
+      if (!result.success) {
+        console.log("[Actions] Tutorial reward rejected:", result.error);
+        return { success: false, error: result.error };
+      }
+      console.log("[Actions] Tutorial reward claimed (atomic):", input.stepId, input.rewardType);
       return { success: true, solar: result.solar };
     }),
 

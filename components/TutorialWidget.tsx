@@ -31,7 +31,7 @@ function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: ()
     allSteps, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, isFinished, completedCount, totalSteps, progress,
   } = useTutorial();
-  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward) => void };
+  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => void };
   const router = useRouter();
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const claimAnim = useRef(new Animated.Value(1)).current;
@@ -45,7 +45,7 @@ function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: ()
     ]).start(() => {
       const reward = claimReward(stepId);
       if (reward && applyTutorialReward) {
-        applyTutorialReward(reward);
+        applyTutorialReward(reward, stepId);
       }
       setClaimingId(null);
     });
@@ -206,7 +206,7 @@ export default function TutorialWidget() {
     }
   }, [isCurrentStepCompleted, isCurrentStepClaimed, pulseAnim]);
 
-  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward) => void };
+  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => void };
 
   const handleClaim = useCallback(() => {
     if (!currentStep) return;
@@ -224,7 +224,7 @@ export default function TutorialWidget() {
 
     const reward = claimReward(currentStep.id);
     if (reward && applyTutorialReward) {
-      applyTutorialReward(reward);
+      applyTutorialReward(reward, currentStep.id);
     }
   }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim]);
 
