@@ -153,7 +153,8 @@ export function processEspionage(
   planetName: string;
 } {
   const techDiff = attackerEspionageLevel - defenderEspionageLevel;
-  const infoLevel = Math.max(0, probesSent + techDiff * 2);
+  const rawInfoLevel = probesSent + techDiff * 2;
+  const infoLevel = probesSent >= 1 ? Math.max(1, rawInfoLevel) : Math.max(0, rawInfoLevel);
 
   const detectionChancePerProbe = Math.max(0, (defenderEspionageLevel - attackerEspionageLevel) * 0.04 + 0.02);
   let probesLost = 0;

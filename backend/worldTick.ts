@@ -474,13 +474,16 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
 
   console.log('[WorldTick][Espionage] espResult:', 'resources:', espResult.resources !== null ? 'present' : 'NULL', 'buildings:', espResult.buildings !== null ? 'present' : 'NULL', 'research:', espResult.research !== null ? 'present' : 'NULL', 'ships:', espResult.ships !== null ? 'present' : 'NULL', 'defenses:', espResult.defenses !== null ? 'present' : 'NULL', 'probesLost:', espResult.probesLost);
 
+  const reportPlanetName = espResult.planetName || targetState?.planetName || 'Inconnue';
+  console.log('[WorldTick][Espionage] Inserting attacker report: planetName=', reportPlanetName, 'resources=', espResult.resources !== null ? 'present' : 'NULL', 'targetPlayerId=', targetPlayerId);
+
   const { error: attackerReportErr } = await supabase.from('espionage_reports').insert({
     player_id: senderId,
     target_player_id: targetPlayerId,
     target_username: mission.target_username,
     target_coords: targetCoords,
     target_planet_id: targetPlanetInfo?.planetId ?? null,
-    target_planet_name: espResult.planetName,
+    target_planet_name: reportPlanetName,
     resources: espResult.resources,
     buildings: espResult.buildings,
     research: espResult.research,
