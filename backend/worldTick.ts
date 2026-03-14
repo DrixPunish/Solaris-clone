@@ -423,21 +423,40 @@ async function getPlanetIdByCoords(coords: number[]): Promise<{ planetId: string
 
 async function processEspionageMission(mission: Record<string, unknown>): Promise<void> {
   const senderId = mission.sender_id as string;
-  const targetPlayerId = mission.target_player_id as string | null;
+  let targetPlayerId = mission.target_player_id as string | null;
   const targetCoords = mission.target_coords as number[];
   const ships = mission.ships as Record<string, number>;
 
+  console.log('[WorldTick][Espionage] Start processing mission', mission.id, 'sender:', senderId, 'targetCoords:', JSON.stringify(targetCoords), 'targetPlayerId:', targetPlayerId, 'ships:', JSON.stringify(ships));
+
   const senderResearch = await loadResearchFromDB(senderId);
+  console.log('[WorldTick][Espionage] Sender research:', JSON.stringify(senderResearch));
 
   const targetPlanetInfo = await getPlanetIdByCoords(targetCoords);
+  console.log('[WorldTick][Espionage] Target planet lookup result:', targetPlanetInfo ? `planetId=${targetPlanetInfo.planetId}, userId=${targetPlanetInfo.userId}` : 'NOT FOUND');
+
+  if (!targetPlayerId && targetPlanetInfo) {
+    targetPlayerId = targetPlanetInfo.userId;
+    console.log('[WorldTick][Espionage] targetPlayerId was null, resolved from planet coords:', targetPlayerId);
+  }
+
   let targetState: Awaited<ReturnType<typeof loadPlanetState>> | null = null;
   if (targetPlanetInfo) {
-    targetState = await loadPlanetState(targetPlanetInfo.planetId, targetPlanetInfo.userId);
+    try {
+      targetState = await loadPlanetState(targetPlanetInfo.planetId, targetPlanetInfo.userId);
+      console.log('[WorldTick][Espionage] Target state loaded:', 'resources:', JSON.stringify(targetState.resources), 'buildings:', Object.keys(targetState.buildings).length, 'ships:', Object.keys(targetState.ships).length, 'defenses:', Object.keys(targetState.defenses).length);
+    } catch (e) {
+      console.log('[WorldTick][Espionage] ERROR loading target state:', e);
+    }
   }
 
   const probesSent = ships.spectreSonde ?? 1;
   const attackerEspionage = senderResearch.espionageTech ?? 0;
   const defenderEspionage = targetState?.research?.espionageTech ?? 0;
+  const techDiff = attackerEspionage - defenderEspionage;
+  const infoLevel = Math.max(0, probesSent + techDiff * 2);
+
+  console.log('[WorldTick][Espionage] probesSent:', probesSent, 'attackerEsp:', attackerEspionage, 'defenderEsp:', defenderEspionage, 'techDiff:', techDiff, 'infoLevel:', infoLevel);
 
   const espResult = processEspionage(
     attackerEspionage,
@@ -453,7 +472,9 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     },
   );
 
-  await supabase.from('espionage_reports').insert({
+  console.log('[WorldTick][Espionage] espResult:', 'resources:', espResult.resources !== null ? 'present' : 'NULL', 'buildings:', espResult.buildings !== null ? 'present' : 'NULL', 'research:', espResult.research !== null ? 'present' : 'NULL', 'ships:', espResult.ships !== null ? 'present' : 'NULL', 'defenses:', espResult.defenses !== null ? 'present' : 'NULL', 'probesLost:', espResult.probesLost);
+
+  const { error: attackerReportErr } = await supabase.from('espionage_reports').insert({
     player_id: senderId,
     target_player_id: targetPlayerId,
     target_username: mission.target_username,
@@ -469,21 +490,35 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     probes_lost: espResult.probesLost,
   });
 
-  if (targetPlayerId) {
-    await supabase.from('espionage_reports').insert({
+  if (attackerReportErr) {
+    console.log('[WorldTick][Espionage] ERROR inserting attacker report:', attackerReportErr.message, attackerReportErr.code);
+  } else {
+    console.log('[WorldTick][Espionage] Attacker report inserted successfully');
+  }
+
+  if (targetPlayerId && targetPlayerId !== senderId) {
+    const { error: victimReportErr } = await supabase.from('espionage_reports').insert({
       player_id: targetPlayerId,
       target_player_id: senderId,
       target_username: (mission.sender_username as string) ?? null,
-      target_coords: targetCoords,
+      target_coords: mission.sender_coords as number[],
       target_planet_name: null,
       resources: null,
       buildings: null,
       research: null,
       ships: null,
       defenses: null,
-      probes_sent: 0,
+      probes_sent: probesSent,
       probes_lost: 0,
     });
+
+    if (victimReportErr) {
+      console.log('[WorldTick][Espionage] ERROR inserting victim report:', victimReportErr.message, victimReportErr.code);
+    } else {
+      console.log('[WorldTick][Espionage] Victim report inserted for:', targetPlayerId);
+    }
+  } else {
+    console.log('[WorldTick][Espionage] No victim report: targetPlayerId=', targetPlayerId, 'senderId=', senderId);
   }
 
   const travelTime = (mission.arrival_time as number) - (mission.departure_time as number);
