@@ -12,6 +12,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
+CREATE OR REPLACE FUNCTION assert_planet_owner(
+  p_user_id uuid,
+  p_planet_id uuid
+) RETURNS boolean AS $$
+DECLARE
+  v_planet_owner uuid;
+BEGIN
+  SELECT user_id INTO v_planet_owner
+  FROM planets
+  WHERE id = p_planet_id
+  FOR UPDATE;
+
+  RETURN FOUND AND v_planet_owner = p_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_timers_unique_owner_target_type
+ON active_timers (
+  user_id,
+  COALESCE(planet_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  target_id,
+  timer_type
+);
+
+CREATE INDEX IF NOT EXISTS idx_planets_user_id ON planets(user_id);
+CREATE INDEX IF NOT EXISTS idx_planet_resources_planet_id ON planet_resources(planet_id);
+CREATE INDEX IF NOT EXISTS idx_planet_buildings_planet_building ON planet_buildings(planet_id, building_id);
+CREATE INDEX IF NOT EXISTS idx_player_research_user_research ON player_research(user_id, research_id);
+CREATE INDEX IF NOT EXISTS idx_active_timers_user_end_time ON active_timers(user_id, end_time);
+CREATE INDEX IF NOT EXISTS idx_active_timers_planet_end_time ON active_timers(planet_id, end_time);
+CREATE INDEX IF NOT EXISTS idx_shipyard_queue_planet_id ON shipyard_queue(planet_id);
+CREATE INDEX IF NOT EXISTS idx_fleet_missions_sender_id ON fleet_missions(sender_id);
+CREATE INDEX IF NOT EXISTS idx_fleet_missions_target_player_id ON fleet_missions(target_player_id);
+CREATE INDEX IF NOT EXISTS idx_fleet_missions_status_arrival_time ON fleet_missions(status, arrival_time);
+CREATE INDEX IF NOT EXISTS idx_espionage_reports_player_id ON espionage_reports(player_id);
+CREATE INDEX IF NOT EXISTS idx_combat_reports_attacker_id ON combat_reports(attacker_id);
+CREATE INDEX IF NOT EXISTS idx_combat_reports_defender_id ON combat_reports(defender_id);
+CREATE INDEX IF NOT EXISTS idx_transport_reports_player_id ON transport_reports(player_id);
+CREATE INDEX IF NOT EXISTS idx_planets_coordinates_gin ON planets USING gin (coordinates);
+
 -- =============================================================
 -- 1. BUILD STRUCTURE (building upgrade)
 -- =============================================================
@@ -43,6 +83,10 @@ DECLARE
   v_already boolean;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
 
   -- Lock planet_resources row
   SELECT fer, silice, xenogas INTO v_res
@@ -141,6 +185,10 @@ DECLARE
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
+
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources
   WHERE planet_id = p_planet_id
@@ -233,6 +281,10 @@ DECLARE
   v_btp double precision;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
 
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
@@ -343,6 +395,10 @@ DECLARE
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
+
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
 
@@ -433,6 +489,10 @@ DECLARE
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
+
   -- Lock player row for solar
   SELECT solar INTO v_current_solar
   FROM players WHERE user_id = p_user_id FOR UPDATE;
@@ -515,6 +575,10 @@ DECLARE
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
+
   -- Find timer
   SELECT id, target_id, target_level INTO v_timer
   FROM active_timers
@@ -589,6 +653,10 @@ DECLARE
   v_existing_qty integer;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
 
   -- Lock player for solar
   SELECT solar INTO v_current_solar
@@ -687,6 +755,10 @@ DECLARE
   v_xenogas double precision;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+
+  IF NOT assert_planet_owner(p_user_id, p_planet_id) THEN
+    RETURN json_build_object('success', false, 'error', 'Planet not owned by user');
+  END IF;
 
   -- Find queue item
   SELECT remaining_quantity, build_time_per_unit, current_unit_end_time

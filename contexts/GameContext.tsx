@@ -419,6 +419,11 @@ export const [GameProvider, useGame] = createContextHook(() => {
   useEffect(() => {
     if (!isLoaded || !userId) return;
     const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        const currentState = stateRef.current;
+        void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState));
+      }
+
       if (nextAppState === 'active') {
         console.log('[GameContext] App returned to foreground, triggering resync');
         void resyncFromServerRef.current();

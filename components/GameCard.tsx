@@ -270,6 +270,9 @@ export default React.memo(function GameCard({
             style={styles.infoBtn}
             onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onInfo(); }}
             hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Informations sur ${title}`}
+            testID={`info-${title}`}
           >
             <Info size={16} color={Colors.textSecondary} />
           </Pressable>
@@ -299,6 +302,9 @@ export default React.memo(function GameCard({
                 onPress={handleRush}
                 style={[styles.rushButton, !canRush && styles.rushButtonDisabled, { flex: 1 }]}
                 disabled={!canRush}
+                accessibilityRole="button"
+                accessibilityLabel={isRushOnCooldown ? `Accélération verrouillée ${rushCooldownRemaining} secondes restantes pour ${title}` : `Accélérer ${title}`}
+                testID={`rush-${title}`}
               >
                 <Zap size={13} color={canRush ? Colors.solar : Colors.textMuted} />
                 <Text style={[styles.rushText, !canRush && styles.rushTextDisabled]}>
@@ -310,6 +316,9 @@ export default React.memo(function GameCard({
               <Pressable
                 onPress={handleCancelPress}
                 style={styles.cancelButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Annuler ${title}`}
+                testID={`cancel-${title}`}
               >
                 <X size={13} color={Colors.danger} />
                 <Text style={styles.cancelText}>Annuler</Text>
@@ -345,6 +354,9 @@ export default React.memo(function GameCard({
                 onPress={handleRush}
                 style={[styles.rushButton, !canRush && styles.rushButtonDisabled, { flex: 1 }]}
                 disabled={!canRush}
+                accessibilityRole="button"
+                accessibilityLabel={isRushOnCooldown ? `Accélération verrouillée ${rushCooldownRemaining} secondes restantes pour ${title}` : `Accélérer ${title}`}
+                testID={`rush-${title}`}
               >
                 <Zap size={13} color={canRush ? Colors.solar : Colors.textMuted} />
                 <Text style={[styles.rushText, !canRush && styles.rushTextDisabled]}>
@@ -356,6 +368,9 @@ export default React.memo(function GameCard({
               <Pressable
                 onPress={handleCancelPress}
                 style={styles.cancelButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Annuler ${title}`}
+                testID={`cancel-${title}`}
               >
                 <X size={13} color={Colors.danger} />
                 <Text style={styles.cancelText}>Annuler</Text>
@@ -451,6 +466,9 @@ export default React.memo(function GameCard({
             (actionDisabled || isTimerActive || isQueueActive) && styles.buttonDisabled,
           ]}
           disabled={actionDisabled || isTimerActive || isQueueActive}
+          accessibilityRole="button"
+          accessibilityLabel={`${actionLabel} ${title}`}
+          testID={`action-${title}`}
         >
           <Text style={[styles.buttonText, (actionDisabled || isTimerActive || isQueueActive) && styles.buttonTextDisabled]}>
             {isTimerActive || isQueueActive
@@ -482,6 +500,9 @@ export default React.memo(function GameCard({
                   style={styles.modalBtnSecondary}
                   onPress={handleCancelDismiss}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Continuer ${title}`}
+                  testID={`cancel-dismiss-${title}`}
                 >
                   <Text style={styles.modalBtnSecondaryText}>Non, continuer</Text>
                 </TouchableOpacity>
@@ -489,6 +510,9 @@ export default React.memo(function GameCard({
                   style={styles.modalBtnDanger}
                   onPress={handleCancelConfirm}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Confirmer annulation ${title}`}
+                  testID={`cancel-confirm-${title}`}
                 >
                   <Text style={styles.modalBtnDangerText}>Oui, annuler</Text>
                 </TouchableOpacity>

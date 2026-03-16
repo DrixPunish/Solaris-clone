@@ -11,6 +11,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '@/contexts/GameContext';
+import { usePlanetActions } from '@/hooks/usePlanetActions';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from '@/constants/gameData';
 import {
   calculateCost, canAfford, calculateUpgradeTime, calculateResearchTime, formatNumber, formatTime,
@@ -216,11 +217,19 @@ const qStyles = StyleSheet.create({
 export default function ColonyDetailScreen() {
   const { colonyId } = useLocalSearchParams<{ colonyId: string }>();
   const router = useRouter();
+  const { state } = useGame();
   const {
-    state, upgradeColonyBuilding, buildColonyShipQueue, buildColonyDefenseQueue,
-    renameColony, cancelColonyUpgrade, upgradeColonyResearch, rushColonyWithSolar,
-    cancelColonyShipyardQueue, rushColonyShipyardWithSolar, getColonyMaxBuildableQuantity,
-  } = useGame();
+    renamePlanet,
+    upgradeBuilding,
+    upgradeResearch,
+    buildShipQueue,
+    buildDefenseQueue,
+    rushWithSolar,
+    cancelUpgrade,
+    rushShipyardWithSolar,
+    cancelShipyardQueue,
+    getMaxBuildableQuantity,
+  } = usePlanetActions(colonyId ?? null);
 
   const colony = useMemo(() => (state.colonies ?? []).find(c => c.id === colonyId), [state.colonies, colonyId]);
 
@@ -246,10 +255,10 @@ export default function ColonyDetailScreen() {
     if (!colonyId) return;
     const trimmed = newName.trim();
     if (trimmed && trimmed.length <= 24) {
-      renameColony(colonyId, trimmed);
+      renamePlanet(trimmed);
     }
     setRenameVisible(false);
-  }, [colonyId, newName, renameColony]);
+  }, [colonyId, newName, renamePlanet]);
 
   const renderBuilding = useCallback(
     (building: typeof BUILDINGS[0]) => {
@@ -326,13 +335,13 @@ export default function ColonyDetailScreen() {
           timerEndTime={timer?.endTime}
           timerTargetLevel={timer?.targetLevel}
           solarBalance={state.solar}
-          onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); upgradeColonyBuilding(colonyId, building.id); }}
-          onRush={() => rushColonyWithSolar(colonyId, building.id, 'building')}
-          onCancel={isCurrentlyUpgrading ? () => cancelColonyUpgrade(colonyId, building.id, 'building') : undefined}
+          onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); upgradeBuilding(building.id); }}
+          onRush={() => rushWithSolar(building.id, 'building')}
+          onCancel={isCurrentlyUpgrading ? () => cancelUpgrade(building.id, 'building') : undefined}
         />
       );
     },
-    [colony, colonyId, state.research, state.solar, upgradeColonyBuilding, rushColonyWithSolar, cancelColonyUpgrade],
+    [cancelUpgrade, colony, colonyId, rushWithSolar, state.research, state.solar, upgradeBuilding],
   );
 
   const renderResearch = useCallback(
@@ -393,13 +402,13 @@ export default function ColonyDetailScreen() {
           timerEndTime={activeTimer?.endTime}
           timerTargetLevel={activeTimer?.targetLevel}
           solarBalance={state.solar}
-          onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); upgradeColonyResearch(colonyId, research.id); }}
-          onRush={timer ? () => rushColonyWithSolar(colonyId, research.id, 'research') : undefined}
-          onCancel={timer ? () => cancelColonyUpgrade(colonyId, research.id, 'research') : undefined}
+          onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); upgradeResearch(research.id); }}
+          onRush={timer ? () => rushWithSolar(research.id, 'research') : undefined}
+          onCancel={timer ? () => cancelUpgrade(research.id, 'research') : undefined}
         />
       );
     },
-    [colony, colonyId, state.research, state.solar, state.activeTimers, state.colonies, state.buildings, upgradeColonyResearch, rushColonyWithSolar, cancelColonyUpgrade],
+    [cancelUpgrade, colony, colonyId, rushWithSolar, state.activeTimers, state.buildings, state.colonies, state.research, state.solar, upgradeResearch],
   );
 
   const renderShip = useCallback(
@@ -410,7 +419,7 @@ export default function ColonyDetailScreen() {
       const unitCost: Resources = { fer: ship.cost.fer ?? 0, silice: ship.cost.silice ?? 0, xenogas: ship.cost.xenogas ?? 0, energy: 0 };
       const totalCost: Resources = { fer: unitCost.fer * qty, silice: unitCost.silice * qty, xenogas: unitCost.xenogas * qty, energy: 0 };
       const affordable = canAfford(colony.resources, totalCost);
-      const maxBuildable = getColonyMaxBuildableQuantity(colonyId, ship.cost);
+      const maxBuildable = getMaxBuildableQuantity(ship.cost);
       const spriteUrl = SHIP_SPRITES[ship.id];
       const iconDef = SHIP_ICONS[ship.id];
       const IconComponent = iconDef?.icon ?? Rocket;
@@ -461,9 +470,9 @@ export default function ColonyDetailScreen() {
             actionDisabled={!hasShipyard || !affordable || !prereqsMet}
             disabledReason={!prereqsMet ? `Requis: ${missingPrereqs[0]}` : !hasShipyard ? 'Construire un Chantier Spatial' : 'Ressources insuffisantes'}
             missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
-            onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); buildColonyShipQueue(colonyId, ship.id, qty); setQuantities(prev => ({ ...prev, [ship.id]: 1 })); }}
-            onRush={queueItem ? () => rushColonyShipyardWithSolar(colonyId, ship.id, 'ship') : undefined}
-            onCancel={queueItem ? () => cancelColonyShipyardQueue(colonyId, ship.id, 'ship') : undefined}
+            onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); buildShipQueue(ship.id, qty); setQuantities(prev => ({ ...prev, [ship.id]: 1 })); }}
+            onRush={queueItem ? () => rushShipyardWithSolar(ship.id, 'ship') : undefined}
+            onCancel={queueItem ? () => cancelShipyardQueue(ship.id, 'ship') : undefined}
             cancelRefundInfo={queueItem ? `Seules les ${queueItem.remainingQuantity} unité(s) restante(s) seront annulées. 80% des ressources remboursées.` : undefined}
           />
           {!queueItem && hasShipyard && prereqsMet && (
@@ -474,7 +483,7 @@ export default function ColonyDetailScreen() {
         </View>
       );
     },
-    [colony, colonyId, state.research, state.solar, buildColonyShipQueue, rushColonyShipyardWithSolar, cancelColonyShipyardQueue, getColonyMaxBuildableQuantity, getQuantity, setQuantity],
+    [buildShipQueue, cancelShipyardQueue, colony, colonyId, getMaxBuildableQuantity, getQuantity, rushShipyardWithSolar, setQuantity, state.research, state.solar],
   );
 
   const renderDefense = useCallback(
@@ -485,7 +494,7 @@ export default function ColonyDetailScreen() {
       const unitCost: Resources = { fer: defense.cost.fer ?? 0, silice: defense.cost.silice ?? 0, xenogas: defense.cost.xenogas ?? 0, energy: 0 };
       const totalCost: Resources = { fer: unitCost.fer * qty, silice: unitCost.silice * qty, xenogas: unitCost.xenogas * qty, energy: 0 };
       const affordable = canAfford(colony.resources, totalCost);
-      const maxBuildable = getColonyMaxBuildableQuantity(colonyId, defense.cost);
+      const maxBuildable = getMaxBuildableQuantity(defense.cost);
       const iconDef = DEFENSE_ICONS[defense.id];
       const IconComponent = iconDef?.icon ?? Shield;
       const iconColor = iconDef?.color ?? Colors.primary;
@@ -533,9 +542,9 @@ export default function ColonyDetailScreen() {
             actionDisabled={!hasShipyard || !affordable || !prereqsMet}
             disabledReason={!prereqsMet ? `Requis: ${missingPrereqs[0]}` : !hasShipyard ? 'Construire un Chantier Spatial' : 'Ressources insuffisantes'}
             missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
-            onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); buildColonyDefenseQueue(colonyId, defense.id, qty); setQuantities(prev => ({ ...prev, [defense.id]: 1 })); }}
-            onRush={queueItem ? () => rushColonyShipyardWithSolar(colonyId, defense.id, 'defense') : undefined}
-            onCancel={queueItem ? () => cancelColonyShipyardQueue(colonyId, defense.id, 'defense') : undefined}
+            onAction={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); buildDefenseQueue(defense.id, qty); setQuantities(prev => ({ ...prev, [defense.id]: 1 })); }}
+            onRush={queueItem ? () => rushShipyardWithSolar(defense.id, 'defense') : undefined}
+            onCancel={queueItem ? () => cancelShipyardQueue(defense.id, 'defense') : undefined}
             cancelRefundInfo={queueItem ? `Seules les ${queueItem.remainingQuantity} unité(s) restante(s) seront annulées. 80% des ressources remboursées.` : undefined}
           />
           {!queueItem && hasShipyard && prereqsMet && (
@@ -546,7 +555,7 @@ export default function ColonyDetailScreen() {
         </View>
       );
     },
-    [colony, colonyId, state.research, state.solar, buildColonyDefenseQueue, rushColonyShipyardWithSolar, cancelColonyShipyardQueue, getColonyMaxBuildableQuantity, getQuantity, setQuantity],
+    [buildDefenseQueue, cancelShipyardQueue, colony, colonyId, getMaxBuildableQuantity, getQuantity, rushShipyardWithSolar, setQuantity, state.research, state.solar],
   );
 
   const resourceBuildings = useMemo(() => BUILDINGS.filter(b => b.category === 'resources'), []);
