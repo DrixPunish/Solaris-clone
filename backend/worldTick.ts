@@ -238,81 +238,25 @@ async function processExpiredShipyardQueues(): Promise<number> {
 
 // ── Fleet Return Processing ──
 
-async function findPlanetByCoords(userId: string, coords: number[]): Promise<string | null> {
-  const { data } = await supabase
-    .from('planets')
-    .select('id')
-    .eq('user_id', userId)
-    .filter('coordinates->>0', 'eq', String(coords[0]))
-    .filter('coordinates->>1', 'eq', String(coords[1]))
-    .filter('coordinates->>2', 'eq', String(coords[2]))
-    .single();
-  return data?.id ?? null;
-}
-
 async function processReturningFleets(): Promise<number> {
-  const now = Date.now();
-  const { data: returning, error } = await supabase
-    .from('fleet_missions')
-    .select('*')
-    .eq('status', 'returning')
-    .not('return_time', 'is', null)
-    .lte('return_time', now);
+  const { data: result, error } = await supabase.rpc('rpc_process_fleet_returns');
 
-  if (error || !returning?.length) return 0;
-
-  let count = 0;
-  for (const mission of returning) {
-    const { data: claimed } = await supabase
-      .from('fleet_missions')
-      .update({ status: 'completed' })
-      .eq('id', mission.id)
-      .eq('status', 'returning')
-      .select();
-
-    if (!claimed?.length) continue;
-
-    const senderCoords = mission.sender_coords as number[];
-    const senderPlanetId = await findPlanetByCoords(mission.sender_id, senderCoords);
-
-    if (!senderPlanetId) {
-      console.log('[WorldTick] Sender planet not found for return:', mission.id);
-      continue;
-    }
-
-    const ships = (mission.ships ?? {}) as Record<string, number>;
-    for (const [shipId, qty] of Object.entries(ships)) {
-      if (typeof qty !== 'number' || qty <= 0) continue;
-      const { data: existing } = await supabase
-        .from('planet_ships')
-        .select('quantity')
-        .eq('planet_id', senderPlanetId)
-        .eq('ship_id', shipId)
-        .single();
-
-      await supabase.from('planet_ships').upsert({
-        planet_id: senderPlanetId,
-        ship_id: shipId,
-        quantity: (existing?.quantity ?? 0) + qty,
-      }, { onConflict: 'planet_id,ship_id' });
-    }
-
-    const res = mission.resources as { fer?: number; silice?: number; xenogas?: number } | null;
-    if (res && ((res.fer ?? 0) > 0 || (res.silice ?? 0) > 0 || (res.xenogas ?? 0) > 0)) {
-      const { error: rpcErr } = await supabase.rpc('add_resources_to_planet', {
-        p_planet_id: senderPlanetId,
-        p_fer: res.fer ?? 0,
-        p_silice: res.silice ?? 0,
-        p_xenogas: res.xenogas ?? 0,
-      });
-      if (rpcErr) console.log('[WorldTick] Error adding return resources:', rpcErr.message);
-    }
-
-    console.log('[WorldTick] Fleet returned:', mission.id, 'ships:', JSON.stringify(ships));
-    count++;
+  if (error) {
+    console.log('[WorldTick] rpc_process_fleet_returns error:', error.message, error.code);
+    return 0;
   }
 
-  if (count > 0) console.log('[WorldTick] Processed', count, 'fleet returns');
+  const res = result as { success?: boolean; processed?: number; errors?: string[] } | null;
+  const count = res?.processed ?? 0;
+
+  if (res?.errors && res.errors.length > 0) {
+    console.log('[WorldTick] Fleet return errors:', JSON.stringify(res.errors));
+  }
+
+  if (count > 0) {
+    console.log('[WorldTick] Processed', count, 'fleet returns via RPC');
+  }
+
   return count;
 }
 
@@ -418,6 +362,7 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
+      mission_phase: 'returning',
       return_time: (mission.arrival_time as number) + travelTime,
       result: { type: 'espionage', probes_sent: ships.spectreSonde ?? 1, probes_lost: 0 },
     }).eq('id', mission.id);
@@ -524,15 +469,20 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
   const survivingProbes = probesSent - espResult.probesLost;
   const resultShips = survivingProbes > 0 ? { spectreSonde: survivingProbes } : {};
 
+  const finalStatus = survivingProbes > 0 ? 'returning' : 'completed';
+  const finalPhase = survivingProbes > 0 ? 'returning' : 'completed';
+
   await supabase.from('fleet_missions').update({
-    status: survivingProbes > 0 ? 'returning' : 'completed',
+    status: finalStatus,
     processed: true,
+    mission_phase: finalPhase,
     return_time: survivingProbes > 0 ? returnTime : null,
     ships: resultShips,
     result: { type: 'espionage', probes_sent: probesSent, probes_lost: espResult.probesLost },
+    ...(finalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick][Espionage] === DONE === mission', mission.id, 'survivingProbes:', survivingProbes, 'status:', survivingProbes > 0 ? 'returning' : 'completed');
+  console.log('[WorldTick][Espionage] === DONE === mission', mission.id, 'survivingProbes:', survivingProbes, 'status:', finalStatus);
 }
 
 async function processAttackMission(mission: Record<string, unknown>): Promise<void> {
@@ -559,6 +509,7 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
+      mission_phase: 'returning',
       return_time: (mission.arrival_time as number) + travelTime,
       result: { type: 'combat', outcome: 'draw', loot: { fer: 0, silice: 0, xenogas: 0 } },
     }).eq('id', mission.id);
@@ -635,13 +586,16 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
   const returnTime = (mission.arrival_time as number) + travelTime;
   const hasShips = Object.values(combatResult.attackerSurvivingShips).some(c => c > 0);
 
+  const attackFinalPhase = hasShips ? 'returning' : 'completed';
   await supabase.from('fleet_missions').update({
     status: hasShips ? 'returning' : 'completed',
     processed: true,
+    mission_phase: attackFinalPhase,
     return_time: hasShips ? returnTime : null,
     ships: combatResult.attackerSurvivingShips,
     resources: combatResult.loot,
     result: { type: 'combat', outcome: combatResult.result, loot: combatResult.loot },
+    ...(attackFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
   console.log('[WorldTick] Attack processed:', mission.id, 'result:', combatResult.result);
@@ -680,6 +634,7 @@ async function processTransportMission(mission: Record<string, unknown>): Promis
   await supabase.from('fleet_missions').update({
     status: 'returning',
     processed: true,
+    mission_phase: 'returning',
     return_time: returnTime,
     resources: { fer: 0, silice: 0, xenogas: 0 },
     result: { type: 'transport', delivered: resources },
@@ -740,6 +695,7 @@ async function processRecycleMission(mission: Record<string, unknown>): Promise<
   await supabase.from('fleet_missions').update({
     status: 'returning',
     processed: true,
+    mission_phase: 'returning',
     return_time: returnTime,
     resources: { fer: collectedFer, silice: collectedSilice, xenogas: 0 },
     result: { type: 'recycle', collected: { fer: collectedFer, silice: collectedSilice } },
@@ -771,6 +727,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
+      mission_phase: 'returning',
       return_time: returnTime,
       ships,
       result: { type: 'colonize', success: false, reason: 'Position déjà occupée' },
@@ -794,6 +751,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
+      mission_phase: 'returning',
       return_time: returnTime,
       ships,
       result: { type: 'colonize', success: false, reason: 'Nombre maximum de colonies atteint' },
@@ -815,6 +773,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
+      mission_phase: 'returning',
       return_time: returnTime,
       ships,
       result: { type: 'colonize', success: false, reason: 'Erreur création colonie' },
@@ -840,12 +799,15 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
 
   const hasReturning = Object.values(returningShips).some(c => c > 0);
 
+  const colonizeFinalPhase = hasReturning ? 'returning' : 'completed';
   await supabase.from('fleet_missions').update({
     status: hasReturning ? 'returning' : 'completed',
     processed: true,
+    mission_phase: colonizeFinalPhase,
     return_time: hasReturning ? returnTime : null,
     ships: returningShips,
     result: { type: 'colonize', success: true, colonyId: newPlanet.id },
+    ...(colonizeFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
   console.log('[WorldTick] Colony created:', newPlanet.id, 'at', targetCoords);
@@ -887,6 +849,8 @@ async function processStationMission(mission: Record<string, unknown>): Promise<
   await supabase.from('fleet_missions').update({
     status: 'completed',
     processed: true,
+    mission_phase: 'completed',
+    completed_at: new Date().toISOString(),
     result: { type: 'station', delivered_ships: ships, delivered_resources: resources },
   }).eq('id', mission.id);
 
@@ -898,7 +862,7 @@ async function processArrivedFleets(): Promise<number> {
   const { data: arrived, error } = await supabase
     .from('fleet_missions')
     .select('*')
-    .eq('status', 'traveling')
+    .eq('mission_phase', 'en_route')
     .eq('processed', false)
     .lte('arrival_time', now);
 
@@ -908,7 +872,7 @@ async function processArrivedFleets(): Promise<number> {
   for (const mission of arrived) {
     const { data: claimed } = await supabase
       .from('fleet_missions')
-      .update({ processed: true })
+      .update({ processed: true, mission_phase: 'arrived' })
       .eq('id', mission.id)
       .eq('processed', false)
       .select();
@@ -938,7 +902,7 @@ async function processArrivedFleets(): Promise<number> {
       count++;
     } catch (e) {
       console.log('[WorldTick] Error processing mission', mission.id, ':', e);
-      await supabase.from('fleet_missions').update({ processed: false }).eq('id', mission.id);
+      await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', mission.id);
     }
   }
 

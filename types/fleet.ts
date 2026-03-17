@@ -1,5 +1,6 @@
 export type MissionType = 'attack' | 'transport' | 'espionage' | 'colonize' | 'recycle' | 'station';
 export type FleetStatus = 'traveling' | 'returning' | 'arrived' | 'completed';
+export type MissionPhase = 'en_route' | 'arrived' | 'returning' | 'completed';
 
 export interface FleetMission {
   id: string;
@@ -19,6 +20,8 @@ export interface FleetMission {
   return_time: number | null;
   status: FleetStatus;
   processed: boolean;
+  mission_phase: MissionPhase;
+  completed_at: string | null;
   result: CombatResult | EspionageResult | TransportResult | ColonizeResult | null;
   created_at: string;
 }

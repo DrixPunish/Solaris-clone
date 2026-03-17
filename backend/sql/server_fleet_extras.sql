@@ -5,6 +5,54 @@
 -- =============================================================
 
 -- =============================================================
+-- 0. SCHEMA ADDITIONS: mission_phase + completed_at
+-- =============================================================
+-- mission_phase tracks the lifecycle independently of the
+-- legacy 'status' column to avoid race conditions between
+-- processArrivedFleets and processReturningFleets.
+--
+-- Values:
+--   en_route   -> fleet is traveling to target
+--   arrived    -> fleet arrived, mission being processed
+--   returning  -> fleet heading back to sender planet
+--   completed  -> fleet returned, ships/resources restored
+-- =============================================================
+ALTER TABLE fleet_missions
+  ADD COLUMN IF NOT EXISTS mission_phase text DEFAULT 'en_route';
+
+ALTER TABLE fleet_missions
+  ADD COLUMN IF NOT EXISTS completed_at timestamptz DEFAULT NULL;
+
+-- Constraint (idempotent via DO block)
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chk_mission_phase'
+  ) THEN
+    ALTER TABLE fleet_missions
+      ADD CONSTRAINT chk_mission_phase
+      CHECK (mission_phase IN ('en_route','arrived','returning','completed'));
+  END IF;
+END $;
+
+-- Index for the world tick query
+CREATE INDEX IF NOT EXISTS idx_fleet_missions_phase_return
+  ON fleet_missions (mission_phase, return_time)
+  WHERE mission_phase = 'returning';
+
+CREATE INDEX IF NOT EXISTS idx_fleet_missions_phase_arrival
+  ON fleet_missions (mission_phase, arrival_time)
+  WHERE mission_phase = 'en_route';
+
+-- Migration: backfill existing rows
+UPDATE fleet_missions SET mission_phase = 'completed'
+  WHERE status = 'completed' AND mission_phase = 'en_route';
+UPDATE fleet_missions SET mission_phase = 'returning'
+  WHERE status = 'returning' AND mission_phase = 'en_route';
+UPDATE fleet_missions SET mission_phase = 'arrived'
+  WHERE status = 'arrived' AND mission_phase = 'en_route';
+
+-- =============================================================
 -- 1. rpc_send_fleet (SECURED)
 -- =============================================================
 -- Deduit atomiquement les vaisseaux et ressources cargo
@@ -144,3 +192,131 @@ $ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 3. Add production_percentages column to planets table
 ALTER TABLE planets ADD COLUMN IF NOT EXISTS production_percentages jsonb DEFAULT NULL;
+
+-- =============================================================
+-- 4. rpc_process_fleet_returns (ATOMIC)
+-- =============================================================
+-- Processes ALL fleets with mission_phase='returning' whose
+-- return_time has elapsed. For each fleet:
+--   1. Locks the row with FOR UPDATE SKIP LOCKED
+--   2. Finds sender planet by sender_id + sender_coords
+--   3. Returns ships to planet_ships (upsert)
+--   4. Returns cargo resources via add_resources_to_planet
+--   5. Marks mission_phase='completed', status='completed'
+--
+-- SECURITY:
+-- - Uses FOR UPDATE SKIP LOCKED to avoid deadlocks
+-- - Calls add_resources_to_planet which has its own FOR UPDATE
+-- - SECURITY DEFINER to access all tables
+-- =============================================================
+CREATE OR REPLACE FUNCTION rpc_process_fleet_returns()
+RETURNS json AS $
+DECLARE
+  v_now bigint;
+  v_mission record;
+  v_sender_planet_id uuid;
+  v_ship_key text;
+  v_ship_val jsonb;
+  v_ship_qty integer;
+  v_cargo_fer double precision;
+  v_cargo_silice double precision;
+  v_cargo_xenogas double precision;
+  v_count integer := 0;
+  v_errors text[] := ARRAY[]::text[];
+BEGIN
+  v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+
+  FOR v_mission IN
+    SELECT *
+    FROM fleet_missions
+    WHERE mission_phase = 'returning'
+      AND return_time IS NOT NULL
+      AND return_time <= v_now
+    FOR UPDATE SKIP LOCKED
+  LOOP
+    BEGIN
+      -- Find sender planet
+      SELECT id INTO v_sender_planet_id
+      FROM planets
+      WHERE user_id = v_mission.sender_id
+        AND coordinates = v_mission.sender_coords;
+
+      IF v_sender_planet_id IS NULL THEN
+        -- Planet gone (abandoned?), just mark completed
+        UPDATE fleet_missions
+        SET mission_phase = 'completed',
+            status = 'completed',
+            completed_at = NOW()
+        WHERE id = v_mission.id;
+        v_count := v_count + 1;
+        CONTINUE;
+      END IF;
+
+      -- Return ships
+      IF v_mission.ships IS NOT NULL AND v_mission.ships != '{}'::jsonb THEN
+        FOR v_ship_key, v_ship_val IN
+          SELECT * FROM jsonb_each(v_mission.ships)
+        LOOP
+          v_ship_qty := (v_ship_val #>> '{}')::integer;
+          IF v_ship_qty IS NOT NULL AND v_ship_qty > 0 THEN
+            INSERT INTO planet_ships (planet_id, ship_id, quantity)
+            VALUES (v_sender_planet_id, v_ship_key, v_ship_qty)
+            ON CONFLICT (planet_id, ship_id)
+            DO UPDATE SET quantity = planet_ships.quantity + EXCLUDED.quantity;
+          END IF;
+        END LOOP;
+      END IF;
+
+      -- Return cargo resources
+      v_cargo_fer := COALESCE((v_mission.resources->>'fer')::double precision, 0);
+      v_cargo_silice := COALESCE((v_mission.resources->>'silice')::double precision, 0);
+      v_cargo_xenogas := COALESCE((v_mission.resources->>'xenogas')::double precision, 0);
+
+      IF v_cargo_fer > 0 OR v_cargo_silice > 0 OR v_cargo_xenogas > 0 THEN
+        PERFORM add_resources_to_planet(
+          v_sender_planet_id,
+          v_cargo_fer,
+          v_cargo_silice,
+          v_cargo_xenogas
+        );
+      END IF;
+
+      -- Mark completed
+      UPDATE fleet_missions
+      SET mission_phase = 'completed',
+          status = 'completed',
+          completed_at = NOW()
+      WHERE id = v_mission.id;
+
+      v_count := v_count + 1;
+
+    EXCEPTION WHEN OTHERS THEN
+      v_errors := array_append(v_errors, v_mission.id::text || ': ' || SQLERRM);
+    END;
+  END LOOP;
+
+  RETURN json_build_object(
+    'success', true,
+    'processed', v_count,
+    'errors', to_json(v_errors)
+  );
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =============================================================
+-- 5. Cleanup: purge old completed fleet missions (> 7 days)
+-- =============================================================
+CREATE OR REPLACE FUNCTION purge_old_fleet_missions(
+  p_days integer DEFAULT 7
+) RETURNS integer AS $
+DECLARE
+  v_deleted integer;
+BEGIN
+  DELETE FROM fleet_missions
+  WHERE mission_phase = 'completed'
+    AND completed_at IS NOT NULL
+    AND completed_at < NOW() - (p_days || ' days')::interval;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;

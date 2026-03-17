@@ -55,7 +55,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
         .from('fleet_missions')
         .select('*')
         .or(`sender_id.eq.${userId},target_player_id.eq.${userId}`)
-        .in('status', ['traveling', 'returning'])
+        .in('mission_phase', ['en_route', 'arrived', 'returning'])
         .order('created_at', { ascending: false });
       if (error) {
         console.log('[FleetContext] Error loading missions:', error.message);
