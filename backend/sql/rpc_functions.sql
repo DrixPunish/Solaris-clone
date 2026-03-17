@@ -49,7 +49,6 @@ CREATE INDEX IF NOT EXISTS idx_fleet_missions_status_arrival_time ON fleet_missi
 CREATE INDEX IF NOT EXISTS idx_espionage_reports_player_id ON espionage_reports(player_id);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_attacker_id ON combat_reports(attacker_id);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_defender_id ON combat_reports(defender_id);
-CREATE INDEX IF NOT EXISTS idx_transport_reports_player_id ON transport_reports(player_id);
 CREATE INDEX IF NOT EXISTS idx_planets_coordinates_gin ON planets USING gin (coordinates);
 
 -- =============================================================
