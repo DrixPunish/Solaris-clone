@@ -226,6 +226,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 --   calcule cote serveur par simulateCombat dans worldTick.ts
 -- - Doit etre appelee dans un contexte authentifie
 -- =============================================================
+DROP FUNCTION IF EXISTS apply_attack_loot(uuid, double precision, double precision, double precision, jsonb, jsonb, jsonb);
 CREATE OR REPLACE FUNCTION apply_attack_loot(
   p_planet_id uuid,
   p_loot_fer double precision DEFAULT 0,
