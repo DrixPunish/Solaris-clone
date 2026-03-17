@@ -30,7 +30,7 @@ export default function PlanetScreen() {
   const { userId } = useGame();
   const fleetCount = activeMissions.filter(m => {
     if (m.sender_id === userId) return true;
-    if (m.target_player_id === userId && m.status === 'traveling') return true;
+    if (m.target_player_id === userId && m.mission_phase === 'en_route') return true;
     return false;
   }).length;
 

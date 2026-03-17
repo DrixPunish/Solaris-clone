@@ -51,20 +51,33 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     queryFn: async () => {
       if (!userId) return [];
 
+      try {
+        const result = await trpcClient.world.getActiveMissions.query({ userId });
+        if (result.success) {
+          console.log('[Fleet] Missions loaded via tRPC:', result.missions.length, 'phases:', result.missions.map((m: Record<string, unknown>) => m.mission_phase));
+          return result.missions as FleetMission[];
+        }
+        console.log('[Fleet] tRPC getActiveMissions failed:', result.error);
+      } catch (e) {
+        console.log('[Fleet] tRPC getActiveMissions error, falling back to direct query:', e);
+      }
+
       const { data, error } = await supabase
         .from('fleet_missions')
         .select('*')
         .or(`sender_id.eq.${userId},target_player_id.eq.${userId}`)
         .in('mission_phase', ['en_route', 'arrived', 'returning'])
-        .order('created_at', { ascending: false });
+        .order('arrival_time', { ascending: true });
       if (error) {
-        console.log('[FleetContext] Error loading missions:', error.message);
+        console.log('[Fleet] Error loading missions (fallback):', error.message);
         return [];
       }
+      console.log('[Fleet] Missions loaded (fallback):', (data ?? []).length);
       return (data ?? []) as FleetMission[];
     },
     enabled: !!userId,
     refetchInterval: 10000,
+    staleTime: 5000,
   });
 
   const activeMissions = useMemo(() => missionsQuery.data ?? [], [missionsQuery.data]);

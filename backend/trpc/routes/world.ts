@@ -20,6 +20,25 @@ export const worldRouter = createTRPCRouter({
     };
   }),
 
+  getActiveMissions: publicProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      const { data, error } = await supabase
+        .from('fleet_missions')
+        .select('*')
+        .or(`sender_id.eq.${input.userId},target_player_id.eq.${input.userId}`)
+        .in('mission_phase', ['en_route', 'arrived', 'returning'])
+        .order('arrival_time', { ascending: true });
+
+      if (error) {
+        console.log('[tRPC] Error fetching active missions:', error.message);
+        return { success: false as const, error: error.message, missions: [] };
+      }
+
+      console.log('[tRPC] Active missions for', input.userId, ':', (data ?? []).length);
+      return { success: true as const, missions: data ?? [] };
+    }),
+
   deleteEspionageReport: publicProcedure
     .input(z.object({ reportId: z.string(), playerId: z.string() }))
     .mutation(async ({ input }) => {

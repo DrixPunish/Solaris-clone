@@ -58,7 +58,7 @@ const CountdownTimer = React.memo(function CountdownTimer({ endTime }: { endTime
 const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLevel }: { mission: FleetMission; isSender: boolean; sonarLevel: number }) {
   const config = MISSION_CONFIG[mission.mission_type] ?? MISSION_CONFIG.attack;
   const Icon = config.icon;
-  const isReturning = mission.status === 'returning';
+  const isReturning = mission.mission_phase === 'returning';
   const expandedRef = useRef(false);
   const [expanded, setExpanded] = useState(false);
   const chevronAnim = useRef(new Animated.Value(0)).current;
@@ -278,7 +278,7 @@ const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLe
   );
 }, (prev, next) => {
   return prev.mission.id === next.mission.id
-    && prev.mission.status === next.mission.status
+    && prev.mission.mission_phase === next.mission.mission_phase
     && prev.mission.arrival_time === next.mission.arrival_time
     && prev.mission.return_time === next.mission.return_time
     && prev.isSender === next.isSender
@@ -292,18 +292,18 @@ export default function FleetOverviewScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    void refreshMissions();
+    refreshMissions();
     setTimeout(() => setRefreshing(false), 1000);
   }, [refreshMissions]);
 
   const visibleMissions = activeMissions.filter(m => {
     if (m.sender_id === userId) return true;
-    if (m.target_player_id === userId && m.status === 'traveling') return true;
+    if (m.target_player_id === userId && m.mission_phase === 'en_route') return true;
     return false;
   });
 
-  const outgoing = visibleMissions.filter(m => m.status === 'traveling');
-  const returning = visibleMissions.filter(m => m.status === 'returning');
+  const outgoing = visibleMissions.filter(m => m.mission_phase === 'en_route' || m.mission_phase === 'arrived');
+  const returning = visibleMissions.filter(m => m.mission_phase === 'returning');
 
   return (
     <View style={styles.container}>
