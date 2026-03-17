@@ -170,6 +170,7 @@ $$ LANGUAGE plpgsql;
 --   couts; ici on ajoute des quantites absolues (loot, transport)
 -- - Doit etre appelee dans un contexte authentifie (RPC securisee)
 -- =============================================================
+DROP FUNCTION IF EXISTS add_resources_to_planet(uuid, double precision, double precision, double precision);
 CREATE OR REPLACE FUNCTION add_resources_to_planet(
   p_planet_id uuid,
   p_fer double precision DEFAULT 0,
