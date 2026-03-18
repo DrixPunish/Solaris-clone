@@ -323,21 +323,28 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION materialize_planet_resources(
   p_planet_id uuid,
   p_user_id uuid
-) RETURNS json AS $$
+) RETURNS json AS $
 DECLARE
   v_res record;
   v_last_update bigint;
   v_now bigint;
   v_elapsed double precision;
   v_econ record;
+  v_cur_fer double precision;
+  v_cur_silice double precision;
+  v_cur_xenogas double precision;
+  v_delta_fer double precision;
+  v_delta_silice double precision;
+  v_delta_xenogas double precision;
   v_new_fer double precision;
   v_new_silice double precision;
   v_new_xenogas double precision;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
-  PERFORM set_resource_tx_context('production', 'world_tick_materialize');
+  PERFORM set_resource_tx_context('production', 'tick_' || v_now::text);
 
+  -- Lock planet row first to prevent race conditions with transports
   SELECT last_update INTO v_last_update
   FROM planets
   WHERE id = p_planet_id AND user_id = p_user_id
@@ -352,8 +359,10 @@ BEGIN
     RETURN json_build_object('success', true, 'skipped', true);
   END IF;
 
+  -- Get production rates & storage caps from server defs (never client)
   SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
 
+  -- Lock and read CURRENT resource values (includes transports, loot, etc.)
   SELECT fer, silice, xenogas, energy INTO v_res
   FROM planet_resources
   WHERE planet_id = p_planet_id
@@ -366,12 +375,36 @@ BEGIN
     RETURN json_build_object('success', true, 'created', true);
   END IF;
 
-  v_new_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-    ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_new_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-    ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_new_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-    ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  -- Read current values (these ALREADY contain any transport/loot applied)
+  v_cur_fer := COALESCE(v_res.fer, 0);
+  v_cur_silice := COALESCE(v_res.silice, 0);
+  v_cur_xenogas := COALESCE(v_res.xenogas, 0);
+
+  -- Calculate production DELTA only (additive, never reset from zero)
+  v_delta_fer := (COALESCE(v_econ.prod_fer_h, 0) / 3600.0) * v_elapsed;
+  v_delta_silice := (COALESCE(v_econ.prod_silice_h, 0) / 3600.0) * v_elapsed;
+  v_delta_xenogas := (COALESCE(v_econ.prod_xenogas_h, 0) / 3600.0) * v_elapsed;
+
+  -- Apply delta to current values, capped at storage
+  -- If already at or above storage cap, do NOT reduce (transport/loot can exceed cap)
+  v_new_fer := CASE
+    WHEN v_cur_fer >= v_econ.storage_fer THEN v_cur_fer
+    ELSE LEAST(v_cur_fer + v_delta_fer, v_econ.storage_fer)
+  END;
+  v_new_silice := CASE
+    WHEN v_cur_silice >= v_econ.storage_silice THEN v_cur_silice
+    ELSE LEAST(v_cur_silice + v_delta_silice, v_econ.storage_silice)
+  END;
+  v_new_xenogas := CASE
+    WHEN v_cur_xenogas >= v_econ.storage_xenogas THEN v_cur_xenogas
+    ELSE LEAST(v_cur_xenogas + v_delta_xenogas, v_econ.storage_xenogas)
+  END;
+
+  RAISE NOTICE 'Planet %: fer %.2f -> %.2f (+%.2f, prod=%.2f/h, elapsed=%.1fs), silice %.2f -> %.2f (+%.2f), xenogas %.2f -> %.2f (+%.2f)',
+    p_planet_id,
+    v_cur_fer, v_new_fer, v_delta_fer, COALESCE(v_econ.prod_fer_h, 0), v_elapsed,
+    v_cur_silice, v_new_silice, v_delta_silice,
+    v_cur_xenogas, v_new_xenogas, v_delta_xenogas;
 
   UPDATE planet_resources
   SET fer = v_new_fer,
@@ -387,10 +420,14 @@ BEGIN
     'fer', v_new_fer,
     'silice', v_new_silice,
     'xenogas', v_new_xenogas,
-    'energy', v_econ.energy_net
+    'energy', v_econ.energy_net,
+    'delta_fer', v_delta_fer,
+    'delta_silice', v_delta_silice,
+    'delta_xenogas', v_delta_xenogas,
+    'elapsed_s', v_elapsed
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================
 -- 7. Purge old resource_transactions (maintenance)
