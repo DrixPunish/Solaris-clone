@@ -185,7 +185,7 @@ BEGIN
     v_slowest_speed := 1000;
   END IF;
 
-  v_flight_time_sec := GREATEST(30, ROUND(10 + 3500.0 * SQRT(v_distance * 10.0 / v_slowest_speed) / v_slowest_speed * 10.0));
+  v_flight_time_sec := GREATEST(1, CEIL(v_distance / v_slowest_speed));
 
   RETURN json_build_object(
     'success', true,
