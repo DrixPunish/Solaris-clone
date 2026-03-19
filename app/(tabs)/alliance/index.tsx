@@ -605,17 +605,19 @@ function AllianceView() {
   const appCount = alliance.pendingApplications.length;
   const showAppsTab = alliance.canManage;
 
+  const unreadChat = alliance.unreadMessageCount;
+
   const tabs = useMemo(() => {
     const base: { id: SubTab; label: string; Icon: React.ComponentType<{ size: number; color: string }>; badge: number }[] = [
       { id: 'members', label: 'Membres', Icon: Users, badge: 0 },
-      { id: 'chat', label: 'Chat', Icon: MessageCircle, badge: 0 },
+      { id: 'chat', label: 'Chat', Icon: MessageCircle, badge: unreadChat },
     ];
     if (showAppsTab) {
       base.push({ id: 'applications', label: 'Candidatures', Icon: FileText, badge: appCount });
     }
     base.push({ id: 'settings', label: 'Gestion', Icon: Settings, badge: 0 });
     return base;
-  }, [showAppsTab, appCount]);
+  }, [showAppsTab, appCount, unreadChat]);
 
   return (
     <View style={styles.container}>
@@ -1108,6 +1110,11 @@ function ChatTab() {
   const [message, setMessage] = useState('');
   const flatListRef = useRef<FlatList>(null);
 
+  const markChatAsRead = alliance.markChatAsRead;
+  useEffect(() => {
+    markChatAsRead();
+  }, [alliance.messages.length, markChatAsRead]);
+
   const refetchMessages = alliance.refetchMessages;
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1151,8 +1158,8 @@ function ChatTab() {
   return (
     <KeyboardAvoidingView
       style={styles.chatContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 150 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 160 : 80}
     >
       <FlatList
         ref={flatListRef}
@@ -1161,6 +1168,8 @@ function ChatTab() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.chatList}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         ListEmptyComponent={
           <View style={styles.chatEmpty}>
             <MessageCircle size={32} color={Colors.textMuted} />
@@ -1168,6 +1177,9 @@ function ChatTab() {
             <Text style={styles.chatEmptySubtext}>Soyez le premier à écrire !</Text>
           </View>
         }
+        onContentSizeChange={() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }}
       />
       <View style={styles.chatInputRow}>
         <TextInput
@@ -1179,6 +1191,11 @@ function ChatTab() {
           multiline
           maxLength={500}
           selectionColor={Colors.primary}
+          onFocus={() => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 200);
+          }}
         />
         <TouchableOpacity
           style={[styles.chatSendBtn, !message.trim() && styles.chatSendBtnDisabled]}

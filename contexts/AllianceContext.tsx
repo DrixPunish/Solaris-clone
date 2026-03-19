@@ -1,6 +1,7 @@
 import createContextHook from '@nkzw/create-context-hook';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGame } from '@/contexts/GameContext';
@@ -524,6 +525,40 @@ export const [AllianceProvider, useAlliance] = createContextHook(() => {
     void queryClient.invalidateQueries({ queryKey: ['alliance_messages'] });
   }, [queryClient]);
 
+  const [lastReadChatTimestamp, setLastReadChatTimestamp] = useState<string | null>(null);
+  const lastReadLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!userId || lastReadLoadedRef.current) return;
+    lastReadLoadedRef.current = true;
+    void AsyncStorage.getItem(`alliance_last_read_${userId}`).then((val) => {
+      if (val) setLastReadChatTimestamp(val);
+    });
+  }, [userId]);
+
+  const unreadMessageCount = useMemo(() => {
+    if (!userId || !allianceId) return 0;
+    const otherMessages = messages.filter(m => m.sender_id !== userId);
+    if (!lastReadChatTimestamp) return otherMessages.length;
+    return otherMessages.filter(m => m.created_at > lastReadChatTimestamp).length;
+  }, [messages, userId, allianceId, lastReadChatTimestamp]);
+
+  const markChatAsRead = useCallback(() => {
+    if (!userId || messages.length === 0) return;
+    const latestTimestamp = messages[messages.length - 1]?.created_at;
+    if (latestTimestamp) {
+      setLastReadChatTimestamp(latestTimestamp);
+      void AsyncStorage.setItem(`alliance_last_read_${userId}`, latestTimestamp);
+    }
+  }, [userId, messages]);
+
+  const totalNotifications = useMemo(() => {
+    let count = unreadMessageCount;
+    if (canManage) count += pendingApplications.length;
+    if (!allianceId) count += pendingInvitations.length;
+    return count;
+  }, [unreadMessageCount, canManage, pendingApplications.length, pendingInvitations.length, allianceId]);
+
   return useMemo(() => ({
     myAlliance,
     myRole,
@@ -559,6 +594,9 @@ export const [AllianceProvider, useAlliance] = createContextHook(() => {
     searchResults: searchAlliancesMutation.data ?? [],
     refreshAll: invalidateAll,
     refetchMessages,
+    unreadMessageCount,
+    markChatAsRead,
+    totalNotifications,
   }), [
     myAlliance, myRole, members, messages, pendingInvitations, isLoading, canManage,
     createAllianceMutation, leaveAllianceMutation, dissolveAllianceMutation,
@@ -567,5 +605,6 @@ export const [AllianceProvider, useAlliance] = createContextHook(() => {
     kickMemberMutation, invalidateAll, refetchMessages,
     allAlliances, allAlliancesQuery.isLoading, pendingApplications, myApplications,
     applyToAllianceMutation, processApplicationMutation, searchAlliancesMutation,
+    unreadMessageCount, markChatAsRead, totalNotifications,
   ]);
 });
