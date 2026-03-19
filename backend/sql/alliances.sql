@@ -3,13 +3,16 @@
 -- Run this in Supabase SQL Editor
 -- =============================================================
 
--- 1. Fix role constraint to use 'founder' instead of 'leader'
+-- 1. Drop old constraint
 ALTER TABLE alliance_members DROP CONSTRAINT IF EXISTS alliance_members_role_check;
+
+-- 2. Migrate existing roles FIRST (before adding new constraint)
+UPDATE alliance_members SET role = 'founder' WHERE role = 'leader';
+UPDATE alliance_members SET role = 'member' WHERE role NOT IN ('founder', 'officer', 'diplomat', 'member');
+
+-- 3. Add new constraint AFTER data is clean
 ALTER TABLE alliance_members ADD CONSTRAINT alliance_members_role_check
   CHECK(role IN ('founder', 'officer', 'diplomat', 'member'));
-
--- 2. Migrate existing 'leader' roles to 'founder'
-UPDATE alliance_members SET role = 'founder' WHERE role = 'leader';
 
 -- 3. Create alliance_applications table
 CREATE TABLE IF NOT EXISTS alliance_applications (
