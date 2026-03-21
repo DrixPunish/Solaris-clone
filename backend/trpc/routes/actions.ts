@@ -481,7 +481,8 @@ export const actionsRouter = createTRPCRouter({
       const departureTime = deductRes.departure_time ?? Date.now();
       const flightTimeSec = deductRes.flight_time_sec ?? 30;
       const arrivalTime = deductRes.arrival_time ?? (departureTime + flightTimeSec * 1000);
-      const returnTime = deductRes.return_time ?? (departureTime + flightTimeSec * 2000);
+      const isStationMission = input.missionType === 'station';
+      const returnTime = isStationMission ? null : (deductRes.return_time ?? (departureTime + flightTimeSec * 2000));
 
       console.log("[Actions] Server flight calc: distance flight_time_sec=", flightTimeSec, "arrival_time=", arrivalTime);
 
@@ -506,6 +507,8 @@ export const actionsRouter = createTRPCRouter({
         processed: false,
         fuel_consumed: fuelConsumed,
       });
+
+      console.log("[Actions] Fleet mission inserted:", input.missionType, "return_time:", returnTime, "isStation:", isStationMission);
 
       if (insertError) {
         console.log("[Actions] Error inserting fleet mission:", insertError.message);

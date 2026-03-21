@@ -56,13 +56,11 @@ const CountdownTimer = React.memo(function CountdownTimer({ endTime }: { endTime
   );
 });
 
-const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLevel, onRecall, isRecalling }: { mission: FleetMission; isSender: boolean; sonarLevel: number; onRecall?: (id: string) => void; isRecalling?: boolean }) {
+const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLevel, onRecall, isRecalling, expanded, onToggleExpand }: { mission: FleetMission; isSender: boolean; sonarLevel: number; onRecall?: (id: string) => void; isRecalling?: boolean; expanded: boolean; onToggleExpand: () => void }) {
   const config = MISSION_CONFIG[mission.mission_type] ?? MISSION_CONFIG.attack;
   const Icon = config.icon;
   const isReturning = mission.mission_phase === 'returning';
-  const expandedRef = useRef(false);
-  const [expanded, setExpanded] = useState(false);
-  const chevronAnim = useRef(new Animated.Value(0)).current;
+  const chevronAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const startTime = isReturning ? mission.arrival_time : mission.departure_time;
@@ -93,16 +91,17 @@ const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLe
 
   const visibility = isSender ? 'full' : getSonarVisibility(sonarLevel);
 
-  const toggleExpand = useCallback(() => {
-    const next = !expandedRef.current;
-    expandedRef.current = next;
-    setExpanded(next);
+  useEffect(() => {
     Animated.timing(chevronAnim, {
-      toValue: next ? 1 : 0,
+      toValue: expanded ? 1 : 0,
       duration: 200,
       useNativeDriver: true,
     }).start();
-  }, [chevronAnim]);
+  }, [expanded, chevronAnim]);
+
+  const toggleExpand = useCallback(() => {
+    onToggleExpand();
+  }, [onToggleExpand]);
 
   const chevronRotation = chevronAnim.interpolate({
     inputRange: [0, 1],
@@ -303,7 +302,8 @@ const MissionCard = React.memo(function MissionCard({ mission, isSender, sonarLe
     && prev.mission.return_time === next.mission.return_time
     && prev.isSender === next.isSender
     && prev.sonarLevel === next.sonarLevel
-    && prev.isRecalling === next.isRecalling;
+    && prev.isRecalling === next.isRecalling
+    && prev.expanded === next.expanded;
 });
 
 export default function FleetOverviewScreen() {
@@ -312,6 +312,19 @@ export default function FleetOverviewScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [recallingId, setRecallingId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -382,6 +395,8 @@ export default function FleetOverviewScreen() {
                   sonarLevel={sonarLevel}
                   onRecall={m.sender_id === userId ? handleRecall : undefined}
                   isRecalling={recallingId === m.id}
+                  expanded={expandedIds.has(m.id)}
+                  onToggleExpand={() => toggleExpanded(m.id)}
                 />
               ))}
             </>
@@ -396,6 +411,8 @@ export default function FleetOverviewScreen() {
                   mission={m}
                   isSender={m.sender_id === userId}
                   sonarLevel={sonarLevel}
+                  expanded={expandedIds.has(m.id)}
+                  onToggleExpand={() => toggleExpanded(m.id)}
                 />
               ))}
             </>
