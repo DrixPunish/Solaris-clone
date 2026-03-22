@@ -192,12 +192,13 @@ ON CONFLICT (defense_id) DO UPDATE SET
 
 -- 3a. Capacite de stockage pour un niveau de batiment de stockage
 -- Formule: 5000 * FLOOR(2.5 * e^(20*level/33))
+-- HARDENED: GREATEST(10000, ...) + COALESCE(level, 0) pour eviter NULL
 CREATE OR REPLACE FUNCTION calc_storage_cap(p_level int)
-RETURNS double precision AS $$
+RETURNS double precision AS $
 BEGIN
-  RETURN 5000.0 * FLOOR(2.5 * EXP(20.0 * p_level / 33.0));
+  RETURN GREATEST(10000.0, 5000.0 * FLOOR(2.5 * EXP(20.0 * COALESCE(p_level, 0) / 33.0)));
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$ LANGUAGE plpgsql IMMUTABLE;
 
 -- 3b. Niveau de laboratoire effectif avec Maillage Neuronal
 -- Combine le lab de la planete courante avec les labs des
@@ -247,6 +248,8 @@ $$ LANGUAGE plpgsql STABLE;
 -- Calcule production/h, stockage et energie nette
 -- a partir des niveaux de batiments, recherches et unites.
 -- Utilise uniquement les tables DB (aucune donnee client).
+-- HARDENED: COALESCE robuste, GREATEST(0,...) sur productions,
+--           colonnes de sortie supplementaires (niveaux stores/mines)
 CREATE OR REPLACE FUNCTION calc_planet_economy(
   p_planet_id uuid,
   p_user_id uuid,
@@ -256,8 +259,14 @@ CREATE OR REPLACE FUNCTION calc_planet_economy(
   OUT storage_fer double precision,
   OUT storage_silice double precision,
   OUT storage_xenogas double precision,
-  OUT energy_net double precision
-) AS $$
+  OUT energy_net double precision,
+  OUT ferro_store_level int,
+  OUT silica_store_level int,
+  OUT xeno_store_level int,
+  OUT fer_mine_level int,
+  OUT silice_mine_level int,
+  OUT xenogas_ref_level int
+) AS $
 DECLARE
   v_fer_mine int := 0;
   v_silice_mine int := 0;
@@ -292,6 +301,21 @@ BEGIN
   WHERE planet_id = p_planet_id
     AND building_id IN ('ferMine','siliceMine','xenogasRefinery','solarPlant','ferroStore','silicaStore','xenoStore');
 
+  v_fer_mine := COALESCE(v_fer_mine, 0);
+  v_silice_mine := COALESCE(v_silice_mine, 0);
+  v_xenogas_ref := COALESCE(v_xenogas_ref, 0);
+  v_solar_plant := COALESCE(v_solar_plant, 0);
+  v_ferro_store := COALESCE(v_ferro_store, 0);
+  v_silica_store := COALESCE(v_silica_store, 0);
+  v_xeno_store := COALESCE(v_xeno_store, 0);
+
+  ferro_store_level := v_ferro_store;
+  silica_store_level := v_silica_store;
+  xeno_store_level := v_xeno_store;
+  fer_mine_level := v_fer_mine;
+  silice_mine_level := v_silice_mine;
+  xenogas_ref_level := v_xenogas_ref;
+
   SELECT
     COALESCE(MAX(CASE WHEN research_id = 'quantumFlux' THEN level END), 0),
     COALESCE(MAX(CASE WHEN research_id = 'plasmaOverdrive' THEN level END), 0)
@@ -300,10 +324,14 @@ BEGIN
   WHERE user_id = p_user_id
     AND research_id IN ('quantumFlux','plasmaOverdrive');
 
+  v_quantum_flux := COALESCE(v_quantum_flux, 0);
+  v_plasma := COALESCE(v_plasma, 0);
+
   SELECT COALESCE(quantity, 0) INTO v_helios
   FROM planet_ships
   WHERE planet_id = p_planet_id AND ship_id = 'heliosRemorqueur';
   IF NOT FOUND THEN v_helios := 0; END IF;
+  v_helios := COALESCE(v_helios, 0);
 
   SELECT production_percentages INTO v_pct
   FROM planets WHERE id = p_planet_id;
@@ -316,12 +344,16 @@ BEGIN
     v_pct_helios := COALESCE((v_pct->>'heliosRemorqueur')::double precision, 100);
   END IF;
 
-  v_energy_prod := FLOOR(20.0 * v_solar_plant * POWER(1.1, v_solar_plant) * (1.0 + v_quantum_flux * 0.05) * (v_pct_solar / 100.0))
-                 + FLOOR(v_helios * 30.0 * (v_pct_helios / 100.0));
+  v_energy_prod := GREATEST(0,
+    FLOOR(20.0 * v_solar_plant * POWER(1.1, v_solar_plant) * (1.0 + v_quantum_flux * 0.05) * (v_pct_solar / 100.0))
+    + FLOOR(COALESCE(v_helios, 0) * 30.0 * (v_pct_helios / 100.0))
+  );
 
-  v_energy_cons := FLOOR(10.0 * v_fer_mine * POWER(1.1, v_fer_mine) * (v_pct_fer / 100.0))
-                 + FLOOR(10.0 * v_silice_mine * POWER(1.1, v_silice_mine) * (v_pct_silice / 100.0))
-                 + FLOOR(20.0 * v_xenogas_ref * POWER(1.1, v_xenogas_ref) * (v_pct_xenogas / 100.0));
+  v_energy_cons := GREATEST(0,
+    FLOOR(10.0 * v_fer_mine * POWER(1.1, v_fer_mine) * (v_pct_fer / 100.0))
+    + FLOOR(10.0 * v_silice_mine * POWER(1.1, v_silice_mine) * (v_pct_silice / 100.0))
+    + FLOOR(20.0 * v_xenogas_ref * POWER(1.1, v_xenogas_ref) * (v_pct_xenogas / 100.0))
+  );
 
   IF v_energy_cons > 0 THEN
     v_ratio := LEAST(1.0, v_energy_prod / v_energy_cons);
@@ -329,17 +361,25 @@ BEGIN
     v_ratio := 1.0;
   END IF;
 
-  prod_fer_h := 10 + FLOOR(30.0 * v_fer_mine * POWER(1.1, v_fer_mine) * v_ratio * (v_pct_fer / 100.0) * (1.0 + v_plasma * 0.01));
-  prod_silice_h := 5 + FLOOR(20.0 * v_silice_mine * POWER(1.1, v_silice_mine) * v_ratio * (v_pct_silice / 100.0) * (1.0 + v_plasma * 0.0066));
-  prod_xenogas_h := FLOOR(10.0 * v_xenogas_ref * POWER(1.1, v_xenogas_ref) * v_ratio * (v_pct_xenogas / 100.0) * (1.0 + v_plasma * 0.0033));
+  v_ratio := GREATEST(0, COALESCE(v_ratio, 1.0));
 
-  storage_fer := calc_storage_cap(v_ferro_store);
-  storage_silice := calc_storage_cap(v_silica_store);
-  storage_xenogas := calc_storage_cap(v_xeno_store);
+  prod_fer_h := GREATEST(0,
+    10 + FLOOR(30.0 * v_fer_mine * POWER(1.1, v_fer_mine) * v_ratio * (v_pct_fer / 100.0) * (1.0 + v_plasma * 0.01))
+  );
+  prod_silice_h := GREATEST(0,
+    5 + FLOOR(20.0 * v_silice_mine * POWER(1.1, v_silice_mine) * v_ratio * (v_pct_silice / 100.0) * (1.0 + v_plasma * 0.0066))
+  );
+  prod_xenogas_h := GREATEST(0,
+    FLOOR(10.0 * v_xenogas_ref * POWER(1.1, v_xenogas_ref) * v_ratio * (v_pct_xenogas / 100.0) * (1.0 + v_plasma * 0.0033))
+  );
 
-  energy_net := v_energy_prod - v_energy_cons;
+  storage_fer := GREATEST(10000, calc_storage_cap(v_ferro_store));
+  storage_silice := GREATEST(10000, calc_storage_cap(v_silica_store));
+  storage_xenogas := GREATEST(10000, calc_storage_cap(v_xeno_store));
+
+  energy_net := COALESCE(v_energy_prod, 0) - COALESCE(v_energy_cons, 0);
 END;
-$$ LANGUAGE plpgsql STABLE;
+$ LANGUAGE plpgsql STABLE;
 
 -- 3d. Cout d'un batiment a un niveau donne (fonction pure)
 -- Utile pour les RPC qui ont besoin du cout sans recalculer
