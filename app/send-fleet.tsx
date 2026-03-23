@@ -100,14 +100,26 @@ export default function SendFleetScreen() {
   const fetchServerResources = useCallback(async (): Promise<{ fer: number; silice: number; xenogas: number } | null> => {
     if (!userId || !activePlanetId) return null;
     try {
-      const result = await trpcClient.world.getPlanetResources.query({ planetId: activePlanetId, userId });
-      if (result.success) {
-        const res = { fer: result.fer, silice: result.silice, xenogas: result.xenogas };
+      const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+      const url = `${baseUrl}/api/trpc/world.getPlanetResources?input=${encodeURIComponent(JSON.stringify({ json: { planetId: activePlanetId, userId } }))}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store',
+          'Pragma': 'no-cache',
+        },
+        cache: 'no-store',
+      });
+      const json = await response.json();
+      const resultData = json?.result?.data?.json;
+      if (resultData?.success) {
+        const res = { fer: resultData.fer as number, silice: resultData.silice as number, xenogas: resultData.xenogas as number };
         setServerResources(res);
-        console.log('[SendFleet] Server resources fetched:', res);
+        console.log('[SendFleet] Server resources FRESH fetched:', res);
         return res;
       }
-      console.log('[SendFleet] Server resources fetch failed:', result.error);
+      console.log('[SendFleet] Server resources fetch failed:', resultData?.error ?? 'unknown');
       return null;
     } catch (err) {
       console.log('[SendFleet] Server resources fetch error:', err);
@@ -204,11 +216,20 @@ export default function SendFleetScreen() {
   const travelTime = serverFlightData?.flight_time_sec ?? 0;
   const distance = serverFlightData?.distance ?? 0;
   const fuelCost = serverFlightData?.fuel_cost ?? 0;
-  const effectiveResources = useMemo(() => ({
-    fer: Math.floor(serverResources?.fer ?? planetResources.fer),
-    silice: Math.floor(serverResources?.silice ?? planetResources.silice),
-    xenogas: Math.floor(serverResources?.xenogas ?? planetResources.xenogas),
-  }), [serverResources, planetResources]);
+  const effectiveResources = useMemo(() => {
+    if (serverResources) {
+      return {
+        fer: Math.floor(serverResources.fer),
+        silice: Math.floor(serverResources.silice),
+        xenogas: Math.floor(serverResources.xenogas),
+      };
+    }
+    return {
+      fer: Math.floor(planetResources.fer),
+      silice: Math.floor(planetResources.silice),
+      xenogas: Math.floor(planetResources.xenogas),
+    };
+  }, [serverResources, planetResources]);
 
   const availableXenogas = effectiveResources.xenogas;
   const cargoXenogas = showResourceInputs ? transportResources.xenogas : isColonize ? colonizeResources.xenogas : 0;
@@ -527,9 +548,15 @@ export default function SendFleetScreen() {
                           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                           setMaxLoading(res);
                           const freshRes = await fetchServerResources();
-                          const serverVal = Math.floor(freshRes?.[res] ?? planetResources[res]);
+                          if (!freshRes) {
+                            console.log('[SendFleet] MAX: server fetch failed, aborting');
+                            setMaxLoading(null);
+                            return;
+                          }
+                          const serverVal = Math.floor(freshRes[res]);
                           const otherTot = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res).reduce((sum, r) => sum + transportResources[r], 0);
                           const maxSafe = Math.max(0, Math.min(serverVal, cargoCapacity - otherTot));
+                          console.log('[SendFleet] MAX', res, ': server=', serverVal, 'otherCargo=', otherTot, 'maxSafe=', maxSafe);
                           setTransportResources(prev => ({ ...prev, [res]: maxSafe }));
                           setMaxLoading(null);
                         }}
@@ -585,9 +612,15 @@ export default function SendFleetScreen() {
                           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                           setMaxLoading(res);
                           const freshRes = await fetchServerResources();
-                          const serverVal = Math.floor(freshRes?.[res] ?? planetResources[res]);
+                          if (!freshRes) {
+                            console.log('[SendFleet] MAX colonize: server fetch failed, aborting');
+                            setMaxLoading(null);
+                            return;
+                          }
+                          const serverVal = Math.floor(freshRes[res]);
                           const otherTot = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res).reduce((sum, r) => sum + colonizeResources[r], 0);
                           const maxSafe = Math.max(0, Math.min(serverVal, cargoCapacity - otherTot));
+                          console.log('[SendFleet] MAX colonize', res, ': server=', serverVal, 'maxSafe=', maxSafe);
                           setColonizeResources(prev => ({ ...prev, [res]: maxSafe }));
                           setMaxLoading(null);
                         }}
