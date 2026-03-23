@@ -180,9 +180,8 @@ export const worldRouter = createTRPCRouter({
     .query(async ({ input }) => {
       const { data, error } = await supabase
         .from('planet_resources')
-        .select('fer, silice, xenogas, energy, last_updated')
+        .select('fer, silice, xenogas, energy')
         .eq('planet_id', input.planetId)
-        .eq('user_id', input.userId)
         .maybeSingle();
 
       if (error) {
@@ -201,7 +200,6 @@ export const worldRouter = createTRPCRouter({
         silice: data.silice as number,
         xenogas: data.xenogas as number,
         energy: data.energy as number,
-        last_updated: data.last_updated as string,
       };
     }),
 
