@@ -1098,42 +1098,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     }
   }, [userId, saveState, setActionError]);
 
-  const deductFleetShips = useCallback((ships: Record<string, number>, resources?: { fer: number; silice: number; xenogas: number }) => {
-    setState(prev => {
-      const currentActivePlanetId = activePlanetId;
-      if (currentActivePlanetId) {
-        const colonies = (prev.colonies ?? []).map(c => {
-          if (c.id !== currentActivePlanetId) return c;
-          const newShips = { ...c.ships };
-          for (const [id, count] of Object.entries(ships)) {
-            newShips[id] = Math.max(0, (newShips[id] ?? 0) - count);
-          }
-          const newResources = { ...c.resources };
-          if (resources) {
-            newResources.fer = Math.max(0, newResources.fer - resources.fer);
-            newResources.silice = Math.max(0, newResources.silice - resources.silice);
-            newResources.xenogas = Math.max(0, newResources.xenogas - resources.xenogas);
-          }
-          return { ...c, ships: newShips, resources: newResources };
-        });
-        console.log('[GameContext] Deducting fleet ships from colony (optimistic)', currentActivePlanetId, ships);
-        return { ...prev, colonies };
-      }
 
-      const newShips = { ...prev.ships };
-      for (const [id, count] of Object.entries(ships)) {
-        newShips[id] = Math.max(0, (newShips[id] ?? 0) - count);
-      }
-      const newResources = { ...prev.resources };
-      if (resources) {
-        newResources.fer = Math.max(0, newResources.fer - resources.fer);
-        newResources.silice = Math.max(0, newResources.silice - resources.silice);
-        newResources.xenogas = Math.max(0, newResources.xenogas - resources.xenogas);
-      }
-      console.log('[GameContext] Deducting fleet ships from main planet (optimistic)', ships);
-      return { ...prev, ships: newShips, resources: newResources };
-    });
-  }, [activePlanetId]);
 
 
 
@@ -2084,7 +2049,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     getMaxBuildableQuantity,
     setUsername,
     renamePlanet,
-    deductFleetShips,
+    forceResync: resyncFromServer,
     needsUsername,
     userId,
     userEmail,
@@ -2126,7 +2091,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     state, production, upgradeBuilding, upgradeResearch, buildShipQueue, buildDefenseQueue,
     rushWithSolar, rushShipyardWithSolar, cancelUpgrade, cancelShipyardQueue, getTimerForId,
     isUpgrading, getShipyardQueueItem, getMaxBuildableQuantity, setUsername, renamePlanet,
-    deductFleetShips, needsUsername, userId, userEmail, isLoading,
+    resyncFromServer, needsUsername, userId, userEmail, isLoading,
     addColony, removeColony, renameColony, upgradeColonyBuilding, buildColonyShipQueue,
     buildColonyDefenseQueue, cancelColonyUpgrade, upgradeColonyResearch, rushColonyWithSolar,
     cancelColonyShipyardQueue, rushColonyShipyardWithSolar, getColonyMaxBuildableQuantity,

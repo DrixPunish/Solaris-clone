@@ -300,7 +300,7 @@ export default function SendFleetScreen() {
         msg = String((e as { message: string }).message);
       }
       console.log('[SendFleet] Error sending fleet:', msg, e);
-      showGameAlert('Erreur', msg);
+      showGameAlert('Erreur d\'envoi', `Le serveur a refusé la mission : ${msg}`);
     }
   }, [hasShips, fleetForCalc, targetCoords, params, missionType, transportResources, colonizeResources, sendFleet, travelTime, router, serverFlightData, isLoadingFlight, insufficientFuel, totalXenogasNeeded, fuelCost, cargoXenogas, availableXenogas, showResourceInputs, isColonize]);
 
@@ -615,8 +615,9 @@ export default function SendFleetScreen() {
               activeOpacity={0.7}
             >
               <Rocket size={18} color={hasShips && !isSending && !insufficientFuel ? '#0A0A14' : Colors.textMuted} />
+              {isSending && <ActivityIndicator size="small" color={Colors.textMuted} style={{ marginRight: 4 }} />}
               <Text style={[styles.sendText, (!hasShips || isSending || insufficientFuel) && styles.sendTextDisabled]}>
-                {isSending ? 'Envoi en cours...' : insufficientFuel ? 'Xenogas insuffisant' : 'Lancer la mission'}
+                {isSending ? 'Vérification serveur...' : insufficientFuel ? 'Xenogas insuffisant' : 'Lancer la mission'}
               </Text>
             </TouchableOpacity>
 

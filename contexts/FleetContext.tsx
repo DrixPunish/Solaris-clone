@@ -14,7 +14,7 @@ const DELETED_REPORTS_KEY = 'deleted_report_ids';
 export const [FleetProvider, useFleet] = createContextHook(() => {
   useAuth();
   const {
-    state, userId, deductFleetShips, activePlanet: gamActivePlanet,
+    state, userId, forceResync, activePlanet: gamActivePlanet,
   } = useGame();
   const queryClient = useQueryClient();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
@@ -111,12 +111,19 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
         throw new Error(result.error || 'Fleet dispatch failed');
       }
 
-      deductFleetShips(params.ships, params.resources);
-
-      void queryClient.invalidateQueries({ queryKey: ['fleet_missions'] });
       const flightTimeSec = result.flightTimeSec ?? 30;
       console.log('[FleetContext] Fleet sent successfully (server-side time), arrival in', flightTimeSec, 's');
       return { travelTime: flightTimeSec, arrivalTime: result.arrivalTime };
+    },
+    onSuccess: () => {
+      console.log('[FleetContext] Fleet send success — forcing resync from server');
+      void queryClient.invalidateQueries({ queryKey: ['fleet_missions'] });
+      void forceResync();
+    },
+    onError: (error) => {
+      console.log('[FleetContext] Fleet send error — forcing resync from server:', error.message);
+      void queryClient.invalidateQueries({ queryKey: ['fleet_missions'] });
+      void forceResync();
     },
   });
 
