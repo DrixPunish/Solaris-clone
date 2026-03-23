@@ -92,6 +92,28 @@ export default function SendFleetScreen() {
   const planetCoords = activePlanet.coordinates;
   const planetResources = activePlanet.resources;
   const planetName = activePlanet.planetName;
+  const activePlanetId = activePlanet.id;
+
+  const [serverResources, setServerResources] = useState<{ fer: number; silice: number; xenogas: number } | null>(null);
+  const [maxLoading, setMaxLoading] = useState<'fer' | 'silice' | 'xenogas' | null>(null);
+
+  const fetchServerResources = useCallback(async (): Promise<{ fer: number; silice: number; xenogas: number } | null> => {
+    if (!userId || !activePlanetId) return null;
+    try {
+      const result = await trpcClient.world.getPlanetResources.query({ planetId: activePlanetId, userId });
+      if (result.success) {
+        const res = { fer: result.fer, silice: result.silice, xenogas: result.xenogas };
+        setServerResources(res);
+        console.log('[SendFleet] Server resources fetched:', res);
+        return res;
+      }
+      console.log('[SendFleet] Server resources fetch failed:', result.error);
+      return null;
+    } catch (err) {
+      console.log('[SendFleet] Server resources fetch error:', err);
+      return null;
+    }
+  }, [userId, activePlanetId]);
 
   const availableShips = useMemo(() => {
     return SHIPS.filter(s => (planetShips[s.id] ?? 0) > 0);
@@ -182,7 +204,13 @@ export default function SendFleetScreen() {
   const travelTime = serverFlightData?.flight_time_sec ?? 0;
   const distance = serverFlightData?.distance ?? 0;
   const fuelCost = serverFlightData?.fuel_cost ?? 0;
-  const availableXenogas = Math.floor(planetResources.xenogas);
+  const effectiveResources = useMemo(() => ({
+    fer: Math.floor(serverResources?.fer ?? planetResources.fer),
+    silice: Math.floor(serverResources?.silice ?? planetResources.silice),
+    xenogas: Math.floor(serverResources?.xenogas ?? planetResources.xenogas),
+  }), [serverResources, planetResources]);
+
+  const availableXenogas = effectiveResources.xenogas;
   const cargoXenogas = showResourceInputs ? transportResources.xenogas : isColonize ? colonizeResources.xenogas : 0;
   const totalXenogasNeeded = fuelCost + cargoXenogas;
   const insufficientFuel = hasShips && fuelCost > 0 && availableXenogas < totalXenogasNeeded;
@@ -475,7 +503,7 @@ export default function SendFleetScreen() {
                 {(['fer', 'silice', 'xenogas'] as const).map(res => {
                   const otherResources = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res);
                   const otherTotal = otherResources.reduce((sum, r) => sum + transportResources[r], 0);
-                  const maxForThisRes = Math.min(Math.floor(planetResources[res]), cargoCapacity - otherTotal);
+                  const maxForThisRes = Math.min(effectiveResources[res], cargoCapacity - otherTotal);
                   return (
                     <View key={res} style={styles.resourceRow}>
                       <Text style={styles.resLabel}>{res.charAt(0).toUpperCase() + res.slice(1)}</Text>
@@ -494,19 +522,27 @@ export default function SendFleetScreen() {
                         selectTextOnFocus
                       />
                       <TouchableOpacity
-                        style={styles.resMaxBtn}
-                        onPress={() => {
+                        style={[styles.resMaxBtn, maxLoading === res && styles.resMaxBtnLoading]}
+                        onPress={async () => {
                           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setTransportResources(prev => ({
-                            ...prev,
-                            [res]: Math.max(0, maxForThisRes),
-                          }));
+                          setMaxLoading(res);
+                          const freshRes = await fetchServerResources();
+                          const serverVal = Math.floor(freshRes?.[res] ?? planetResources[res]);
+                          const otherTot = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res).reduce((sum, r) => sum + transportResources[r], 0);
+                          const maxSafe = Math.max(0, Math.min(serverVal, cargoCapacity - otherTot));
+                          setTransportResources(prev => ({ ...prev, [res]: maxSafe }));
+                          setMaxLoading(null);
                         }}
                         activeOpacity={0.7}
+                        disabled={maxLoading === res}
                       >
-                        <Text style={styles.resMaxText}>MAX</Text>
+                        {maxLoading === res ? (
+                          <ActivityIndicator size="small" color={Colors.primary} />
+                        ) : (
+                          <Text style={styles.resMaxText}>MAX</Text>
+                        )}
                       </TouchableOpacity>
-                      <Text style={styles.resAvailable}>/ {formatNumber(Math.floor(planetResources[res]))}</Text>
+                      <Text style={styles.resAvailable}>/ {formatNumber(effectiveResources[res])}</Text>
                     </View>
                   );
                 })}
@@ -525,7 +561,7 @@ export default function SendFleetScreen() {
                 {(['fer', 'silice', 'xenogas'] as const).map(res => {
                   const otherResources = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res);
                   const otherTotal = otherResources.reduce((sum, r) => sum + colonizeResources[r], 0);
-                  const maxForThisRes = Math.min(Math.floor(planetResources[res]), cargoCapacity - otherTotal);
+                  const maxForThisRes = Math.min(effectiveResources[res], cargoCapacity - otherTotal);
                   return (
                     <View key={res} style={styles.resourceRow}>
                       <Text style={styles.resLabel}>{res.charAt(0).toUpperCase() + res.slice(1)}</Text>
@@ -544,19 +580,27 @@ export default function SendFleetScreen() {
                         selectTextOnFocus
                       />
                       <TouchableOpacity
-                        style={styles.resMaxBtn}
-                        onPress={() => {
+                        style={[styles.resMaxBtn, maxLoading === res && styles.resMaxBtnLoading]}
+                        onPress={async () => {
                           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setColonizeResources(prev => ({
-                            ...prev,
-                            [res]: Math.max(0, maxForThisRes),
-                          }));
+                          setMaxLoading(res);
+                          const freshRes = await fetchServerResources();
+                          const serverVal = Math.floor(freshRes?.[res] ?? planetResources[res]);
+                          const otherTot = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res).reduce((sum, r) => sum + colonizeResources[r], 0);
+                          const maxSafe = Math.max(0, Math.min(serverVal, cargoCapacity - otherTot));
+                          setColonizeResources(prev => ({ ...prev, [res]: maxSafe }));
+                          setMaxLoading(null);
                         }}
                         activeOpacity={0.7}
+                        disabled={maxLoading === res}
                       >
-                        <Text style={styles.resMaxText}>MAX</Text>
+                        {maxLoading === res ? (
+                          <ActivityIndicator size="small" color={Colors.primary} />
+                        ) : (
+                          <Text style={styles.resMaxText}>MAX</Text>
+                        )}
                       </TouchableOpacity>
-                      <Text style={styles.resAvailable}>/ {formatNumber(Math.floor(planetResources[res]))}</Text>
+                      <Text style={styles.resAvailable}>/ {formatNumber(effectiveResources[res])}</Text>
                     </View>
                   );
                 })}
@@ -842,6 +886,9 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontSize: 10,
     fontWeight: '700' as const,
+  },
+  resMaxBtnLoading: {
+    opacity: 0.6,
   },
   resAvailable: {
     color: Colors.textMuted,

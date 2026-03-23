@@ -175,6 +175,36 @@ export const worldRouter = createTRPCRouter({
       return { success: true as const, players: rows };
     }),
 
+  getPlanetResources: publicProcedure
+    .input(z.object({ planetId: z.string(), userId: z.string() }))
+    .query(async ({ input }) => {
+      const { data, error } = await supabase
+        .from('planet_resources')
+        .select('fer, silice, xenogas, energy, last_updated')
+        .eq('planet_id', input.planetId)
+        .eq('user_id', input.userId)
+        .maybeSingle();
+
+      if (error) {
+        console.log('[tRPC] Error fetching planet resources:', error.message);
+        return { success: false as const, error: error.message };
+      }
+
+      if (!data) {
+        return { success: false as const, error: 'Planet not found' };
+      }
+
+      console.log('[tRPC] Planet resources fetched:', input.planetId, 'fer:', data.fer, 'silice:', data.silice, 'xenogas:', data.xenogas);
+      return {
+        success: true as const,
+        fer: data.fer as number,
+        silice: data.silice as number,
+        xenogas: data.xenogas as number,
+        energy: data.energy as number,
+        last_updated: data.last_updated as string,
+      };
+    }),
+
   getPlayerScore: publicProcedure
     .input(z.object({ userId: z.string() }))
     .query(async ({ input }) => {
