@@ -1,46 +1,13 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Database, Shield, Rocket, Building2, FlaskConical, Zap, Package, Globe, Crown } from 'lucide-react-native';
+import { ArrowLeft, Database, Shield, Rocket, Building2, FlaskConical, Zap, Package } from 'lucide-react-native';
 import { useGame } from '@/contexts/GameContext';
-import { formatNumber, getResourceStorageCapacity, calculateCost } from '@/utils/gameCalculations';
-import { BUILDINGS, SHIPS, DEFENSES } from '@/constants/gameData';
+import { formatNumber, getResourceStorageCapacity } from '@/utils/gameCalculations';
+import { SHIPS, DEFENSES } from '@/constants/gameData';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
-
-function sumResources(cost: { fer: number; silice: number; xenogas: number }): number {
-  return cost.fer + cost.silice + cost.xenogas;
-}
-
-function localBuildingPoints(buildings: Record<string, number>): number {
-  let total = 0;
-  for (const building of BUILDINGS) {
-    const level = buildings[building.id] ?? 0;
-    for (let i = 0; i < level; i++) {
-      total += sumResources(calculateCost(building.baseCost, building.costFactor, i));
-    }
-  }
-  return total;
-}
-
-function localFleetPoints(ships: Record<string, number>): number {
-  let total = 0;
-  for (const ship of SHIPS) {
-    const count = ships[ship.id] ?? 0;
-    total += ((ship.cost.fer ?? 0) + (ship.cost.silice ?? 0) + (ship.cost.xenogas ?? 0)) * count;
-  }
-  return total;
-}
-
-function localDefensePoints(defenses: Record<string, number>): number {
-  let total = 0;
-  for (const def of DEFENSES) {
-    const count = defenses[def.id] ?? 0;
-    total += ((def.cost.fer ?? 0) + (def.cost.silice ?? 0) + (def.cost.xenogas ?? 0)) * count;
-  }
-  return total;
-}
 
 function ProductionBar({ label, value, maxValue, color }: { label: string; value: number; maxValue: number; color: string }) {
   const ratio = maxValue > 0 ? Math.min(1, value / maxValue) : 0;
@@ -91,81 +58,9 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
   );
 }
 
-type TabId = 'overview' | 'planets';
-
-interface PlanetScoreData {
-  id: string;
-  name: string;
-  coordinates: [number, number, number];
-  isMain: boolean;
-  building: number;
-  fleet: number;
-  defense: number;
-  total: number;
-}
-
-function PlanetScoreCard({ planet, maxTotal }: { planet: PlanetScoreData; maxTotal: number }) {
-  const totalPts = Math.floor(planet.total / 1000);
-  const buildPts = Math.floor(planet.building / 1000);
-  const fleetPts = Math.floor(planet.fleet / 1000);
-  const defPts = Math.floor(planet.defense / 1000);
-  const ratio = maxTotal > 0 ? Math.min(1, planet.total / maxTotal) : 0;
-
-  const categories = [
-    { label: 'Bâtiments', pts: buildPts, raw: planet.building, color: Colors.primary, icon: <Building2 size={12} color={Colors.primary} /> },
-    { label: 'Flotte', pts: fleetPts, raw: planet.fleet, color: Colors.accent, icon: <Rocket size={12} color={Colors.accent} /> },
-    { label: 'Défense', pts: defPts, raw: planet.defense, color: Colors.success, icon: <Shield size={12} color={Colors.success} /> },
-  ];
-  const maxCat = Math.max(planet.building, planet.fleet, planet.defense, 1);
-
-  return (
-    <View style={planetStyles.card}>
-      <View style={planetStyles.cardHeader}>
-        <View style={planetStyles.nameRow}>
-          {planet.isMain ? (
-            <Crown size={14} color={Colors.primary} />
-          ) : (
-            <Globe size={14} color={Colors.xenogas} />
-          )}
-          <Text style={planetStyles.planetName}>{planet.name}</Text>
-          {planet.isMain && <View style={planetStyles.mainBadge}><Text style={planetStyles.mainBadgeText}>Principal</Text></View>}
-        </View>
-        <Text style={planetStyles.coords}>[{planet.coordinates.join(':')}]</Text>
-      </View>
-
-      <View style={planetStyles.totalRow}>
-        <Text style={planetStyles.totalLabel}>Score total</Text>
-        <Text style={planetStyles.totalValue}>{formatNumber(totalPts)} pts</Text>
-      </View>
-      <View style={planetStyles.totalBarBg}>
-        <View style={[planetStyles.totalBarFill, { width: `${Math.max(2, ratio * 100)}%` as unknown as number }]} />
-      </View>
-
-      <View style={planetStyles.breakdown}>
-        {categories.map(cat => {
-          const catRatio = maxCat > 0 ? Math.min(1, cat.raw / maxCat) : 0;
-          return (
-            <View key={cat.label} style={planetStyles.catRow}>
-              <View style={planetStyles.catLabelRow}>
-                {cat.icon}
-                <Text style={planetStyles.catLabel}>{cat.label}</Text>
-                <Text style={[planetStyles.catValue, { color: cat.color }]}>{formatNumber(cat.pts)}</Text>
-              </View>
-              <View style={planetStyles.catBarBg}>
-                <View style={[planetStyles.catBarFill, { width: `${Math.max(2, catRatio * 100)}%` as unknown as number, backgroundColor: cat.color }]} />
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 export default function StatisticsScreen() {
   const router = useRouter();
   const { state, production } = useGame();
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
 
   const storageCap = useMemo(() => getResourceStorageCapacity(state.buildings), [state.buildings]);
 
@@ -206,48 +101,6 @@ export default function StatisticsScreen() {
     xenogas: production.xenogas * 24,
   }), [production]);
 
-  const planetScores = useMemo<PlanetScoreData[]>(() => {
-    const planets: PlanetScoreData[] = [];
-
-    const mainBuild = localBuildingPoints(state.buildings);
-    const mainFleet = localFleetPoints(state.ships);
-    const mainDef = localDefensePoints(state.defenses);
-    planets.push({
-      id: 'main',
-      name: state.planetName,
-      coordinates: state.coordinates,
-      isMain: true,
-      building: mainBuild,
-      fleet: mainFleet,
-      defense: mainDef,
-      total: mainBuild + mainFleet + mainDef,
-    });
-
-    for (const colony of (state.colonies ?? [])) {
-      const bPts = localBuildingPoints(colony.buildings);
-      const fPts = localFleetPoints(colony.ships);
-      const dPts = localDefensePoints(colony.defenses);
-      planets.push({
-        id: colony.id,
-        name: colony.planetName,
-        coordinates: colony.coordinates,
-        isMain: false,
-        building: bPts,
-        fleet: fPts,
-        defense: dPts,
-        total: bPts + fPts + dPts,
-      });
-    }
-
-    return planets.sort((a, b) => b.total - a.total);
-  }, [state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.colonies]);
-
-  const maxPlanetTotal = useMemo(() => Math.max(...planetScores.map(p => p.total), 1), [planetScores]);
-
-  const researchPts = useMemo(() => scores.research, [scores.research]);
-
-  const handleTabPress = useCallback((tab: TabId) => { setActiveTab(tab); }, []);
-
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -260,23 +113,6 @@ export default function StatisticsScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        <View style={tabStyles.tabBar}>
-          <TouchableOpacity
-            style={[tabStyles.tab, activeTab === 'overview' && tabStyles.tabActive]}
-            onPress={() => handleTabPress('overview')}
-            activeOpacity={0.7}
-          >
-            <Text style={[tabStyles.tabText, activeTab === 'overview' && tabStyles.tabTextActive]}>Vue générale</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[tabStyles.tab, activeTab === 'planets' && tabStyles.tabActive]}
-            onPress={() => handleTabPress('planets')}
-            activeOpacity={0.7}
-          >
-            <Text style={[tabStyles.tabText, activeTab === 'planets' && tabStyles.tabTextActive]}>Par planète</Text>
-          </TouchableOpacity>
-        </View>
-
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.scoreHeader}>
             <Text style={styles.scoreLabel}>Score Total</Text>
@@ -286,31 +122,8 @@ export default function StatisticsScreen() {
               <Text style={styles.scoreValue}>{formatNumber(totalScore)}</Text>
             )}
             <Text style={styles.scoreUnit}>points</Text>
+            <Text style={styles.scoreSync}>Données serveur</Text>
           </View>
-
-          {activeTab === 'planets' ? (
-            <>
-              <View style={planetStyles.researchGlobal}>
-                <FlaskConical size={14} color={Colors.silice} />
-                <Text style={planetStyles.researchLabel}>Recherche (global)</Text>
-                <Text style={planetStyles.researchValue}>{formatNumber(researchPts)} pts</Text>
-              </View>
-
-              {planetScores.map(planet => (
-                <PlanetScoreCard key={planet.id} planet={planet} maxTotal={maxPlanetTotal} />
-              ))}
-
-              {planetScores.length === 1 && (
-                <View style={planetStyles.emptyHint}>
-                  <Globe size={20} color={Colors.textMuted} />
-                  <Text style={planetStyles.emptyText}>Colonisez d'autres planètes pour voir la comparaison</Text>
-                </View>
-              )}
-
-              <View style={{ height: 40 }} />
-            </>
-          ) : (
-            <>
 
           <Text style={styles.sectionTitle}>Production par heure</Text>
           <View style={styles.section}>
@@ -423,8 +236,6 @@ export default function StatisticsScreen() {
           </View>
 
           <View style={{ height: 40 }} />
-            </>
-          )}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -458,6 +269,7 @@ const styles = StyleSheet.create({
   scoreLabel: { color: Colors.textMuted, fontSize: 12, fontWeight: '600' as const, textTransform: 'uppercase' as const, letterSpacing: 1 },
   scoreValue: { color: Colors.primary, fontSize: 36, fontWeight: '800' as const, marginTop: 4 },
   scoreUnit: { color: Colors.textSecondary, fontSize: 12, marginTop: 2 },
+  scoreSync: { color: Colors.textMuted, fontSize: 10, marginTop: 6, fontStyle: 'italic' as const },
   sectionTitle: {
     color: Colors.textSecondary,
     fontSize: 12,
@@ -553,173 +365,4 @@ const fleetStyles = StyleSheet.create({
   count: { color: Colors.primary, fontSize: 13, fontWeight: '700' as const },
 });
 
-const tabStyles = StyleSheet.create({
-  tabBar: {
-    flexDirection: 'row' as const,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-    gap: 8,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: Colors.surface,
-    alignItems: 'center' as const,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  tabActive: {
-    backgroundColor: Colors.primary + '18',
-    borderColor: Colors.primary + '50',
-  },
-  tabText: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-  tabTextActive: {
-    color: Colors.primary,
-  },
-});
 
-const planetStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    marginBottom: 12,
-  },
-  nameRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    flex: 1,
-  },
-  planetName: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  mainBadge: {
-    backgroundColor: Colors.primary + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-  },
-  mainBadgeText: {
-    color: Colors.primary,
-    fontSize: 9,
-    fontWeight: '700' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  coords: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    fontWeight: '500' as const,
-  },
-  totalRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    marginBottom: 6,
-  },
-  totalLabel: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  totalValue: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '800' as const,
-  },
-  totalBarBg: {
-    height: 5,
-    backgroundColor: Colors.surface,
-    borderRadius: 3,
-    overflow: 'hidden' as const,
-    marginBottom: 12,
-  },
-  totalBarFill: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
-  breakdown: {
-    gap: 8,
-  },
-  catRow: {},
-  catLabelRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 6,
-    marginBottom: 4,
-  },
-  catLabel: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '500' as const,
-    flex: 1,
-  },
-  catValue: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-  catBarBg: {
-    height: 4,
-    backgroundColor: Colors.surface,
-    borderRadius: 2,
-    overflow: 'hidden' as const,
-  },
-  catBarFill: {
-    height: 4,
-    borderRadius: 2,
-  },
-  researchGlobal: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.silice + '30',
-    marginBottom: 16,
-  },
-  researchLabel: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: '500' as const,
-    flex: 1,
-  },
-  researchValue: {
-    color: Colors.silice,
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
-  emptyHint: {
-    alignItems: 'center' as const,
-    gap: 8,
-    paddingVertical: 24,
-  },
-  emptyText: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center' as const,
-  },
-});
