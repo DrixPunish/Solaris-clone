@@ -1,0 +1,9 @@
+{
+  "apps": [
+    {
+      "name": "Solaris",
+      "path": ".",
+      "framework": "react-native"
+    }
+  ]
+}
