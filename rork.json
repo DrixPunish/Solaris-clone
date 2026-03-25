@@ -5,6 +5,11 @@
       "name": "Solaris",
       "path": ".",
       "framework": "react-native"
+    },
+    {
+      "name": "Solaris",
+      "path": "expo",
+      "framework": "react-native"
     }
   ]
 }
