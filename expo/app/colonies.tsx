@@ -15,6 +15,8 @@ export default function ColoniesScreen() {
   const colonies = state.colonies ?? [];
   const astroLevel = state.research.astrophysics ?? 0;
 
+  const pendingDeleteRef = React.useRef<string | null>(null);
+
   const handleDeleteColony = useCallback((colonyId: string, colonyName: string) => {
     showGameAlert(
       'Abandonner la colonie',
@@ -25,8 +27,14 @@ export default function ColoniesScreen() {
           text: 'Abandonner',
           style: 'destructive',
           onPress: () => {
-            removeColony(colonyId);
-            console.log('[Colonies] Removed colony', colonyId);
+            pendingDeleteRef.current = colonyId;
+            setTimeout(() => {
+              if (pendingDeleteRef.current) {
+                console.log('[Colonies] Removing colony (deferred)', pendingDeleteRef.current);
+                removeColony(pendingDeleteRef.current);
+                pendingDeleteRef.current = null;
+              }
+            }, 300);
           },
         },
       ],
