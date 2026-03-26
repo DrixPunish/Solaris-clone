@@ -167,7 +167,7 @@ export default function GalaxyScreen() {
   const scoresQuery = useQuery({
     queryKey: ['player_scores_galaxy', user?.id, ...playerIds],
     queryFn: async () => {
-      if (!user?.id || playerIds.length === 0) return { attackerPts: 0, defenderScores: new Map<string, number>() };
+      if (!user?.id || playerIds.length === 0) return { attackerPts: 0, defenderScores: new Map<string, number>(), shieldedPlayers: new Set<string>() };
 
       const { data: attackerData } = await supabase
         .from('player_scores')
@@ -185,7 +185,20 @@ export default function GalaxyScreen() {
       for (const d of (defenderData ?? []) as Array<{ player_id: string; total_points: number }>) {
         defenderScores.set(d.player_id, d.total_points ?? 0);
       }
-      return { attackerPts, defenderScores };
+
+      const shieldedPlayers = new Set<string>();
+      const { data: shieldData } = await supabase
+        .from('quantum_shields')
+        .select('player_id, shield_active, shield_expires_at')
+        .in('player_id', playerIds)
+        .eq('shield_active', true);
+      for (const s of (shieldData ?? []) as Array<{ player_id: string; shield_active: boolean; shield_expires_at: string | null }>) {
+        if (s.shield_active && s.shield_expires_at && new Date(s.shield_expires_at) > new Date()) {
+          shieldedPlayers.add(s.player_id);
+        }
+      }
+
+      return { attackerPts, defenderScores, shieldedPlayers };
     },
     enabled: !!user?.id && playerIds.length > 0,
     staleTime: 30000,
@@ -193,9 +206,10 @@ export default function GalaxyScreen() {
 
   const getAttackStatus = useCallback((defenderId: string): { canAttack: boolean; reason: AttackBlockReason | null } => {
     if (!scoresQuery.data) return { canAttack: true, reason: null };
-    const { attackerPts, defenderScores } = scoresQuery.data;
+    const { attackerPts, defenderScores, shieldedPlayers } = scoresQuery.data;
     const defenderPts = defenderScores.get(defenderId) ?? 0;
 
+    if (shieldedPlayers.has(defenderId)) return { canAttack: false, reason: 'quantum_shield_defender' };
     if (attackerPts < 100) return { canAttack: false, reason: 'noob_shield_attacker' };
     if (defenderPts < 100) return { canAttack: false, reason: 'noob_shield_defender' };
     if (defenderPts <= attackerPts * 0.5) return { canAttack: false, reason: 'point_gap' };
@@ -208,6 +222,8 @@ export default function GalaxyScreen() {
     const { attackerPts, defenderScores } = scoresQuery.data;
     const defenderPts = defenderScores.get(defenderId) ?? 0;
     switch (reason) {
+      case 'quantum_shield_defender':
+        return 'Bouclier quantique actif';
       case 'noob_shield_attacker':
         return `Noob shield (${Math.floor(attackerPts)}/100 pts)`;
       case 'noob_shield_defender':

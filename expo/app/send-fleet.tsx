@@ -75,6 +75,8 @@ export default function SendFleetScreen() {
 
   const getAttackBlockMessage = useCallback((reason: AttackBlockReason | null): string => {
     switch (reason) {
+      case 'quantum_shield_defender':
+        return `\u{1F6E1}\uFE0F Bouclier quantique actif sur la cible`;
       case 'noob_shield_attacker':
         return `\u{1F6E1}\uFE0F Noob shield (100+ pts requis, actuel: ${Math.floor(attackerPts)})`;
       case 'noob_shield_defender':

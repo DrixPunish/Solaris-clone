@@ -290,6 +290,8 @@ DECLARE
   v_total_xenogas_needed double precision;
   v_attacker_pts double precision;
   v_defender_pts double precision;
+  v_defender_shield record;
+  v_attacker_shield_result json;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -300,8 +302,21 @@ BEGIN
     END IF;
   END IF;
 
-  -- Noob protection checks for attack missions
+  -- Quantum shield + Noob protection checks for attack missions
   IF p_mission_type = 'attack' AND p_user_id IS NOT NULL AND p_target_player_id IS NOT NULL THEN
+    -- 1. Reduce attacker shield by 12h if active
+    v_attacker_shield_result := reduce_quantum_shield_on_attack(p_user_id);
+
+    -- 2. Check defender quantum shield
+    SELECT * INTO v_defender_shield
+    FROM refresh_quantum_shield_state(p_target_player_id);
+
+    IF v_defender_shield.shield_active = true THEN
+      RETURN json_build_object('success', false, 'error',
+        'Bouclier quantique actif: le défenseur est protégé par un bouclier quantique.');
+    END IF;
+
+    -- 3. Noob shield checks
     SELECT COALESCE(total_points, 0) INTO v_attacker_pts
     FROM player_scores WHERE player_id = p_user_id;
     IF NOT FOUND THEN v_attacker_pts := 0; END IF;

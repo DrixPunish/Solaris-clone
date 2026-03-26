@@ -226,6 +226,20 @@ export const worldRouter = createTRPCRouter({
       const { attackerId, defenderId } = input;
       console.log('[tRPC] getPlayerAttackStatus:', attackerId, 'vs', defenderId);
 
+      const { data: defenderShield } = await supabase.rpc('get_quantum_shield_status', { p_player_id: defenderId });
+      const shieldData = defenderShield as { shield_active?: boolean } | null;
+      if (shieldData?.shield_active === true) {
+        const { data: attackerData } = await supabase.from('player_scores').select('total_points').eq('player_id', attackerId).maybeSingle();
+        const { data: defenderData } = await supabase.from('player_scores').select('total_points').eq('player_id', defenderId).maybeSingle();
+        return {
+          can_attack: false,
+          reason: 'quantum_shield_defender' as const,
+          attacker_pts: (attackerData?.total_points as number) ?? 0,
+          defender_pts: (defenderData?.total_points as number) ?? 0,
+          quantum_shield_active_defender: true,
+        };
+      }
+
       const { data: attackerData } = await supabase
         .from('player_scores')
         .select('total_points')
@@ -252,6 +266,71 @@ export const worldRouter = createTRPCRouter({
       }
 
       return { can_attack: true, reason: null, attacker_pts, defender_pts };
+    }),
+
+  getQuantumShieldStatus: publicProcedure
+    .input(z.object({ playerId: z.string() }))
+    .query(async ({ input }) => {
+      console.log('[tRPC] getQuantumShieldStatus for', input.playerId);
+      const { data, error } = await supabase.rpc('get_quantum_shield_status', { p_player_id: input.playerId });
+
+      if (error) {
+        console.log('[tRPC] Error fetching quantum shield status:', error.message);
+        return {
+          shield_active: false,
+          shield_expires_at: null as string | null,
+          cooldown_expires_at: null as string | null,
+          remaining_seconds: 0,
+          cooldown_remaining_seconds: 0,
+          can_buy: true,
+          cost_solar: 500,
+        };
+      }
+
+      const result = data as {
+        shield_active: boolean;
+        shield_expires_at: string | null;
+        cooldown_expires_at: string | null;
+        remaining_seconds: number;
+        cooldown_remaining_seconds: number;
+        can_buy: boolean;
+        cost_solar: number;
+      };
+      console.log('[tRPC] Quantum shield status:', JSON.stringify(result));
+      return result;
+    }),
+
+  buyQuantumShield: publicProcedure
+    .input(z.object({ playerId: z.string() }))
+    .mutation(async ({ input }) => {
+      console.log('[tRPC] buyQuantumShield for', input.playerId);
+      const { data, error } = await supabase.rpc('rpc_buy_quantum_shield', { p_player_id: input.playerId });
+
+      if (error) {
+        console.log('[tRPC] Error buying quantum shield:', error.message);
+        return { success: false as const, error: error.message };
+      }
+
+      const result = data as {
+        success: boolean;
+        error?: string;
+        shield_active?: boolean;
+        shield_expires_at?: string;
+        cooldown_expires_at?: string | null;
+        remaining_solar?: number;
+      };
+      console.log('[tRPC] Buy quantum shield result:', JSON.stringify(result));
+
+      if (!result.success) {
+        return { success: false as const, error: result.error ?? 'Erreur inconnue' };
+      }
+
+      return {
+        success: true as const,
+        shield_active: result.shield_active ?? true,
+        shield_expires_at: result.shield_expires_at ?? null,
+        remaining_solar: result.remaining_solar ?? 0,
+      };
     }),
 
   recalcPlayerScore: publicProcedure

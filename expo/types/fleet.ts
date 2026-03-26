@@ -124,13 +124,24 @@ export interface FleetComposition {
   [shipId: string]: number;
 }
 
-export type AttackBlockReason = 'noob_shield_attacker' | 'noob_shield_defender' | 'point_gap';
+export type AttackBlockReason = 'noob_shield_attacker' | 'noob_shield_defender' | 'point_gap' | 'quantum_shield_defender';
 
 export interface AttackStatus {
   can_attack: boolean;
   reason: AttackBlockReason | null;
   attacker_pts: number;
   defender_pts: number;
+  quantum_shield_active_defender?: boolean;
+}
+
+export interface QuantumShieldStatus {
+  shield_active: boolean;
+  shield_expires_at: string | null;
+  cooldown_expires_at: string | null;
+  remaining_seconds: number;
+  cooldown_remaining_seconds: number;
+  can_buy: boolean;
+  cost_solar: number;
 }
 
 export interface FleetDispatchParams {

@@ -2,8 +2,10 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { View, Text, StyleSheet, Platform, Pressable, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ShieldCheck } from 'lucide-react-native';
 import { useGame } from '@/contexts/GameContext';
 import { useFleet } from '@/contexts/FleetContext';
+import { trpc } from '@/lib/trpc';
 import { formatNumber, calculateEnergyProduced, calculateEnergyConsumption, getResourceStorageCapacity } from '@/utils/gameCalculations';
 import Colors from '@/constants/colors';
 import ProductionModal from '@/components/ProductionPanel';
@@ -102,11 +104,54 @@ function IncomingAttackBanner({ missions }: { missions: { arrival_time: number; 
   );
 }
 
+function ShieldBanner({ remaining }: { remaining: number }) {
+  const pulseAnim = useRef(new Animated.Value(0.7)).current;
+  const [localSec, setLocalSec] = useState(remaining);
+
+  useEffect(() => { setLocalSec(remaining); }, [remaining]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setLocalSec(p => Math.max(0, p - 1)), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.7, duration: 1200, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulseAnim]);
+
+  const h = Math.floor(localSec / 3600);
+  const m = Math.floor((localSec % 3600) / 60);
+  const s = localSec % 60;
+  const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+
+  return (
+    <Animated.View style={[shieldStyles.banner, { opacity: pulseAnim }]}>
+      <ShieldCheck size={14} color="#22D3EE" />
+      <Text style={shieldStyles.text}>Bouclier Quantique actif</Text>
+      <Text style={shieldStyles.timer}>{timeStr}</Text>
+    </Animated.View>
+  );
+}
+
 export default function ResourceBar() {
   const { state, activePlanet, activeProduction, activeProductionPercentages } = useGame();
   const { activeMissions, userId } = useFleet();
   const [modalVisible, setModalVisible] = useState(false);
   const insets = useSafeAreaInsets();
+
+  const shieldQuery = trpc.world.getQuantumShieldStatus.useQuery(
+    { playerId: userId ?? '' },
+    { enabled: !!userId, refetchInterval: 60000, staleTime: 30000 },
+  );
+  const shieldActive = shieldQuery.data?.shield_active === true && (shieldQuery.data?.remaining_seconds ?? 0) > 0;
+  const shieldRemaining = shieldQuery.data?.remaining_seconds ?? 0;
 
   const incomingAttacks = useMemo(() => {
     const coords = activePlanet.coordinates;
@@ -160,6 +205,9 @@ export default function ResourceBar() {
           <ResourceItem label="Solar" color={Colors.solar} value={state.solar} />
         </LinearGradient>
       </Pressable>
+      {shieldActive && (
+        <ShieldBanner remaining={shieldRemaining} />
+      )}
       {incomingAttacks.length > 0 && (
         <IncomingAttackBanner missions={incomingAttacks} />
       )}
@@ -167,6 +215,32 @@ export default function ResourceBar() {
     </>
   );
 }
+
+const shieldStyles = StyleSheet.create({
+  banner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: '#0A2A30',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#22D3EE25',
+  },
+  text: {
+    color: '#22D3EE',
+    fontSize: 11,
+    fontWeight: '700' as const,
+    flex: 1,
+    letterSpacing: 0.5,
+  },
+  timer: {
+    color: '#22D3EE',
+    fontSize: 12,
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums'] as const,
+  },
+});
 
 const attackStyles = StyleSheet.create({
   banner: {

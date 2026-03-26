@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { showGameAlert } from '@/components/GameAlert';
 import { TutorialReopenButton } from '@/components/TutorialWidget';
+import QuantumShieldCard from '@/components/QuantumShieldCard';
 
 const LAST_USERNAME_CHANGE_KEY = 'solaris_last_username_change';
 
@@ -265,6 +266,8 @@ export default function PlanetScreen() {
           </View>
           <ChevronRight size={18} color={Colors.textMuted} />
         </TouchableOpacity>
+
+        <QuantumShieldCard />
 
         <View style={styles.web3Card}>
           <LinearGradient
