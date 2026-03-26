@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, Animated, ActivityIndicator, Platform } from 'react-native';
-import { Shield, ShieldCheck, Clock, Zap, AlertTriangle } from 'lucide-react-native';
+import { Shield, ShieldCheck, Clock, Zap, AlertTriangle, ChevronLeft } from 'lucide-react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { trpc } from '@/lib/trpc';
 import { useGame } from '@/contexts/GameContext';
@@ -17,11 +17,12 @@ function formatCountdown(totalSeconds: number): string {
 
 const SHIELD_LORE = "Bouclier Quantique : Il s'agit d'un puissant bouclier permettant aux planètes d'être totalement protégées durant son champ d'action de 24h. Aucun attaquant ne se risque à le franchir sous peine d'être dissolu dans l'espace. Seul le Synode Quantique sait fabriquer cet artefact. Ils le vendent à prix d'or.";
 
+type ModalStep = 'lore' | 'confirm' | null;
+
 export default function QuantumShieldCard() {
   const { userId, state } = useGame();
   const queryClient = useQueryClient();
-  const [showLoreModal, setShowLoreModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [modalStep, setModalStep] = useState<ModalStep>(null);
   const [localRemaining, setLocalRemaining] = useState(0);
   const [localCooldown, setLocalCooldown] = useState(0);
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
@@ -37,8 +38,7 @@ export default function QuantumShieldCard() {
         console.log('[QuantumShield] Purchased! Solar remaining:', data.remaining_solar);
         void queryClient.invalidateQueries({ queryKey: [['world', 'getQuantumShieldStatus']] });
         void queryClient.invalidateQueries({ queryKey: ['gameState'] });
-        setShowConfirmModal(false);
-        setShowLoreModal(false);
+        setModalStep(null);
       }
     },
   });
@@ -90,6 +90,147 @@ export default function QuantumShieldCard() {
   const solarBalance = state.solar ?? 0;
   const canAfford = solarBalance >= 500;
 
+  const closeModal = useCallback(() => {
+    setModalStep(null);
+    buyMutation.reset();
+  }, [buyMutation]);
+
+  const renderLoreContent = () => (
+    <Pressable style={qStyles.modalContent} onPress={() => {}}>
+      <View style={qStyles.modalIconWrap}>
+        <Shield size={32} color="#22D3EE" />
+      </View>
+      <Text style={qStyles.modalTitle}>Bouclier Quantique</Text>
+      <Text style={qStyles.loreText}>{SHIELD_LORE}</Text>
+
+      <View style={qStyles.rulesCard}>
+        <View style={qStyles.ruleRow}>
+          <Clock size={14} color={Colors.primary} />
+          <Text style={qStyles.ruleText}>Protection totale pendant 24h</Text>
+        </View>
+        <View style={qStyles.ruleRow}>
+          <AlertTriangle size={14} color={Colors.warning} />
+          <Text style={qStyles.ruleText}>Chaque attaque lancée sous bouclier réduit la durée de 12h</Text>
+        </View>
+        <View style={qStyles.ruleRow}>
+          <Clock size={14} color={Colors.textMuted} />
+          <Text style={qStyles.ruleText}>Cooldown de 24h après expiration</Text>
+        </View>
+      </View>
+
+      {isActive && (
+        <View style={qStyles.statusBanner}>
+          <ShieldCheck size={16} color="#22D3EE" />
+          <Text style={qStyles.statusActiveText}>Actif — {formatCountdown(localRemaining)}</Text>
+        </View>
+      )}
+
+      {isOnCooldown && (
+        <View style={qStyles.statusBannerCooldown}>
+          <Clock size={16} color={Colors.warning} />
+          <Text style={qStyles.statusCooldownText}>Recharge — {formatCountdown(localCooldown)}</Text>
+        </View>
+      )}
+
+      <View style={qStyles.modalButtons}>
+        <TouchableOpacity
+          style={qStyles.closeBtn}
+          onPress={closeModal}
+          activeOpacity={0.7}
+        >
+          <Text style={qStyles.closeBtnText}>Fermer</Text>
+        </TouchableOpacity>
+        {canBuy && (
+          <TouchableOpacity
+            style={[qStyles.buyBtn, !canAfford && qStyles.buyBtnDisabled]}
+            onPress={() => {
+              if (canAfford) setModalStep('confirm');
+            }}
+            activeOpacity={0.7}
+            disabled={!canAfford}
+          >
+            <Zap size={14} color={canAfford ? '#000' : Colors.textMuted} />
+            <Text style={[qStyles.buyBtnText, !canAfford && qStyles.buyBtnTextDisabled]}>
+              Acheter (500 Solar)
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </Pressable>
+  );
+
+  const renderConfirmContent = () => (
+    <Pressable style={qStyles.confirmContent} onPress={() => {}}>
+      <View style={qStyles.confirmIconWrap}>
+        <AlertTriangle size={28} color={Colors.warning} />
+      </View>
+      <Text style={qStyles.confirmTitle}>Confirmation requise</Text>
+      <Text style={qStyles.confirmDesc}>
+        Confirmer l{"'"}achat de 1 <Text style={{ color: '#22D3EE', fontWeight: '700' as const }}>Bouclier Quantique</Text> pour{' '}
+        <Text style={{ color: Colors.solar, fontWeight: '700' as const }}>500 Solar</Text> ?
+      </Text>
+
+      <View style={qStyles.balanceCard}>
+        <View style={qStyles.balanceRow}>
+          <Text style={qStyles.balanceLabel}>Solde actuel</Text>
+          <Text style={qStyles.balanceValue}>{Math.floor(solarBalance)} Solar</Text>
+        </View>
+        <View style={qStyles.balanceSep} />
+        <View style={qStyles.balanceRow}>
+          <Text style={qStyles.balanceLabel}>Coût</Text>
+          <Text style={[qStyles.balanceValue, { color: Colors.danger }]}>-500 Solar</Text>
+        </View>
+        <View style={qStyles.balanceSep} />
+        <View style={qStyles.balanceRow}>
+          <Text style={qStyles.balanceLabel}>Après achat</Text>
+          <Text style={[qStyles.balanceValue, { color: solarBalance - 500 >= 0 ? Colors.success : Colors.danger }]}>
+            {Math.floor(solarBalance - 500)} Solar
+          </Text>
+        </View>
+      </View>
+
+      <View style={qStyles.modalButtons}>
+        <TouchableOpacity
+          style={qStyles.closeBtn}
+          onPress={() => setModalStep('lore')}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft size={14} color={Colors.textSecondary} />
+          <Text style={qStyles.closeBtnText}>Retour</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[qStyles.confirmBtn, buyMutation.isPending && { opacity: 0.6 }]}
+          onPress={handleBuy}
+          activeOpacity={0.7}
+          disabled={buyMutation.isPending}
+        >
+          {buyMutation.isPending ? (
+            <ActivityIndicator size="small" color="#000" />
+          ) : (
+            <Zap size={14} color="#000" />
+          )}
+          <Text style={qStyles.confirmBtnText}>
+            {buyMutation.isPending ? 'Activation...' : 'Confirmer'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {buyMutation.isError && (
+        <View style={qStyles.errorBanner}>
+          <Text style={qStyles.errorText}>
+            {(buyMutation.error as unknown as Error)?.message ?? 'Erreur inconnue'}
+          </Text>
+        </View>
+      )}
+
+      {buyMutation.data && !buyMutation.data.success && (
+        <View style={qStyles.errorBanner}>
+          <Text style={qStyles.errorText}>{buyMutation.data.error}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+
   return (
     <>
       <TouchableOpacity
@@ -98,7 +239,7 @@ export default function QuantumShieldCard() {
           isActive && qStyles.cardActive,
           isOnCooldown && qStyles.cardCooldown,
         ]}
-        onPress={() => setShowLoreModal(true)}
+        onPress={() => setModalStep('lore')}
         activeOpacity={0.7}
         testID="quantum-shield-card"
       >
@@ -133,153 +274,15 @@ export default function QuantumShieldCard() {
       </TouchableOpacity>
 
       <Modal
-        visible={showLoreModal}
+        visible={modalStep !== null}
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() => setShowLoreModal(false)}
+        onRequestClose={closeModal}
       >
-        <Pressable style={qStyles.overlay} onPress={() => setShowLoreModal(false)}>
-          <Pressable style={qStyles.modalContent} onPress={() => {}}>
-            <View style={qStyles.modalIconWrap}>
-              <Shield size={32} color="#22D3EE" />
-            </View>
-            <Text style={qStyles.modalTitle}>Bouclier Quantique</Text>
-            <Text style={qStyles.loreText}>{SHIELD_LORE}</Text>
-
-            <View style={qStyles.rulesCard}>
-              <View style={qStyles.ruleRow}>
-                <Clock size={14} color={Colors.primary} />
-                <Text style={qStyles.ruleText}>Protection totale pendant 24h</Text>
-              </View>
-              <View style={qStyles.ruleRow}>
-                <AlertTriangle size={14} color={Colors.warning} />
-                <Text style={qStyles.ruleText}>Chaque attaque lancée sous bouclier réduit la durée de 12h</Text>
-              </View>
-              <View style={qStyles.ruleRow}>
-                <Clock size={14} color={Colors.textMuted} />
-                <Text style={qStyles.ruleText}>Cooldown de 24h après expiration</Text>
-              </View>
-            </View>
-
-            {isActive && (
-              <View style={qStyles.statusBanner}>
-                <ShieldCheck size={16} color="#22D3EE" />
-                <Text style={qStyles.statusActiveText}>Actif — {formatCountdown(localRemaining)}</Text>
-              </View>
-            )}
-
-            {isOnCooldown && (
-              <View style={qStyles.statusBannerCooldown}>
-                <Clock size={16} color={Colors.warning} />
-                <Text style={qStyles.statusCooldownText}>Recharge — {formatCountdown(localCooldown)}</Text>
-              </View>
-            )}
-
-            <View style={qStyles.modalButtons}>
-              <TouchableOpacity
-                style={qStyles.closeBtn}
-                onPress={() => setShowLoreModal(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={qStyles.closeBtnText}>Fermer</Text>
-              </TouchableOpacity>
-              {canBuy && (
-                <TouchableOpacity
-                  style={[qStyles.buyBtn, !canAfford && qStyles.buyBtnDisabled]}
-                  onPress={() => {
-                    if (canAfford) setShowConfirmModal(true);
-                  }}
-                  activeOpacity={0.7}
-                  disabled={!canAfford}
-                >
-                  <Zap size={14} color={canAfford ? '#000' : Colors.textMuted} />
-                  <Text style={[qStyles.buyBtnText, !canAfford && qStyles.buyBtnTextDisabled]}>
-                    Acheter (500 Solar)
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={showConfirmModal}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setShowConfirmModal(false)}
-      >
-        <Pressable style={qStyles.overlay} onPress={() => setShowConfirmModal(false)}>
-          <Pressable style={qStyles.confirmContent} onPress={() => {}}>
-            <View style={qStyles.confirmIconWrap}>
-              <AlertTriangle size={28} color={Colors.warning} />
-            </View>
-            <Text style={qStyles.confirmTitle}>Confirmation requise</Text>
-            <Text style={qStyles.confirmDesc}>
-              Confirmer l{"'"}achat de 1 <Text style={{ color: '#22D3EE', fontWeight: '700' as const }}>Bouclier Quantique</Text> pour{' '}
-              <Text style={{ color: Colors.solar, fontWeight: '700' as const }}>500 Solar</Text> ?
-            </Text>
-
-            <View style={qStyles.balanceCard}>
-              <View style={qStyles.balanceRow}>
-                <Text style={qStyles.balanceLabel}>Solde actuel</Text>
-                <Text style={qStyles.balanceValue}>{Math.floor(solarBalance)} Solar</Text>
-              </View>
-              <View style={qStyles.balanceSep} />
-              <View style={qStyles.balanceRow}>
-                <Text style={qStyles.balanceLabel}>Coût</Text>
-                <Text style={[qStyles.balanceValue, { color: Colors.danger }]}>-500 Solar</Text>
-              </View>
-              <View style={qStyles.balanceSep} />
-              <View style={qStyles.balanceRow}>
-                <Text style={qStyles.balanceLabel}>Après achat</Text>
-                <Text style={[qStyles.balanceValue, { color: solarBalance - 500 >= 0 ? Colors.success : Colors.danger }]}>
-                  {Math.floor(solarBalance - 500)} Solar
-                </Text>
-              </View>
-            </View>
-
-            <View style={qStyles.modalButtons}>
-              <TouchableOpacity
-                style={qStyles.closeBtn}
-                onPress={() => setShowConfirmModal(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={qStyles.closeBtnText}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[qStyles.confirmBtn, buyMutation.isPending && { opacity: 0.6 }]}
-                onPress={handleBuy}
-                activeOpacity={0.7}
-                disabled={buyMutation.isPending}
-              >
-                {buyMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#000" />
-                ) : (
-                  <Zap size={14} color="#000" />
-                )}
-                <Text style={qStyles.confirmBtnText}>
-                  {buyMutation.isPending ? 'Activation...' : 'Confirmer'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {buyMutation.isError && (
-              <View style={qStyles.errorBanner}>
-                <Text style={qStyles.errorText}>
-                  {(buyMutation.error as unknown as Error)?.message ?? 'Erreur inconnue'}
-                </Text>
-              </View>
-            )}
-
-            {buyMutation.data && !buyMutation.data.success && (
-              <View style={qStyles.errorBanner}>
-                <Text style={qStyles.errorText}>{buyMutation.data.error}</Text>
-              </View>
-            )}
-          </Pressable>
+        <Pressable style={qStyles.overlay} onPress={closeModal}>
+          {modalStep === 'lore' && renderLoreContent()}
+          {modalStep === 'confirm' && renderConfirmContent()}
         </Pressable>
       </Modal>
     </>
@@ -462,12 +465,15 @@ const qStyles = StyleSheet.create({
   },
   closeBtn: {
     flex: 1,
+    flexDirection: 'row' as const,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 4,
   },
   closeBtnText: {
     color: Colors.textSecondary,
