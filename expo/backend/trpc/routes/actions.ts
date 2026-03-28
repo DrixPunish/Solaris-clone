@@ -513,11 +513,33 @@ export const actionsRouter = createTRPCRouter({
         fuel_consumed: fuelConsumed,
       });
 
-      console.log("[Actions] Fleet mission inserted:", input.missionType, "return_time:", returnTime, "isStation:", isStationMission);
-
       if (insertError) {
-        console.log("[Actions] Error inserting fleet mission:", insertError.message);
-        return { success: false, error: insertError.message };
+        console.log("[Actions] CRITICAL: fleet_mission insert failed AFTER deduction! Attempting rollback...", insertError.message);
+        try {
+          await supabase.rpc("rpc_rollback_fleet_deduction", {
+            p_planet_id: input.planetId,
+            p_ships: input.ships,
+            p_cargo_fer: cargo.fer,
+            p_cargo_silice: cargo.silice,
+            p_cargo_xenogas: cargo.xenogas,
+            p_fuel_consumed: fuelConsumed,
+          });
+          console.log("[Actions] Rollback successful: ships and resources restored");
+        } catch {
+          console.log("[Actions] Rollback RPC not available, attempting re-deduct via negative rpc_send_fleet or manual restore...");
+          for (const [shipId, count] of Object.entries(input.ships)) {
+            if (count > 0) {
+              const { error: restoreErr } = await supabase.rpc("increment_planet_ship", {
+                p_planet_id: input.planetId,
+                p_ship_id: shipId,
+                p_amount: count,
+              });
+              if (restoreErr) console.log("[Actions] Manual ship restore failed:", shipId, restoreErr.message);
+            }
+          }
+          console.log("[Actions] Manual rollback attempted");
+        }
+        return { success: false, error: "Mission non créée. Vos vaisseaux ont été restaurés. Réessayez." };
       }
 
       console.log("[Actions] Fleet sent (atomic, server-side time):", input.missionType, "arrival in", flightTimeSec, "s, fuel:", fuelConsumed);

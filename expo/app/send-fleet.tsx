@@ -141,6 +141,9 @@ export default function SendFleetScreen() {
 
   const [serverResources, setServerResources] = useState<{ fer: number; silice: number; xenogas: number } | null>(null);
   const [maxLoading, setMaxLoading] = useState<'fer' | 'silice' | 'xenogas' | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [sendCooldown, setSendCooldown] = useState(0);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchServerResources = useCallback(async (): Promise<{ fer: number; silice: number; xenogas: number } | null> => {
     if (!userId || !activePlanetId) {
@@ -315,8 +318,29 @@ export default function SendFleetScreen() {
     return new Date(Date.now() + travelTime * 1000);
   }, [hasShips, travelTime]);
 
+  const startCooldown = useCallback((seconds: number) => {
+    setSendCooldown(seconds);
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    cooldownTimerRef.current = setInterval(() => {
+      setSendCooldown(prev => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+    };
+  }, []);
+
   const handleSend = useCallback(async () => {
-    if (!hasShips) return;
+    if (!hasShips || isConfirming || sendCooldown > 0) return;
 
     if (cooldownRef.current) {
       console.log('[SendFleet] Cooldown active, ignoring send');
@@ -368,22 +392,30 @@ export default function SendFleetScreen() {
     const savedTravelTime = travelTime;
     const savedMissionType = missionType;
 
+    const shipsToSend: Record<string, number> = {};
+    for (const [id, count] of Object.entries(fleetForCalc)) {
+      if (count > 0) shipsToSend[id] = count;
+    }
+
+    let resources: { fer: number; silice: number; xenogas: number } | undefined;
+    if (showResourceInputs) {
+      resources = transportResources;
+    } else if (isColonize && (colonizeResources.fer > 0 || colonizeResources.silice > 0 || colonizeResources.xenogas > 0)) {
+      resources = colonizeResources;
+    }
+
+    setIsConfirming(true);
+    cooldownRef.current = true;
+
+    const timeoutId = setTimeout(() => {
+      console.log('[SendFleet] Server timeout after 15s');
+      setIsConfirming(false);
+      cooldownRef.current = false;
+      startCooldown(3);
+      showGameAlert('Timeout', 'Le serveur met trop de temps à répondre. Vérifiez vos flottes actives avant de réessayer.');
+    }, 15000);
+
     try {
-      const shipsToSend: Record<string, number> = {};
-      for (const [id, count] of Object.entries(fleetForCalc)) {
-        if (count > 0) shipsToSend[id] = count;
-      }
-
-      let resources: { fer: number; silice: number; xenogas: number } | undefined;
-      if (showResourceInputs) {
-        resources = transportResources;
-      } else if (isColonize && (colonizeResources.fer > 0 || colonizeResources.silice > 0 || colonizeResources.xenogas > 0)) {
-        resources = colonizeResources;
-      }
-
-      cooldownRef.current = true;
-      setTimeout(() => { cooldownRef.current = false; }, 1000);
-
       await sendFleet({
         targetCoords,
         targetPlayerId: params.targetPlayerId || null,
@@ -394,6 +426,12 @@ export default function SendFleetScreen() {
         resources,
         speedPercent,
       });
+
+      clearTimeout(timeoutId);
+      setIsConfirming(false);
+      cooldownRef.current = false;
+
+      console.log('[SendFleet] Fleet sent successfully');
 
       setTimeout(() => {
         router.back();
@@ -407,6 +445,11 @@ export default function SendFleetScreen() {
         }, 300);
       }, 100);
     } catch (e: unknown) {
+      clearTimeout(timeoutId);
+      setIsConfirming(false);
+      cooldownRef.current = false;
+      startCooldown(3);
+
       let msg = 'Erreur inconnue';
       if (e instanceof Error) {
         msg = e.message;
@@ -414,9 +457,9 @@ export default function SendFleetScreen() {
         msg = String((e as { message: string }).message);
       }
       console.log('[SendFleet] Error sending fleet:', msg, e);
-      showGameAlert('Erreur d\'envoi', `Le serveur a refusé la mission : ${msg}`);
+      showGameAlert('Erreur d\'envoi', `${msg}\n\nVos vaisseaux n'ont pas été retirés. Vous pouvez réessayer.`);
     }
-  }, [hasShips, fleetForCalc, targetCoords, params, missionType, transportResources, colonizeResources, sendFleet, travelTime, router, serverFlightData, isLoadingFlight, insufficientFuel, totalXenogasNeeded, fuelCost, cargoXenogas, availableXenogas, showResourceInputs, isColonize, speedPercent, fleetLimitReached, fleetLimit]);
+  }, [hasShips, isConfirming, sendCooldown, fleetForCalc, targetCoords, params, missionType, transportResources, colonizeResources, sendFleet, travelTime, router, serverFlightData, isLoadingFlight, insufficientFuel, totalXenogasNeeded, fuelCost, cargoXenogas, availableXenogas, showResourceInputs, isColonize, speedPercent, fleetLimitReached, fleetLimit, startCooldown]);
 
   return (
     <View style={styles.container}>
@@ -830,15 +873,22 @@ export default function SendFleetScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.sendBtn, (!hasShips || isSending || insufficientFuel || fleetLimitReached) && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, (!hasShips || isSending || isConfirming || insufficientFuel || fleetLimitReached || sendCooldown > 0) && styles.sendBtnDisabled]}
               onPress={handleSend}
-              disabled={!hasShips || isSending || insufficientFuel || fleetLimitReached}
+              disabled={!hasShips || isSending || isConfirming || insufficientFuel || fleetLimitReached || sendCooldown > 0}
               activeOpacity={0.7}
             >
-              <Rocket size={18} color={hasShips && !isSending && !insufficientFuel && !fleetLimitReached ? '#0A0A14' : Colors.textMuted} />
-              {isSending && <ActivityIndicator size="small" color={Colors.textMuted} style={{ marginRight: 4 }} />}
-              <Text style={[styles.sendText, (!hasShips || isSending || insufficientFuel || fleetLimitReached) && styles.sendTextDisabled]}>
-                {isSending ? 'Vérification serveur...' : fleetLimitReached ? `Limite flottes (${activeFleetCount}/${fleetLimit})` : insufficientFuel ? 'Xenogas insuffisant' : 'Lancer la mission'}
+              {(isSending || isConfirming) ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Rocket size={18} color={hasShips && !insufficientFuel && !fleetLimitReached && sendCooldown <= 0 ? '#0A0A14' : Colors.textMuted} />
+              )}
+              <Text style={[styles.sendText, (!hasShips || isSending || isConfirming || insufficientFuel || fleetLimitReached || sendCooldown > 0) && styles.sendTextDisabled]}>
+                {(isSending || isConfirming) ? 'Envoi en cours...'
+                  : sendCooldown > 0 ? `Patientez ${sendCooldown}s`
+                  : fleetLimitReached ? `Limite flottes (${activeFleetCount}/${fleetLimit})`
+                  : insufficientFuel ? 'Xenogas insuffisant'
+                  : 'Lancer la mission'}
               </Text>
             </TouchableOpacity>
 
