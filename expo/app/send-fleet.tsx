@@ -421,7 +421,7 @@ export default function SendFleetScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -430,7 +430,7 @@ export default function SendFleetScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <Text style={styles.backText}>Annuler</Text>
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Envoyer la Flotte</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>Envoyer la Flotte</Text>
             <View style={{ width: 60 }} />
           </View>
 
@@ -824,7 +824,6 @@ export default function SendFleetScreen() {
               </Text>
             </TouchableOpacity>
 
-            <View style={{ height: 40 }} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -864,7 +863,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
   },
   targetCard: {
     backgroundColor: Colors.card,
@@ -913,20 +913,22 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
     flexWrap: 'wrap' as const,
+    justifyContent: 'space-around' as const,
   },
   missionBtn: {
     flexDirection: 'column' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 10,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
     gap: 4,
-    minWidth: 80,
+    minWidth: 72,
     flex: 1,
+    maxWidth: 100,
   },
   missionLabel: {
     color: Colors.textMuted,
@@ -943,17 +945,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: 48,
   },
   shipInfo: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 8,
+    gap: 6,
     flex: 1,
+    minWidth: 0,
+    overflow: 'hidden' as const,
   },
   shipName: {
     color: Colors.text,
     fontSize: 13,
     fontWeight: '500' as const,
+    flexShrink: 1,
   },
   shipAvailable: {
     color: Colors.textMuted,
@@ -963,6 +969,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
+    flexShrink: 0,
   },
   ctrlBtn: {
     width: 30,
@@ -1247,14 +1254,16 @@ const styles = StyleSheet.create({
   },
   speedBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     borderRadius: 8,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    minWidth: 48,
+    minWidth: 44,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    flex: 1,
+    maxWidth: 56,
   },
   speedBtnActive: {
     borderColor: Colors.energy,
