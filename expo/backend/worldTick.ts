@@ -789,13 +789,27 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     return;
   }
 
-  await supabase.from('planet_resources').insert({
+  const { error: resInsertErr } = await supabase.from('planet_resources').upsert({
     planet_id: newPlanet.id,
     fer: 500 + cargoFer,
     silice: 300 + cargoSilice,
     xenogas: 0 + cargoXenogas,
     energy: 0,
-  });
+  }, { onConflict: 'planet_id' });
+
+  if (resInsertErr) {
+    console.log('[WorldTick] planet_resources upsert failed, trying UPDATE fallback:', resInsertErr.message);
+    const { error: updateErr } = await supabase.from('planet_resources').update({
+      fer: 500 + cargoFer,
+      silice: 300 + cargoSilice,
+      xenogas: 0 + cargoXenogas,
+    }).eq('planet_id', newPlanet.id);
+    if (updateErr) {
+      console.log('[WorldTick] CRITICAL: planet_resources UPDATE also failed:', updateErr.message);
+    } else {
+      console.log('[WorldTick] planet_resources UPDATE fallback succeeded for colony:', newPlanet.id);
+    }
+  }
 
   if (hasCargo) {
     console.log('[WorldTick] Colonize cargo transferred to new colony:', newPlanet.id, '| fer:', cargoFer, 'silice:', cargoSilice, 'xenogas:', cargoXenogas);
