@@ -781,11 +781,18 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     return;
   }
 
+  const missionResources = mission.resources as { fer?: number; silice?: number; xenogas?: number } | null;
+  const cargoFer = missionResources?.fer ?? 0;
+  const cargoSilice = missionResources?.silice ?? 0;
+  const cargoXenogas = missionResources?.xenogas ?? 0;
+
+  console.log('[WorldTick] Colonize cargo resources:', { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas });
+
   await supabase.from('planet_resources').insert({
     planet_id: newPlanet.id,
-    fer: 500,
-    silice: 300,
-    xenogas: 0,
+    fer: 500 + cargoFer,
+    silice: 300 + cargoSilice,
+    xenogas: 0 + cargoXenogas,
     energy: 0,
   });
 
@@ -806,11 +813,11 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     mission_phase: colonizeFinalPhase,
     return_time: hasReturning ? returnTime : null,
     ships: returningShips,
-    result: { type: 'colonize', success: true, colonyId: newPlanet.id },
+    result: { type: 'colonize', success: true, colonyId: newPlanet.id, cargo: { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas } },
     ...(colonizeFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Colony created:', newPlanet.id, 'at', targetCoords);
+  console.log('[WorldTick] Colony created:', newPlanet.id, 'at', targetCoords, 'with cargo:', { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas });
 }
 
 async function processStationMission(mission: Record<string, unknown>): Promise<void> {

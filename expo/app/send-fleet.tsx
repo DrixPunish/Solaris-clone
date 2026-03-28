@@ -433,12 +433,16 @@ export default function SendFleetScreen() {
 
       console.log('[SendFleet] Fleet sent successfully');
 
+      const cargoMsg = savedMissionType === 'colonize' && resources && (resources.fer > 0 || resources.silice > 0 || resources.xenogas > 0)
+        ? `\nRessources embarquées: ${resources.fer > 0 ? formatNumber(resources.fer) + ' Fer' : ''}${resources.silice > 0 ? (resources.fer > 0 ? ', ' : '') + formatNumber(resources.silice) + ' Silice' : ''}${resources.xenogas > 0 ? ((resources.fer > 0 || resources.silice > 0) ? ', ' : '') + formatNumber(resources.xenogas) + ' Xenogas' : ''}`
+        : '';
+
       setTimeout(() => {
         router.back();
         setTimeout(() => {
           showGameAlert(
             'Flotte envoyée !',
-            `Mission ${missionLabels[savedMissionType]} lancée.\nArrivée dans ${formatTime(savedTravelTime)}.`,
+            `Mission ${missionLabels[savedMissionType]} lancée.\nArrivée dans ${formatTime(savedTravelTime)}.${cargoMsg}`,
             undefined,
             'success',
           );
