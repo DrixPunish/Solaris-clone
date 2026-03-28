@@ -433,22 +433,12 @@ export default function SendFleetScreen() {
 
       console.log('[SendFleet] Fleet sent successfully');
 
-      const savedColonizeRes = { ...colonizeResources };
-
       setTimeout(() => {
         router.back();
         setTimeout(() => {
-          let message = `Mission ${missionLabels[savedMissionType]} lancée.\nArrivée dans ${formatTime(savedTravelTime)}.`;
-          if (savedMissionType === 'colonize' && (savedColonizeRes.fer > 0 || savedColonizeRes.silice > 0 || savedColonizeRes.xenogas > 0)) {
-            const parts: string[] = [];
-            if (savedColonizeRes.fer > 0) parts.push(`${formatNumber(savedColonizeRes.fer)} Fer`);
-            if (savedColonizeRes.silice > 0) parts.push(`${formatNumber(savedColonizeRes.silice)} Silice`);
-            if (savedColonizeRes.xenogas > 0) parts.push(`${formatNumber(savedColonizeRes.xenogas)} Xenogas`);
-            message += `\nRessources incluses: ${parts.join(', ')}`;
-          }
           showGameAlert(
             'Flotte envoyée !',
-            message,
+            `Mission ${missionLabels[savedMissionType]} lancée.\nArrivée dans ${formatTime(savedTravelTime)}.`,
             undefined,
             'success',
           );
