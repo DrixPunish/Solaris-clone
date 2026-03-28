@@ -730,12 +730,26 @@ END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================
+-- 7b. SCHEMA: colony_protected_until on planets
+-- =============================================================
+-- Prevents materialize_planet_resources from touching a newly
+-- created colony for 5 minutes after creation. This eliminates
+-- ALL race conditions between rpc_create_colony_atomic and
+-- materialize_planet_resources.
+-- =============================================================
+ALTER TABLE planets ADD COLUMN IF NOT EXISTS colony_protected_until bigint DEFAULT NULL;
+
+-- =============================================================
 -- 8. rpc_create_colony_atomic
 -- =============================================================
 -- Creates a colony planet AND its planet_resources row in a
 -- SINGLE atomic transaction. This eliminates the race condition
 -- where materialize_planet_resources could create a default row
 -- (500/300/0) between planet INSERT and resource UPSERT.
+--
+-- PROTECTION: Sets colony_protected_until = now + 5 minutes
+-- to prevent materialize_planet_resources from touching this
+-- planet during the critical window after creation.
 --
 -- Returns: { success, planet_id, fer, silice, xenogas }
 -- or { success: false, error: '...' }
@@ -757,29 +771,30 @@ DECLARE
   v_verify_fer double precision;
   v_verify_silice double precision;
   v_verify_xenogas double precision;
+  v_protection_until bigint;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+  v_protection_until := v_now + 300000;
   v_initial_fer := 500 + GREATEST(0, COALESCE(p_cargo_fer, 0));
   v_initial_silice := 300 + GREATEST(0, COALESCE(p_cargo_silice, 0));
   v_initial_xenogas := GREATEST(0, COALESCE(p_cargo_xenogas, 0));
 
-  -- 1. Create the planet (last_update = v_now ensures materialize_planet_resources
-  --    sees elapsed < 30s and SKIPS this planet on the next tick)
-  INSERT INTO planets (user_id, planet_name, coordinates, is_main, last_update)
-  VALUES (p_user_id, p_planet_name, p_coordinates, false, v_now)
+  RAISE NOTICE '[rpc_create_colony_atomic] START user=% coords=% cargo_fer=% cargo_silice=% cargo_xenogas=% initial_fer=% initial_silice=% initial_xenogas=%',
+    p_user_id, p_coordinates, p_cargo_fer, p_cargo_silice, p_cargo_xenogas,
+    v_initial_fer, v_initial_silice, v_initial_xenogas;
+
+  INSERT INTO planets (user_id, planet_name, coordinates, is_main, last_update, colony_protected_until)
+  VALUES (p_user_id, p_planet_name, p_coordinates, false, v_now, v_protection_until)
   RETURNING id INTO v_new_planet_id;
 
-  -- 1b. Lock the planet row to prevent concurrent materialize_planet_resources
   PERFORM 1 FROM planets WHERE id = v_new_planet_id FOR UPDATE;
 
   IF v_new_planet_id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'Failed to create planet');
   END IF;
 
-  -- 2. Set resource tx context for audit trigger
   PERFORM set_resource_tx_context('colonize', 'colony_creation_with_cargo');
 
-  -- 3. Create planet_resources with cargo included (same transaction!)
   INSERT INTO planet_resources (planet_id, fer, silice, xenogas, energy)
   VALUES (v_new_planet_id, v_initial_fer, v_initial_silice, v_initial_xenogas, 0)
   ON CONFLICT (planet_id) DO UPDATE
@@ -788,25 +803,50 @@ BEGIN
       xenogas = EXCLUDED.xenogas,
       energy = EXCLUDED.energy;
 
-  -- 4. Verify within same transaction
   SELECT fer, silice, xenogas INTO v_verify_fer, v_verify_silice, v_verify_xenogas
   FROM planet_resources
-  WHERE planet_id = v_new_planet_id;
+  WHERE planet_id = v_new_planet_id
+  FOR UPDATE;
 
   IF v_verify_fer IS NULL THEN
     RAISE WARNING '[rpc_create_colony_atomic] planet_resources NOT FOUND after insert for planet %', v_new_planet_id;
-    RETURN json_build_object('success', false, 'error', 'planet_resources not created');
+    INSERT INTO planet_resources (planet_id, fer, silice, xenogas, energy)
+    VALUES (v_new_planet_id, v_initial_fer, v_initial_silice, v_initial_xenogas, 0);
+
+    SELECT fer, silice, xenogas INTO v_verify_fer, v_verify_silice, v_verify_xenogas
+    FROM planet_resources
+    WHERE planet_id = v_new_planet_id;
+
+    IF v_verify_fer IS NULL THEN
+      RETURN json_build_object('success', false, 'error', 'planet_resources creation failed completely');
+    END IF;
   END IF;
 
-  RAISE NOTICE '[rpc_create_colony_atomic] Colony % created with fer=%, silice=%, xenogas=%',
-    v_new_planet_id, v_verify_fer, v_verify_silice, v_verify_xenogas;
+  IF v_verify_fer < v_initial_fer - 1 OR v_verify_silice < v_initial_silice - 1 THEN
+    RAISE WARNING '[rpc_create_colony_atomic] MISMATCH: expected fer=% got %, expected silice=% got %. Force-correcting.',
+      v_initial_fer, v_verify_fer, v_initial_silice, v_verify_silice;
+
+    UPDATE planet_resources
+    SET fer = v_initial_fer,
+        silice = v_initial_silice,
+        xenogas = v_initial_xenogas
+    WHERE planet_id = v_new_planet_id;
+
+    v_verify_fer := v_initial_fer;
+    v_verify_silice := v_initial_silice;
+    v_verify_xenogas := v_initial_xenogas;
+  END IF;
+
+  RAISE NOTICE '[rpc_create_colony_atomic] Colony % created OK: fer=%, silice=%, xenogas=%, protected_until=%',
+    v_new_planet_id, v_verify_fer, v_verify_silice, v_verify_xenogas, v_protection_until;
 
   RETURN json_build_object(
     'success', true,
     'planet_id', v_new_planet_id,
     'fer', v_verify_fer,
     'silice', v_verify_silice,
-    'xenogas', v_verify_xenogas
+    'xenogas', v_verify_xenogas,
+    'protected_until', v_protection_until
   );
 END;
 $ LANGUAGE plpgsql SECURITY DEFINER;

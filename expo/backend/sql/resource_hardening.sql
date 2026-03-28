@@ -216,7 +216,7 @@ $$ LANGUAGE plpgsql STABLE;
 CREATE OR REPLACE FUNCTION materialize_planet_resources(
   p_planet_id uuid,
   p_user_id uuid
-) RETURNS json AS $$
+) RETURNS json AS $
 DECLARE
   v_res record;
   v_last_update bigint;
@@ -233,18 +233,27 @@ DECLARE
   v_new_silice double precision;
   v_new_xenogas double precision;
   v_decision text := 'normal';
+  v_colony_protected_until bigint;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
   PERFORM set_resource_tx_context('production', 'tick_' || v_now::text);
 
-  SELECT last_update INTO v_last_update
+  SELECT last_update, colony_protected_until INTO v_last_update, v_colony_protected_until
   FROM planets
   WHERE id = p_planet_id AND user_id = p_user_id
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN json_build_object('success', false, 'error', 'Planet not found or not owned');
+  END IF;
+
+  IF v_colony_protected_until IS NOT NULL AND v_now < v_colony_protected_until THEN
+    RETURN json_build_object('success', true, 'skipped', true, 'reason', 'colony_protection');
+  END IF;
+
+  IF v_colony_protected_until IS NOT NULL AND v_now >= v_colony_protected_until THEN
+    UPDATE planets SET colony_protected_until = NULL WHERE id = p_planet_id;
   END IF;
 
   v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
@@ -299,10 +308,9 @@ BEGIN
   FOR UPDATE;
 
   IF NOT FOUND THEN
-    INSERT INTO planet_resources (planet_id, fer, silice, xenogas, energy)
-    VALUES (p_planet_id, 500, 300, 0, COALESCE(v_econ.energy_net, 0));
+    RAISE NOTICE '[materialize_hardened] planet_resources NOT FOUND for planet %. Skipping - row should be created by planet creation process.', p_planet_id;
     UPDATE planets SET last_update = v_now WHERE id = p_planet_id;
-    RETURN json_build_object('success', true, 'created', true);
+    RETURN json_build_object('success', true, 'skipped', true, 'reason', 'no_resources_row');
   END IF;
 
   v_cur_fer := GREATEST(0, COALESCE(v_res.fer, 0));
