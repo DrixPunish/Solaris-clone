@@ -774,7 +774,7 @@ DECLARE
   v_protection_until bigint;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
-  v_protection_until := v_now + 300000;
+  v_protection_until := v_now + 600000;
   v_initial_fer := 500 + GREATEST(0, COALESCE(p_cargo_fer, 0));
   v_initial_silice := 300 + GREATEST(0, COALESCE(p_cargo_silice, 0));
   v_initial_xenogas := GREATEST(0, COALESCE(p_cargo_xenogas, 0));

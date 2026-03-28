@@ -179,7 +179,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
 
   const { data: allPlanets } = await supabase
     .from('planets')
-    .select('id, planet_name, coordinates, is_main, last_update, production_percentages')
+    .select('id, planet_name, coordinates, is_main, last_update, production_percentages, colony_protected_until')
     .eq('user_id', userId);
 
   if (!allPlanets || allPlanets.length === 0) {
@@ -249,12 +249,41 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
 
   const colonies: Colony[] = [];
 
-  for (const cp of colonyPlanets as Array<{ id: string; planet_name: string; coordinates: unknown; last_update: unknown; production_percentages: unknown }>) {
+  for (const cp of colonyPlanets as Array<{ id: string; planet_name: string; coordinates: unknown; last_update: unknown; production_percentages: unknown; colony_protected_until: unknown }>) {
     const cpId = cp.id as string;
     const colBuildings = getBuildingsForPlanet(cpId);
     const colShips = getShipsForPlanet(cpId);
-    const colRawRes = getResForPlanet(cpId);
+    let colRawRes = getResForPlanet(cpId);
     const colLastUpdate = (cp.last_update as number) ?? now;
+    const colProtectedUntil = (cp.colony_protected_until as number | null) ?? null;
+    const isProtected = colProtectedUntil !== null && now < colProtectedUntil;
+
+    const hasNoResourceRow = !allResources.some(x => x.planet_id === cpId);
+    const hasZeroResources = colRawRes.fer === 0 && colRawRes.silice === 0 && colRawRes.xenogas === 0;
+
+    if (hasNoResourceRow || (isProtected && hasZeroResources)) {
+      console.log('[tableSync] Colony', cpId, 'missing resources (protected:', isProtected, 'noRow:', hasNoResourceRow, '). Attempting direct re-read...');
+      try {
+        const { data: directRes } = await supabase
+          .from('planet_resources')
+          .select('fer, silice, xenogas, energy')
+          .eq('planet_id', cpId)
+          .maybeSingle();
+        if (directRes && (directRes.fer > 0 || directRes.silice > 0 || directRes.xenogas > 0)) {
+          colRawRes = { fer: directRes.fer ?? 0, silice: directRes.silice ?? 0, xenogas: directRes.xenogas ?? 0, energy: directRes.energy ?? 0 };
+          console.log('[tableSync] Direct re-read SUCCESS for colony', cpId, ':', colRawRes);
+        } else if (isProtected) {
+          colRawRes = { fer: 500, silice: 300, xenogas: 0, energy: 0 };
+          console.log('[tableSync] Direct re-read still empty for protected colony', cpId, '. Using defaults:', colRawRes);
+        }
+      } catch (e) {
+        console.log('[tableSync] Direct re-read failed for colony', cpId, ':', e);
+        if (isProtected) {
+          colRawRes = { fer: 500, silice: 300, xenogas: 0, energy: 0 };
+        }
+      }
+    }
+
     const colFreshRes = recalcPlanetResources(colRawRes, colBuildings, research, colShips, colLastUpdate, now);
     const colElapsed = (now - colLastUpdate) / 1000;
 

@@ -843,6 +843,68 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
   const newPlanetId = colonyData.planet_id;
   console.log('[WorldTick][Colonize] ATOMIC colony CONFIRMED:', newPlanetId, 'cargo:', { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas }, 'rpc returned:', { fer: colonyData.fer, silice: colonyData.silice, xenogas: colonyData.xenogas }, 'protected_until:', colonyData.protected_until);
 
+  const expectedFer = 500 + cargoFer;
+  const expectedSilice = 300 + cargoSilice;
+  const expectedXenogas = cargoXenogas;
+
+  try {
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    const { data: verifyRes, error: verifyErr } = await supabase
+      .from('planet_resources')
+      .select('fer, silice, xenogas')
+      .eq('planet_id', newPlanetId)
+      .maybeSingle();
+
+    if (verifyErr) {
+      console.log('[WorldTick][Colonize] VERIFY read error:', verifyErr.message, '- forcing upsert');
+      await supabase.from('planet_resources').upsert({
+        planet_id: newPlanetId,
+        fer: expectedFer,
+        silice: expectedSilice,
+        xenogas: expectedXenogas,
+        energy: 0,
+      }, { onConflict: 'planet_id' });
+    } else if (!verifyRes) {
+      console.log('[WorldTick][Colonize] VERIFY: NO ROW FOUND! Creating resources row.');
+      await supabase.from('planet_resources').upsert({
+        planet_id: newPlanetId,
+        fer: expectedFer,
+        silice: expectedSilice,
+        xenogas: expectedXenogas,
+        energy: 0,
+      }, { onConflict: 'planet_id' });
+    } else {
+      const ferOk = verifyRes.fer >= expectedFer - 1;
+      const siliceOk = verifyRes.silice >= expectedSilice - 1;
+      const xenogasOk = verifyRes.xenogas >= expectedXenogas - 1;
+
+      if (!ferOk || !siliceOk || !xenogasOk) {
+        console.log('[WorldTick][Colonize] VERIFY MISMATCH! expected:', { fer: expectedFer, silice: expectedSilice, xenogas: expectedXenogas }, 'got:', { fer: verifyRes.fer, silice: verifyRes.silice, xenogas: verifyRes.xenogas }, '- FORCE CORRECTING');
+        await supabase.from('planet_resources').update({
+          fer: expectedFer,
+          silice: expectedSilice,
+          xenogas: expectedXenogas,
+        }).eq('planet_id', newPlanetId);
+      } else {
+        console.log('[WorldTick][Colonize] VERIFY OK:', { fer: verifyRes.fer, silice: verifyRes.silice, xenogas: verifyRes.xenogas });
+      }
+    }
+  } catch (verifyError) {
+    console.log('[WorldTick][Colonize] VERIFY exception:', verifyError, '- attempting forced upsert');
+    try {
+      await supabase.from('planet_resources').upsert({
+        planet_id: newPlanetId,
+        fer: expectedFer,
+        silice: expectedSilice,
+        xenogas: expectedXenogas,
+        energy: 0,
+      }, { onConflict: 'planet_id' });
+    } catch (e2) {
+      console.log('[WorldTick][Colonize] FORCED UPSERT also failed:', e2);
+    }
+  }
+
   const returningShips = { ...ships };
   const colonyShipCount = returningShips.colonyShip ?? 0;
   if (colonyShipCount > 1) {
