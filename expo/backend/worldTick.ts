@@ -814,111 +814,37 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     return;
   }
 
-  const nowMs = Date.now();
-  const { data: newPlanet, error: insertErr } = await supabase.from('planets').insert({
-    user_id: senderId,
-    planet_name: `Colonie ${currentColonies + 1}`,
-    coordinates: targetCoords,
-    is_main: false,
-    last_update: nowMs,
-  }).select('id').single();
+  const { data: colonyResult, error: colonyErr } = await supabase.rpc('rpc_create_colony_atomic', {
+    p_user_id: senderId,
+    p_planet_name: `Colonie ${currentColonies + 1}`,
+    p_coordinates: targetCoords,
+    p_cargo_fer: cargoFer,
+    p_cargo_silice: cargoSilice,
+    p_cargo_xenogas: cargoXenogas,
+  });
 
-  if (insertErr || !newPlanet) {
-    console.log('[WorldTick][Colonize] ERROR creating planet:', insertErr?.message);
+  const colonyData = colonyResult as { success?: boolean; planet_id?: string; error?: string; fer?: number; silice?: number; xenogas?: number } | null;
+
+  if (colonyErr || !colonyData?.success || !colonyData?.planet_id) {
+    const errMsg = colonyErr?.message ?? colonyData?.error ?? 'Unknown error';
+    console.log('[WorldTick][Colonize] ERROR rpc_create_colony_atomic:', errMsg);
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
       mission_phase: 'returning',
       return_time: returnTime,
       ships,
-      result: { type: 'colonize', success: false, reason: 'Erreur création colonie' },
+      result: { type: 'colonize', success: false, reason: 'Erreur création colonie: ' + errMsg },
     }).eq('id', mission.id);
     return;
   }
 
-  console.log('[WorldTick][Colonize] Planet created:', newPlanet.id, '- now creating resources with cargo');
+  const newPlanetId = colonyData.planet_id;
+  console.log('[WorldTick][Colonize] ATOMIC colony created:', newPlanetId, 'resources:', { fer: colonyData.fer, silice: colonyData.silice, xenogas: colonyData.xenogas });
 
   const initialFer = 500 + cargoFer;
   const initialSilice = 300 + cargoSilice;
-  const initialXenogas = 0 + cargoXenogas;
-
-  const { error: upsertErr } = await supabase.from('planet_resources').upsert({
-    planet_id: newPlanet.id,
-    fer: initialFer,
-    silice: initialSilice,
-    xenogas: initialXenogas,
-    energy: 0,
-  }, { onConflict: 'planet_id' });
-
-  if (upsertErr) {
-    console.log('[WorldTick][Colonize] ERROR upsert planet_resources:', upsertErr.message, '- retrying with insert then update');
-
-    const { error: insertErr2 } = await supabase.from('planet_resources').insert({
-      planet_id: newPlanet.id,
-      fer: initialFer,
-      silice: initialSilice,
-      xenogas: initialXenogas,
-      energy: 0,
-    });
-
-    if (insertErr2) {
-      console.log('[WorldTick][Colonize] Insert also failed:', insertErr2.message, '- trying update');
-      const { error: updateErr } = await supabase.from('planet_resources').update({
-        fer: initialFer,
-        silice: initialSilice,
-        xenogas: initialXenogas,
-        energy: 0,
-      }).eq('planet_id', newPlanet.id);
-
-      if (updateErr) {
-        console.log('[WorldTick][Colonize] CRITICAL: All planet_resources methods failed:', updateErr.message);
-      }
-    }
-  }
-
-  const { data: verifyRes } = await supabase
-    .from('planet_resources')
-    .select('fer, silice, xenogas')
-    .eq('planet_id', newPlanet.id)
-    .maybeSingle();
-
-  console.log('[WorldTick][Colonize] VERIFY planet_resources after create:', JSON.stringify(verifyRes), 'expected:', JSON.stringify({ fer: initialFer, silice: initialSilice, xenogas: initialXenogas }));
-
-  if (!verifyRes) {
-    console.log('[WorldTick][Colonize] CRITICAL: planet_resources NOT FOUND after all attempts! Doing final emergency insert.');
-    await supabase.from('planet_resources').insert({
-      planet_id: newPlanet.id,
-      fer: initialFer,
-      silice: initialSilice,
-      xenogas: initialXenogas,
-      energy: 0,
-    });
-  } else if (cargoFer > 0 || cargoSilice > 0 || cargoXenogas > 0) {
-    const actualFer = (verifyRes.fer as number) ?? 0;
-    const actualSilice = (verifyRes.silice as number) ?? 0;
-    const actualXenogas = (verifyRes.xenogas as number) ?? 0;
-
-    if (actualFer < initialFer - 1 || actualSilice < initialSilice - 1 || actualXenogas < initialXenogas - 1) {
-      console.log('[WorldTick][Colonize] WARNING: Resources lower than expected. Cargo may not have been applied. Using add_resources_to_planet as fallback.');
-      const missingFer = Math.max(0, initialFer - actualFer);
-      const missingSilice = Math.max(0, initialSilice - actualSilice);
-      const missingXenogas = Math.max(0, initialXenogas - actualXenogas);
-
-      if (missingFer > 0 || missingSilice > 0 || missingXenogas > 0) {
-        const { error: addErr } = await supabase.rpc('add_resources_to_planet', {
-          p_planet_id: newPlanet.id,
-          p_fer: missingFer,
-          p_silice: missingSilice,
-          p_xenogas: missingXenogas,
-        });
-        if (addErr) {
-          console.log('[WorldTick][Colonize] add_resources_to_planet fallback error:', addErr.message);
-        } else {
-          console.log('[WorldTick][Colonize] Missing resources added via fallback:', { fer: missingFer, silice: missingSilice, xenogas: missingXenogas });
-        }
-      }
-    }
-  }
+  const initialXenogas = cargoXenogas;
 
   const returningShips = { ...ships };
   const colonyShipCount = returningShips.colonyShip ?? 0;
@@ -937,11 +863,11 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     mission_phase: colonizeFinalPhase,
     return_time: hasReturning ? returnTime : null,
     ships: returningShips,
-    result: { type: 'colonize', success: true, colonyId: newPlanet.id, cargo: { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas } },
+    result: { type: 'colonize', success: true, colonyId: newPlanetId, cargo: { fer: cargoFer, silice: cargoSilice, xenogas: cargoXenogas } },
     ...(colonizeFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick][Colonize] DONE colony:', newPlanet.id, 'at', targetCoords, 'resources:', { fer: initialFer, silice: initialSilice, xenogas: initialXenogas });
+  console.log('[WorldTick][Colonize] DONE colony:', newPlanetId, 'at', targetCoords, 'resources:', { fer: initialFer, silice: initialSilice, xenogas: initialXenogas });
 }
 
 async function processStationMission(mission: Record<string, unknown>): Promise<void> {

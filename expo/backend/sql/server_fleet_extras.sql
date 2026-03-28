@@ -728,7 +728,85 @@ END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================
--- 8. Cleanup: purge old completed fleet missions (> 7 days)
+-- 8. rpc_create_colony_atomic
+-- =============================================================
+-- Creates a colony planet AND its planet_resources row in a
+-- SINGLE atomic transaction. This eliminates the race condition
+-- where materialize_planet_resources could create a default row
+-- (500/300/0) between planet INSERT and resource UPSERT.
+--
+-- Returns: { success, planet_id, fer, silice, xenogas }
+-- or { success: false, error: '...' }
+-- =============================================================
+CREATE OR REPLACE FUNCTION rpc_create_colony_atomic(
+  p_user_id uuid,
+  p_planet_name text,
+  p_coordinates jsonb,
+  p_cargo_fer double precision DEFAULT 0,
+  p_cargo_silice double precision DEFAULT 0,
+  p_cargo_xenogas double precision DEFAULT 0
+) RETURNS json AS $
+DECLARE
+  v_new_planet_id uuid;
+  v_now bigint;
+  v_initial_fer double precision;
+  v_initial_silice double precision;
+  v_initial_xenogas double precision;
+  v_verify_fer double precision;
+  v_verify_silice double precision;
+  v_verify_xenogas double precision;
+BEGIN
+  v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
+  v_initial_fer := 500 + GREATEST(0, COALESCE(p_cargo_fer, 0));
+  v_initial_silice := 300 + GREATEST(0, COALESCE(p_cargo_silice, 0));
+  v_initial_xenogas := GREATEST(0, COALESCE(p_cargo_xenogas, 0));
+
+  -- 1. Create the planet
+  INSERT INTO planets (user_id, planet_name, coordinates, is_main, last_update)
+  VALUES (p_user_id, p_planet_name, p_coordinates, false, v_now)
+  RETURNING id INTO v_new_planet_id;
+
+  IF v_new_planet_id IS NULL THEN
+    RETURN json_build_object('success', false, 'error', 'Failed to create planet');
+  END IF;
+
+  -- 2. Set resource tx context for audit trigger
+  PERFORM set_resource_tx_context('colonize', 'colony_creation_with_cargo');
+
+  -- 3. Create planet_resources with cargo included (same transaction!)
+  INSERT INTO planet_resources (planet_id, fer, silice, xenogas, energy)
+  VALUES (v_new_planet_id, v_initial_fer, v_initial_silice, v_initial_xenogas, 0)
+  ON CONFLICT (planet_id) DO UPDATE
+  SET fer = EXCLUDED.fer,
+      silice = EXCLUDED.silice,
+      xenogas = EXCLUDED.xenogas,
+      energy = EXCLUDED.energy;
+
+  -- 4. Verify within same transaction
+  SELECT fer, silice, xenogas INTO v_verify_fer, v_verify_silice, v_verify_xenogas
+  FROM planet_resources
+  WHERE planet_id = v_new_planet_id;
+
+  IF v_verify_fer IS NULL THEN
+    RAISE WARNING '[rpc_create_colony_atomic] planet_resources NOT FOUND after insert for planet %', v_new_planet_id;
+    RETURN json_build_object('success', false, 'error', 'planet_resources not created');
+  END IF;
+
+  RAISE NOTICE '[rpc_create_colony_atomic] Colony % created with fer=%, silice=%, xenogas=%',
+    v_new_planet_id, v_verify_fer, v_verify_silice, v_verify_xenogas;
+
+  RETURN json_build_object(
+    'success', true,
+    'planet_id', v_new_planet_id,
+    'fer', v_verify_fer,
+    'silice', v_verify_silice,
+    'xenogas', v_verify_xenogas
+  );
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- =============================================================
+-- 9. Cleanup: purge old completed fleet missions (> 7 days)
 -- =============================================================
 CREATE OR REPLACE FUNCTION purge_old_fleet_missions(
   p_days integer DEFAULT 7
