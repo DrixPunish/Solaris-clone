@@ -613,20 +613,18 @@ BEGIN
         END LOOP;
       END IF;
 
-      -- Return cargo resources (skip for colonize: cargo already deposited at colony)
-      IF v_mission.mission_type != 'colonize' THEN
-        v_cargo_fer := COALESCE((v_mission.resources->>'fer')::double precision, 0);
-        v_cargo_silice := COALESCE((v_mission.resources->>'silice')::double precision, 0);
-        v_cargo_xenogas := COALESCE((v_mission.resources->>'xenogas')::double precision, 0);
+      -- Return cargo resources
+      v_cargo_fer := COALESCE((v_mission.resources->>'fer')::double precision, 0);
+      v_cargo_silice := COALESCE((v_mission.resources->>'silice')::double precision, 0);
+      v_cargo_xenogas := COALESCE((v_mission.resources->>'xenogas')::double precision, 0);
 
-        IF v_cargo_fer > 0 OR v_cargo_silice > 0 OR v_cargo_xenogas > 0 THEN
-          PERFORM add_resources_to_planet(
-            v_sender_planet_id,
-            v_cargo_fer,
-            v_cargo_silice,
-            v_cargo_xenogas
-          );
-        END IF;
+      IF v_cargo_fer > 0 OR v_cargo_silice > 0 OR v_cargo_xenogas > 0 THEN
+        PERFORM add_resources_to_planet(
+          v_sender_planet_id,
+          v_cargo_fer,
+          v_cargo_silice,
+          v_cargo_xenogas
+        );
       END IF;
 
       -- Mark completed
@@ -730,26 +728,12 @@ END;
 $fn$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================
--- 7b. SCHEMA: colony_protected_until on planets
--- =============================================================
--- Prevents materialize_planet_resources from touching a newly
--- created colony for 5 minutes after creation. This eliminates
--- ALL race conditions between rpc_create_colony_atomic and
--- materialize_planet_resources.
--- =============================================================
-ALTER TABLE planets ADD COLUMN IF NOT EXISTS colony_protected_until bigint DEFAULT NULL;
-
--- =============================================================
 -- 8. rpc_create_colony_atomic
 -- =============================================================
 -- Creates a colony planet AND its planet_resources row in a
--- SINGLE atomic transaction. This eliminates the race condition
--- where materialize_planet_resources could create a default row
--- (500/300/0) between planet INSERT and resource UPSERT.
---
--- PROTECTION: Sets colony_protected_until = now + 5 minutes
--- to prevent materialize_planet_resources from touching this
--- planet during the critical window after creation.
+-- SINGLE atomic transaction. The planet_resources row includes
+-- the default 500 fer / 300 silice PLUS any cargo from the
+-- fleet_mission (barge coloniale). This way, cargo is never lost.
 --
 -- Returns: { success, planet_id, fer, silice, xenogas }
 -- or { success: false, error: '...' }
@@ -768,26 +752,15 @@ DECLARE
   v_initial_fer double precision;
   v_initial_silice double precision;
   v_initial_xenogas double precision;
-  v_verify_fer double precision;
-  v_verify_silice double precision;
-  v_verify_xenogas double precision;
-  v_protection_until bigint;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
-  v_protection_until := v_now + 600000;
   v_initial_fer := 500 + GREATEST(0, COALESCE(p_cargo_fer, 0));
   v_initial_silice := 300 + GREATEST(0, COALESCE(p_cargo_silice, 0));
   v_initial_xenogas := GREATEST(0, COALESCE(p_cargo_xenogas, 0));
 
-  RAISE NOTICE '[rpc_create_colony_atomic] START user=% coords=% cargo_fer=% cargo_silice=% cargo_xenogas=% initial_fer=% initial_silice=% initial_xenogas=%',
-    p_user_id, p_coordinates, p_cargo_fer, p_cargo_silice, p_cargo_xenogas,
-    v_initial_fer, v_initial_silice, v_initial_xenogas;
-
-  INSERT INTO planets (user_id, planet_name, coordinates, is_main, last_update, colony_protected_until)
-  VALUES (p_user_id, p_planet_name, p_coordinates, false, v_now, v_protection_until)
+  INSERT INTO planets (user_id, planet_name, coordinates, is_main, last_update)
+  VALUES (p_user_id, p_planet_name, p_coordinates, false, v_now)
   RETURNING id INTO v_new_planet_id;
-
-  PERFORM 1 FROM planets WHERE id = v_new_planet_id FOR UPDATE;
 
   IF v_new_planet_id IS NULL THEN
     RETURN json_build_object('success', false, 'error', 'Failed to create planet');
@@ -803,50 +776,16 @@ BEGIN
       xenogas = EXCLUDED.xenogas,
       energy = EXCLUDED.energy;
 
-  SELECT fer, silice, xenogas INTO v_verify_fer, v_verify_silice, v_verify_xenogas
-  FROM planet_resources
-  WHERE planet_id = v_new_planet_id
-  FOR UPDATE;
-
-  IF v_verify_fer IS NULL THEN
-    RAISE WARNING '[rpc_create_colony_atomic] planet_resources NOT FOUND after insert for planet %', v_new_planet_id;
-    INSERT INTO planet_resources (planet_id, fer, silice, xenogas, energy)
-    VALUES (v_new_planet_id, v_initial_fer, v_initial_silice, v_initial_xenogas, 0);
-
-    SELECT fer, silice, xenogas INTO v_verify_fer, v_verify_silice, v_verify_xenogas
-    FROM planet_resources
-    WHERE planet_id = v_new_planet_id;
-
-    IF v_verify_fer IS NULL THEN
-      RETURN json_build_object('success', false, 'error', 'planet_resources creation failed completely');
-    END IF;
-  END IF;
-
-  IF v_verify_fer < v_initial_fer - 1 OR v_verify_silice < v_initial_silice - 1 THEN
-    RAISE WARNING '[rpc_create_colony_atomic] MISMATCH: expected fer=% got %, expected silice=% got %. Force-correcting.',
-      v_initial_fer, v_verify_fer, v_initial_silice, v_verify_silice;
-
-    UPDATE planet_resources
-    SET fer = v_initial_fer,
-        silice = v_initial_silice,
-        xenogas = v_initial_xenogas
-    WHERE planet_id = v_new_planet_id;
-
-    v_verify_fer := v_initial_fer;
-    v_verify_silice := v_initial_silice;
-    v_verify_xenogas := v_initial_xenogas;
-  END IF;
-
-  RAISE NOTICE '[rpc_create_colony_atomic] Colony % created OK: fer=%, silice=%, xenogas=%, protected_until=%',
-    v_new_planet_id, v_verify_fer, v_verify_silice, v_verify_xenogas, v_protection_until;
+  RAISE NOTICE '[rpc_create_colony_atomic] Colony % created: fer=%, silice=%, xenogas=% (cargo: fer=%, silice=%, xenogas=%)',
+    v_new_planet_id, v_initial_fer, v_initial_silice, v_initial_xenogas,
+    p_cargo_fer, p_cargo_silice, p_cargo_xenogas;
 
   RETURN json_build_object(
     'success', true,
     'planet_id', v_new_planet_id,
-    'fer', v_verify_fer,
-    'silice', v_verify_silice,
-    'xenogas', v_verify_xenogas,
-    'protected_until', v_protection_until
+    'fer', v_initial_fer,
+    'silice', v_initial_silice,
+    'xenogas', v_initial_xenogas
   );
 END;
 $ LANGUAGE plpgsql SECURITY DEFINER;
