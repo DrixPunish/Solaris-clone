@@ -617,6 +617,11 @@ BEGIN
     ON CONFLICT (user_id, research_id) DO UPDATE SET level = v_timer.target_level;
   END IF;
 
+	PERFORM set_solar_tx_context(
+  'rush_' || p_timer_type, 
+  'rush_' || p_timer_id || '_lvl' || v_timer.target_level || '_cost' || v_solar_cost
+);
+
   UPDATE players SET solar = v_new_solar WHERE user_id = p_user_id;
 
   RETURN json_build_object(
@@ -821,6 +826,11 @@ BEGIN
       WHERE planet_id = p_planet_id AND defense_id = p_item_id;
     END IF;
   END IF;
+
+	PERFORM set_solar_tx_context(
+  'rush_shipyard', 
+  'rush_' || p_item_type || '_' || p_item_id || '_x' || v_completed_qty || '_cost' || v_solar_cost
+);
 
   UPDATE players SET solar = v_new_solar WHERE user_id = p_user_id;
 

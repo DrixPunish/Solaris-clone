@@ -120,6 +120,8 @@ BEGIN
     );
   END IF;
 
+	PERFORM set_solar_tx_context('buy_shield', 'quantum_shield_24h');
+
   UPDATE players
   SET solar = solar - 500
   WHERE user_id = p_player_id
