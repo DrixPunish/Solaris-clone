@@ -2,6 +2,74 @@ import { SHIPS, DEFENSES } from '@/constants/gameData';
 import { CombatUnit } from '@/types/fleet';
 import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/utils/gameCalculations';
 
+export const RAPIDFIRE_TABLE: Record<string, Record<string, number>> = {
+  novaScout: {
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  ferDeLance: {
+    novaScout: 3,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  cyclone: {
+    novaScout: 3,
+    ferDeLance: 2,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+    kineticTurret: 10,
+  },
+  bastion: {
+    cyclone: 2,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  pyro: {
+    kineticTurret: 10,
+    pulseCannon: 10,
+    beamCannon: 5,
+    ionProjector: 4,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  nemesis: {
+    novaScout: 6,
+    ferDeLance: 4,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  fulgurant: {
+    novaScout: 4,
+    cyclone: 3,
+    nemesis: 2,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+    kineticTurret: 10,
+    pulseCannon: 10,
+  },
+  titanAstral: {
+    novaScout: 200,
+    ferDeLance: 100,
+    cyclone: 33,
+    bastion: 15,
+    pyro: 15,
+    nemesis: 10,
+    fulgurant: 5,
+    atlasCargo: 250,
+    atlasCargoXL: 250,
+    colonyShip: 250,
+    mantaRecup: 250,
+    spectreSonde: 1250,
+    heliosRemorqueur: 1250,
+    kineticTurret: 200,
+    pulseCannon: 200,
+    beamCannon: 100,
+    massDriver: 30,
+    ionProjector: 100,
+    solarCannon: 10,
+  },
+};
+
 const BASE_SHIP_DRIVE_TYPE: Record<string, 'chemical' | 'impulse' | 'void'> = {
   novaScout: 'chemical',
   ferDeLance: 'impulse',
@@ -226,42 +294,99 @@ function createDefenderUnits(
   return units;
 }
 
-function fireRound(attackers: CombatUnit[], defenders: CombatUnit[]): void {
-  for (const unit of attackers) {
-    if (unit.hull <= 0) continue;
-    const aliveDefenders = defenders.filter(d => d.hull > 0);
-    if (aliveDefenders.length === 0) break;
-    const target = aliveDefenders[Math.floor(Math.random() * aliveDefenders.length)];
+function getUnitTypeId(unit: CombatUnit): string {
+  const parts = unit.id.split('_');
+  if (unit.id.startsWith('def_')) {
+    return parts.slice(1, -1).join('_');
+  } else if (unit.id.startsWith('ship_')) {
+    return parts.slice(1, -1).join('_');
+  }
+  return parts.slice(0, -1).join('_');
+}
+
+function fireOneUnit(
+  unit: CombatUnit,
+  targets: CombatUnit[],
+  pendingDamage: Map<string, { shield: number; hull: number }>,
+): void {
+  const aliveTargets = targets.filter(t => t.hull > 0);
+  if (aliveTargets.length === 0) return;
+
+  const attackerTypeId = getUnitTypeId(unit);
+  let shotsRemaining = 1;
+  const maxShots = 100;
+  let totalShots = 0;
+
+  while (shotsRemaining > 0 && totalShots < maxShots) {
+    totalShots++;
+    shotsRemaining--;
+
+    const currentAlive = aliveTargets.filter(t => t.hull > 0);
+    if (currentAlive.length === 0) break;
+
+    const target = currentAlive[Math.floor(Math.random() * currentAlive.length)];
+    const targetTypeId = getUnitTypeId(target);
+
     let damage = unit.attack;
-    if (target.shield > 0) {
-      if (damage <= target.shield * 0.01) {
+    const pending = pendingDamage.get(target.id) ?? { shield: 0, hull: 0 };
+    const effectiveShield = Math.max(0, target.shield - pending.shield);
+
+    if (effectiveShield > 0) {
+      if (damage <= effectiveShield * 0.01) {
         continue;
       }
-      const absorbed = Math.min(target.shield, damage);
-      target.shield -= absorbed;
+      const absorbed = Math.min(effectiveShield, damage);
+      pending.shield += absorbed;
       damage -= absorbed;
     }
     if (damage > 0) {
-      target.hull -= damage;
+      pending.hull += damage;
     }
+    pendingDamage.set(target.id, pending);
+
+    const rfValue = RAPIDFIRE_TABLE[attackerTypeId]?.[targetTypeId];
+    if (rfValue && rfValue > 1) {
+      const chance = 1 - (1 / rfValue);
+      if (Math.random() < chance) {
+        shotsRemaining++;
+      }
+    }
+  }
+}
+
+function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[]): void {
+  const pendingDmgOnDef = new Map<string, { shield: number; hull: number }>();
+  const pendingDmgOnAtt = new Map<string, { shield: number; hull: number }>();
+
+  for (const unit of attackers) {
+    if (unit.hull <= 0) continue;
+    fireOneUnit(unit, defenders, pendingDmgOnDef);
   }
 
   for (const unit of defenders) {
     if (unit.hull <= 0) continue;
-    const aliveAttackers = attackers.filter(a => a.hull > 0);
-    if (aliveAttackers.length === 0) break;
-    const target = aliveAttackers[Math.floor(Math.random() * aliveAttackers.length)];
-    let damage = unit.attack;
-    if (target.shield > 0) {
-      if (damage <= target.shield * 0.01) {
-        continue;
-      }
-      const absorbed = Math.min(target.shield, damage);
-      target.shield -= absorbed;
-      damage -= absorbed;
+    fireOneUnit(unit, attackers, pendingDmgOnAtt);
+  }
+
+  for (const unit of defenders) {
+    const pending = pendingDmgOnDef.get(unit.id);
+    if (!pending) continue;
+    const shieldDmg = Math.min(unit.shield, pending.shield);
+    unit.shield -= shieldDmg;
+    let hullDmg = pending.hull + (pending.shield - shieldDmg);
+    if (hullDmg > 0) {
+      unit.hull -= hullDmg;
     }
-    if (damage > 0) {
-      target.hull -= damage;
+  }
+
+  for (const unit of attackers) {
+    const pending = pendingDmgOnAtt.get(unit.id);
+    if (!pending) continue;
+    const shieldDmg = Math.min(unit.shield, pending.shield);
+    unit.shield -= shieldDmg;
+    let hullDmg = pending.hull + (pending.shield - shieldDmg);
+    if (hullDmg > 0) {
+      unit.hull -= hullDmg;
     }
   }
 
@@ -318,12 +443,12 @@ export function simulateCombat(
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
 
-  const MAX_ROUNDS = 6;
+  const MAX_ROUNDS = 1000;
   let roundCount = 0;
 
-  for (let i = 0; i < MAX_ROUNDS; i++) {
+  while (roundCount < MAX_ROUNDS) {
     roundCount++;
-    fireRound(attackerUnits, defenderUnits);
+    fireRoundSimultaneous(attackerUnits, defenderUnits);
 
     const attackerAlive = attackerUnits.filter(u => u.hull > 0).length;
     const defenderAlive = defenderUnits.filter(u => u.hull > 0).length;
@@ -403,9 +528,5 @@ export function simulateCombat(
 }
 
 export function getDefenseRebuildCount(lost: number): number {
-  let rebuilt = 0;
-  for (let i = 0; i < lost; i++) {
-    if (Math.random() < 0.7) rebuilt++;
-  }
-  return rebuilt;
+  return Math.floor(lost * 0.7);
 }

@@ -360,7 +360,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 3000, silice: 1000 },
     buildTime: 30,
     baseFuelCost: 20,
-    stats: { attack: 50, shield: 10, hull: 400, speed: 12500, cargo: 50 },
+    stats: { attack: 50, shield: 10, hull: 4000, speed: 12500, cargo: 50 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 1 },
       { type: 'research', id: 'chemicalDrive', level: 1 },
@@ -373,7 +373,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 6000, silice: 4000 },
     buildTime: 60,
     baseFuelCost: 40,
-    stats: { attack: 150, shield: 25, hull: 1000, speed: 10000, cargo: 100 },
+    stats: { attack: 150, shield: 25, hull: 10000, speed: 10000, cargo: 100 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 3 },
       { type: 'research', id: 'armorTech', level: 2 },
@@ -387,7 +387,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 20000, silice: 7000, xenogas: 2000 },
     buildTime: 120,
     baseFuelCost: 75,
-    stats: { attack: 400, shield: 50, hull: 2700, speed: 15000, cargo: 800 },
+    stats: { attack: 400, shield: 50, hull: 27000, speed: 15000, cargo: 800 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 5 },
       { type: 'research', id: 'impulseReactor', level: 4 },
@@ -401,7 +401,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 45000, silice: 15000 },
     buildTime: 180,
     baseFuelCost: 500,
-    stats: { attack: 1000, shield: 200, hull: 6000, speed: 10000, cargo: 1500 },
+    stats: { attack: 1000, shield: 200, hull: 60000, speed: 10000, cargo: 1500 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 7 },
       { type: 'research', id: 'voidDrive', level: 4 },
@@ -414,7 +414,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 50000, silice: 25000, xenogas: 15000 },
     buildTime: 240,
     baseFuelCost: 1000,
-    stats: { attack: 1000, shield: 500, hull: 7500, speed: 4000, cargo: 500 },
+    stats: { attack: 1000, shield: 500, hull: 75000, speed: 4000, cargo: 500 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 8 },
       { type: 'research', id: 'impulseReactor', level: 6 },
@@ -428,7 +428,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 30000, silice: 40000, xenogas: 15000 },
     buildTime: 180,
     baseFuelCost: 800,
-    stats: { attack: 700, shield: 400, hull: 7000, speed: 10000, cargo: 750 },
+    stats: { attack: 700, shield: 400, hull: 70000, speed: 10000, cargo: 750 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 8 },
       { type: 'research', id: 'voidDrive', level: 5 },
@@ -442,7 +442,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 60000, silice: 50000, xenogas: 15000 },
     buildTime: 300,
     baseFuelCost: 1000,
-    stats: { attack: 2000, shield: 500, hull: 11000, speed: 5000, cargo: 2000 },
+    stats: { attack: 2000, shield: 500, hull: 110000, speed: 5000, cargo: 2000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 9 },
       { type: 'research', id: 'voidDrive', level: 6 },
@@ -456,7 +456,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 5000000, silice: 4000000, xenogas: 1000000 },
     buildTime: 3600,
     baseFuelCost: 100000,
-    stats: { attack: 200000, shield: 50000, hull: 900000, speed: 100, cargo: 1000000 },
+    stats: { attack: 200000, shield: 50000, hull: 9000000, speed: 100, cargo: 1000000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 12 },
       { type: 'research', id: 'voidDrive', level: 7 },
@@ -470,7 +470,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 2000, silice: 2000 },
     buildTime: 20,
     baseFuelCost: 20,
-    stats: { attack: 5, shield: 10, hull: 400, speed: 10000, cargo: 5000 },
+    stats: { attack: 5, shield: 10, hull: 4000, speed: 10000, cargo: 5000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 2 },
       { type: 'research', id: 'chemicalDrive', level: 2 },
@@ -483,7 +483,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 6000, silice: 6000 },
     buildTime: 40,
     baseFuelCost: 50,
-    stats: { attack: 5, shield: 25, hull: 1200, speed: 7500, cargo: 25000 },
+    stats: { attack: 5, shield: 25, hull: 12000, speed: 7500, cargo: 25000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 4 },
       { type: 'research', id: 'chemicalDrive', level: 6 },
@@ -496,7 +496,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 10000, silice: 20000, xenogas: 10000 },
     buildTime: 300,
     baseFuelCost: 1000,
-    stats: { attack: 50, shield: 100, hull: 3000, speed: 2500, cargo: 7500 },
+    stats: { attack: 50, shield: 100, hull: 30000, speed: 2500, cargo: 7500 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 4 },
       { type: 'research', id: 'impulseReactor', level: 3 },
@@ -510,7 +510,7 @@ export const SHIPS: ShipDef[] = [
     cost: { fer: 10000, silice: 6000, xenogas: 2000 },
     buildTime: 60,
     baseFuelCost: 300,
-    stats: { attack: 1, shield: 10, hull: 1600, speed: 2000, cargo: 20000 },
+    stats: { attack: 1, shield: 10, hull: 16000, speed: 2000, cargo: 20000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 4 },
       { type: 'research', id: 'chemicalDrive', level: 6 },
@@ -524,7 +524,7 @@ export const SHIPS: ShipDef[] = [
     cost: { silice: 1000 },
     buildTime: 10,
     baseFuelCost: 1,
-    stats: { attack: 0, shield: 0, hull: 100, speed: 100000000, cargo: 0 },
+    stats: { attack: 0, shield: 0, hull: 1000, speed: 100000000, cargo: 0 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 3 },
       { type: 'research', id: 'chemicalDrive', level: 3 },
@@ -538,7 +538,7 @@ export const SHIPS: ShipDef[] = [
     cost: { silice: 2000, xenogas: 500 },
     buildTime: 10,
     baseFuelCost: 0,
-    stats: { attack: 1, shield: 1, hull: 200, speed: 0, cargo: 0 },
+    stats: { attack: 1, shield: 1, hull: 2000, speed: 0, cargo: 0 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 1 },
     ],
@@ -552,7 +552,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Système simple et fiable qui lance des salves de projectiles métalliques à haute vitesse.',
     cost: { fer: 2000 },
     buildTime: 15,
-    stats: { attack: 80, shield: 20, hull: 200 },
+    stats: { attack: 80, shield: 20, hull: 2000 },
     prerequisites: [{ type: 'building', id: 'shipyard', level: 1 }],
   },
   {
@@ -561,7 +561,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Émet des rafales d\'énergie concentrée. Tir rapide et précis contre les petites unités.',
     cost: { fer: 1500, silice: 500 },
     buildTime: 20,
-    stats: { attack: 100, shield: 25, hull: 250 },
+    stats: { attack: 100, shield: 25, hull: 2500 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 2 },
       { type: 'research', id: 'quantumFlux', level: 2 },
@@ -574,7 +574,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Version avancée du canon à impulsion avec un faisceau continu capable de percer les blindages moyens.',
     cost: { fer: 6000, silice: 2000 },
     buildTime: 30,
-    stats: { attack: 250, shield: 100, hull: 800 },
+    stats: { attack: 250, shield: 100, hull: 8000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 4 },
       { type: 'research', id: 'quantumFlux', level: 3 },
@@ -587,7 +587,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Arme lourde lançant des obus hyper-denses. Dévastateur contre les vaisseaux lourds.',
     cost: { fer: 20000, silice: 15000, xenogas: 2000 },
     buildTime: 60,
-    stats: { attack: 1100, shield: 200, hull: 3500 },
+    stats: { attack: 1100, shield: 200, hull: 35000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 6 },
       { type: 'research', id: 'weaponsTech', level: 3 },
@@ -601,7 +601,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Génère une décharge ionisée qui perturbe l\'électronique ennemie et affaiblit les boucliers.',
     cost: { fer: 5000, silice: 3000 },
     buildTime: 30,
-    stats: { attack: 150, shield: 500, hull: 800 },
+    stats: { attack: 150, shield: 500, hull: 8000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 4 },
       { type: 'research', id: 'ionicStream', level: 4 },
@@ -613,7 +613,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Redirige l\'énergie d\'un mini-réacteur stellaire pour lancer du plasma surchauffé.',
     cost: { fer: 50000, silice: 50000, xenogas: 30000 },
     buildTime: 120,
-    stats: { attack: 3000, shield: 300, hull: 10000 },
+    stats: { attack: 3000, shield: 300, hull: 100000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 8 },
       { type: 'research', id: 'plasmaOverdrive', level: 7 },
@@ -625,7 +625,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Dôme de protection énergétique couvrant une zone restreinte de la planète.',
     cost: { fer: 10000, silice: 10000 },
     buildTime: 120,
-    stats: { attack: 1, shield: 2000, hull: 2000 },
+    stats: { attack: 1, shield: 2000, hull: 20000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 1 },
       { type: 'research', id: 'shieldTech', level: 2 },
@@ -637,7 +637,7 @@ export const DEFENSES: DefenseDef[] = [
     description: 'Bouclier énergétique massif protégeant l\'ensemble de la planète.',
     cost: { fer: 50000, silice: 50000 },
     buildTime: 300,
-    stats: { attack: 1, shield: 10000, hull: 10000 },
+    stats: { attack: 1, shield: 10000, hull: 100000 },
     prerequisites: [
       { type: 'building', id: 'shipyard', level: 6 },
       { type: 'research', id: 'shieldTech', level: 6 },
