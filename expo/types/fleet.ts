@@ -71,6 +71,7 @@ export interface EspionageReport {
 
 export interface CombatUnit {
   id: string;
+  unitId: string;
   type: 'ship' | 'defense';
   attack: number;
   shield: number;

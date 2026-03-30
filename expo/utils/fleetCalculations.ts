@@ -4,6 +4,74 @@ import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/ut
 
 const MAX_COMBAT_ROUNDS = 6;
 
+export const RAPIDFIRE_TABLE: Record<string, Record<string, number>> = {
+  novaScout: {
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  ferDeLance: {
+    atlasCargo: 3,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  cyclone: {
+    novaScout: 6,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+    kineticTurret: 10,
+  },
+  bastion: {
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  pyro: {
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+    kineticTurret: 20,
+    pulseCannon: 20,
+    beamCannon: 10,
+    ionProjector: 10,
+    massDriver: 5,
+    solarCannon: 5,
+  },
+  nemesis: {
+    atlasCargo: 3,
+    atlasCargoXL: 3,
+    novaScout: 4,
+    ferDeLance: 4,
+    cyclone: 4,
+    bastion: 7,
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+  },
+  fulgurant: {
+    spectreSonde: 5,
+    heliosRemorqueur: 5,
+    nemesis: 2,
+    pulseCannon: 10,
+  },
+  titanAstral: {
+    atlasCargo: 250,
+    atlasCargoXL: 250,
+    novaScout: 200,
+    ferDeLance: 100,
+    cyclone: 33,
+    bastion: 30,
+    pyro: 25,
+    fulgurant: 5,
+    spectreSonde: 1250,
+    heliosRemorqueur: 1250,
+    colonyShip: 250,
+    mantaRecup: 250,
+    nemesis: 15,
+    kineticTurret: 200,
+    pulseCannon: 200,
+    beamCannon: 100,
+    ionProjector: 100,
+    massDriver: 50,
+  },
+};
+
 const BASE_SHIP_DRIVE_TYPE: Record<string, 'chemical' | 'impulse' | 'void'> = {
   novaScout: 'chemical',
   ferDeLance: 'impulse',
@@ -173,6 +241,7 @@ function createAttackerUnits(
     for (let i = 0; i < count; i++) {
       units.push({
         id: `${shipId}_${i}`,
+        unitId: shipId,
         type: 'ship',
         attack: boosted.attack,
         shield: boosted.shield,
@@ -199,6 +268,7 @@ function createDefenderUnits(
     for (let i = 0; i < count; i++) {
       units.push({
         id: `ship_${shipId}_${i}`,
+        unitId: shipId,
         type: 'ship',
         attack: boosted.attack,
         shield: boosted.shield,
@@ -216,6 +286,7 @@ function createDefenderUnits(
     for (let i = 0; i < count; i++) {
       units.push({
         id: `def_${defId}_${i}`,
+        unitId: defId,
         type: 'defense',
         attack: boosted.attack,
         shield: boosted.shield,
@@ -229,13 +300,13 @@ function createDefenderUnits(
 }
 
 
-function fireOneUnit(
+function fireOneShot(
   unit: CombatUnit,
   targets: CombatUnit[],
   pendingDamage: Map<string, { shield: number; hull: number }>,
-): void {
+): string | null {
   const aliveTargets = targets.filter(t => t.hull > 0);
-  if (aliveTargets.length === 0) return;
+  if (aliveTargets.length === 0) return null;
 
   const target = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
 
@@ -244,7 +315,7 @@ function fireOneUnit(
   const effectiveShield = Math.max(0, target.shield - pending.shield);
 
   if (damage <= target.maxShield * 0.01) {
-    return;
+    return target.unitId;
   }
 
   if (effectiveShield > 0) {
@@ -256,6 +327,34 @@ function fireOneUnit(
     pending.hull += damage;
   }
   pendingDamage.set(target.id, pending);
+  return target.unitId;
+}
+
+function fireOneUnit(
+  unit: CombatUnit,
+  targets: CombatUnit[],
+  pendingDamage: Map<string, { shield: number; hull: number }>,
+): void {
+  const rfTable = RAPIDFIRE_TABLE[unit.unitId];
+  let keepFiring = true;
+  let maxShots = 0;
+
+  while (keepFiring) {
+    maxShots++;
+    if (maxShots > 2000) break;
+
+    const hitTargetId = fireOneShot(unit, targets, pendingDamage);
+    if (hitTargetId === null) break;
+
+    const rf = rfTable?.[hitTargetId] ?? 0;
+    if (rf <= 1) {
+      break;
+    }
+    const continueChance = 1 - (1 / rf);
+    if (Math.random() >= continueChance) {
+      break;
+    }
+  }
 }
 
 function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[]): void {
