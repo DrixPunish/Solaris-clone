@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Platform } from 'react-native';
-import { X, BookOpen, BarChart3, Coins, Zap, Clock, TrendingUp, CheckCircle, XCircle, Navigation } from 'lucide-react-native';
+import { X, BookOpen, BarChart3, Coins, Zap, Clock, TrendingUp, CheckCircle, XCircle, Navigation, Crosshair } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from '@/constants/gameData';
 import { BUILDING_LORE, RESEARCH_LORE, SHIP_LORE, DEFENSE_LORE } from '@/constants/lore';
 import { calculateCost, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime, formatNumber, formatTime, formatSpeed, getBoostedShipStats, getBoostedDefenseStats, getCombatBoosts, getCargoBoost, getBuildingProductionAtLevel, getPlasmaProductionBonus, getNeuralMeshLabBonus } from '@/utils/gameCalculations';
-import { getShipDriveType, getShipSpeed } from '@/utils/fleetCalculations';
+import { getShipDriveType, getShipSpeed, RAPIDFIRE_TABLE } from '@/utils/fleetCalculations';
 import { getPrereqLabel } from '@/utils/prereqLabels';
 import { Prerequisite, Colony } from '@/types/game';
 
@@ -118,6 +118,37 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
     }
     return null;
   }, [data, itemType, research]);
+
+  const rapidfireData = useMemo(() => {
+    if (itemType !== 'ship' && itemType !== 'defense') return null;
+
+    const allUnits = [
+      ...SHIPS.map(s => ({ id: s.id, name: s.name, type: 'ship' as const })),
+      ...DEFENSES.map(d => ({ id: d.id, name: d.name, type: 'defense' as const })),
+    ];
+    const unitNameMap: Record<string, string> = {};
+    for (const u of allUnits) unitNameMap[u.id] = u.name;
+
+    const rfAgainst: { id: string; name: string; value: number }[] = [];
+    const rfTable = RAPIDFIRE_TABLE[itemId];
+    if (rfTable) {
+      for (const [targetId, value] of Object.entries(rfTable)) {
+        rfAgainst.push({ id: targetId, name: unitNameMap[targetId] ?? targetId, value });
+      }
+    }
+    rfAgainst.sort((a, b) => b.value - a.value);
+
+    const rfFrom: { id: string; name: string; value: number }[] = [];
+    for (const [attackerId, targets] of Object.entries(RAPIDFIRE_TABLE)) {
+      if (targets[itemId]) {
+        rfFrom.push({ id: attackerId, name: unitNameMap[attackerId] ?? attackerId, value: targets[itemId] });
+      }
+    }
+    rfFrom.sort((a, b) => b.value - a.value);
+
+    if (rfAgainst.length === 0 && rfFrom.length === 0) return null;
+    return { rfAgainst, rfFrom };
+  }, [itemId, itemType]);
 
   const quantumReactorBonus = useMemo(() => {
     if (naniteLevel > 0) {
@@ -309,6 +340,43 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
               </View>
             )}
 
+            {rapidfireData && (
+              <View style={infoStyles.section}>
+                <View style={infoStyles.sectionHeader}>
+                  <Crosshair size={14} color={Colors.danger} />
+                  <Text style={infoStyles.sectionTitle}>Rapidfire</Text>
+                </View>
+
+                {rapidfireData.rfAgainst.length > 0 && (
+                  <View style={infoStyles.rfBlock}>
+                    <Text style={infoStyles.rfSubtitle}>RF contre</Text>
+                    {rapidfireData.rfAgainst.map((rf) => (
+                      <View key={rf.id} style={infoStyles.rfRow}>
+                        <Text style={infoStyles.rfName}>{rf.name}</Text>
+                        <View style={infoStyles.rfBadge}>
+                          <Text style={infoStyles.rfValue}>x{rf.value}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {rapidfireData.rfFrom.length > 0 && (
+                  <View style={[infoStyles.rfBlock, rapidfireData.rfAgainst.length > 0 && { marginTop: 12 }]}>
+                    <Text style={infoStyles.rfSubtitleDanger}>RF subi de</Text>
+                    {rapidfireData.rfFrom.map((rf) => (
+                      <View key={rf.id} style={infoStyles.rfRow}>
+                        <Text style={infoStyles.rfName}>{rf.name}</Text>
+                        <View style={infoStyles.rfBadgeDanger}>
+                          <Text style={infoStyles.rfValueDanger}>x{rf.value}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>
@@ -474,5 +542,65 @@ const infoStyles = StyleSheet.create({
     fontWeight: '700' as const,
     fontSize: 9,
     textTransform: 'uppercase' as const,
+  },
+  rfBlock: {
+    marginTop: 2,
+  },
+  rfSubtitle: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.success,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  rfSubtitleDanger: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.danger,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  rfRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border + '40',
+  },
+  rfName: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+    flex: 1,
+  },
+  rfBadge: {
+    backgroundColor: Colors.success + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    minWidth: 40,
+    alignItems: 'center' as const,
+  },
+  rfValue: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.success,
+  },
+  rfBadgeDanger: {
+    backgroundColor: Colors.danger + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    minWidth: 40,
+    alignItems: 'center' as const,
+  },
+  rfValueDanger: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.danger,
   },
 });
