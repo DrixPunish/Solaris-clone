@@ -4,51 +4,15 @@
 -- Run AFTER: server_defs.sql, rpc_functions.sql, resource_security.sql
 --
 -- Fixes:
--- 1. materialize_debug table for diagnostic logging
+-- 1. (materialize_debug REMOVED - see migration_solar_transactions.sql)
 -- 2. Hardened calc_storage_cap with minimum floor
 -- 3. Hardened calc_planet_economy with COALESCE/GREATEST
 -- 4. Hardened materialize_planet_resources with validation & logging
 -- 5. Hardened inline materialization in build RPCs
 -- =============================================================
 
--- =============================================================
--- 1. DIAGNOSTIC TABLE: materialize_debug
--- =============================================================
-CREATE TABLE IF NOT EXISTS materialize_debug (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  planet_id uuid NOT NULL,
-  user_id uuid,
-  ts timestamptz NOT NULL DEFAULT now(),
-  cur_fer double precision,
-  cur_silice double precision,
-  cur_xenogas double precision,
-  storage_fer double precision,
-  storage_silice double precision,
-  storage_xenogas double precision,
-  prod_fer_h double precision,
-  prod_silice_h double precision,
-  prod_xenogas_h double precision,
-  delta_fer double precision,
-  delta_silice double precision,
-  delta_xenogas double precision,
-  new_fer double precision,
-  new_silice double precision,
-  new_xenogas double precision,
-  elapsed_s double precision,
-  decision text,
-  ferro_store_level int,
-  silica_store_level int,
-  xeno_store_level int,
-  fer_mine_level int,
-  silice_mine_level int,
-  xenogas_ref_level int,
-  energy_net double precision
-);
-
-CREATE INDEX IF NOT EXISTS idx_materialize_debug_planet_id
-  ON materialize_debug(planet_id);
-CREATE INDEX IF NOT EXISTS idx_materialize_debug_ts
-  ON materialize_debug(ts);
+-- (materialize_debug table REMOVED - use resource_transactions instead)
+-- See migration_solar_transactions.sql for cleanup
 
 -- =============================================================
 -- 2. HARDENED calc_storage_cap
@@ -209,7 +173,6 @@ $$ LANGUAGE plpgsql STABLE;
 -- =============================================================
 -- Changes:
 -- - Validates storage caps >= 1000, logs WARNING if not
--- - Inserts debug row into materialize_debug before UPDATE
 -- - Resources can NEVER go below 0 (GREATEST(0, ...))
 -- - Aborts materialization (returns false) if storage anomaly
 -- =============================================================
@@ -268,29 +231,7 @@ BEGIN
 
     v_decision := 'ABORTED_LOW_STORAGE';
 
-    INSERT INTO materialize_debug (
-      planet_id, user_id, cur_fer, cur_silice, cur_xenogas,
-      storage_fer, storage_silice, storage_xenogas,
-      prod_fer_h, prod_silice_h, prod_xenogas_h,
-      delta_fer, delta_silice, delta_xenogas,
-      new_fer, new_silice, new_xenogas,
-      elapsed_s, decision,
-      ferro_store_level, silica_store_level, xeno_store_level,
-      fer_mine_level, silice_mine_level, xenogas_ref_level,
-      energy_net
-    ) VALUES (
-      p_planet_id, p_user_id, NULL, NULL, NULL,
-      COALESCE(v_econ.storage_fer, 0), COALESCE(v_econ.storage_silice, 0), COALESCE(v_econ.storage_xenogas, 0),
-      COALESCE(v_econ.prod_fer_h, 0), COALESCE(v_econ.prod_silice_h, 0), COALESCE(v_econ.prod_xenogas_h, 0),
-      0, 0, 0,
-      NULL, NULL, NULL,
-      v_elapsed, v_decision,
-      COALESCE(v_econ.ferro_store_level, -1), COALESCE(v_econ.silica_store_level, -1), COALESCE(v_econ.xeno_store_level, -1),
-      COALESCE(v_econ.fer_mine_level, -1), COALESCE(v_econ.silice_mine_level, -1), COALESCE(v_econ.xenogas_ref_level, -1),
-      COALESCE(v_econ.energy_net, 0)
-    );
-
-    RETURN json_build_object('success', false, 'error', 'Storage anomaly detected', 'aborted', true);
+    RETURN json_build_object('success', false, 'error', 'Storage anomaly detected', 'aborted', true, 'decision', v_decision);
   END IF;
 
   SELECT fer, silice, xenogas, energy INTO v_res
@@ -340,28 +281,6 @@ BEGIN
     v_new_silice := v_cur_silice;
     v_new_xenogas := v_cur_xenogas;
   END IF;
-
-  INSERT INTO materialize_debug (
-    planet_id, user_id, cur_fer, cur_silice, cur_xenogas,
-    storage_fer, storage_silice, storage_xenogas,
-    prod_fer_h, prod_silice_h, prod_xenogas_h,
-    delta_fer, delta_silice, delta_xenogas,
-    new_fer, new_silice, new_xenogas,
-    elapsed_s, decision,
-    ferro_store_level, silica_store_level, xeno_store_level,
-    fer_mine_level, silice_mine_level, xenogas_ref_level,
-    energy_net
-  ) VALUES (
-    p_planet_id, p_user_id, v_cur_fer, v_cur_silice, v_cur_xenogas,
-    COALESCE(v_econ.storage_fer, 0), COALESCE(v_econ.storage_silice, 0), COALESCE(v_econ.storage_xenogas, 0),
-    COALESCE(v_econ.prod_fer_h, 0), COALESCE(v_econ.prod_silice_h, 0), COALESCE(v_econ.prod_xenogas_h, 0),
-    v_delta_fer, v_delta_silice, v_delta_xenogas,
-    v_new_fer, v_new_silice, v_new_xenogas,
-    v_elapsed, v_decision,
-    COALESCE(v_econ.ferro_store_level, -1), COALESCE(v_econ.silica_store_level, -1), COALESCE(v_econ.xeno_store_level, -1),
-    COALESCE(v_econ.fer_mine_level, -1), COALESCE(v_econ.silice_mine_level, -1), COALESCE(v_econ.xenogas_ref_level, -1),
-    COALESCE(v_econ.energy_net, 0)
-  );
 
   UPDATE planet_resources
   SET fer = v_new_fer,
@@ -455,23 +374,7 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- =============================================================
--- 6. PURGE OLD materialize_debug (maintenance)
--- =============================================================
-CREATE OR REPLACE FUNCTION purge_old_materialize_debug(
-  p_days integer DEFAULT 7
-) RETURNS integer AS $$
-DECLARE
-  v_deleted integer;
-BEGIN
-  DELETE FROM materialize_debug
-  WHERE ts < now() - (p_days || ' days')::interval;
-  GET DIAGNOSTICS v_deleted = ROW_COUNT;
-  RETURN v_deleted;
-END;
-$$ LANGUAGE plpgsql;
-
--- =============================================================
--- 7. TEST SCRIPT: Simulate low-storage scenario
+-- 6. TEST SCRIPT: Simulate low-storage scenario
 -- =============================================================
 -- Uncomment and run manually to verify behavior.
 -- This test:

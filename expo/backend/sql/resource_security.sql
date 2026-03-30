@@ -322,7 +322,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 --
 -- HARDENING:
 -- - Validates storage caps >= 1000, aborts if anomaly
--- - Logs all values to materialize_debug table
 -- - Resources NEVER go below 0 (GREATEST(0, ...))
 -- - Resources NEVER decrease from production (safety check)
 -- - All COALESCE + GREATEST protections on calc outputs
@@ -382,29 +381,7 @@ BEGIN
 
     v_decision := 'ABORTED_LOW_STORAGE';
 
-    INSERT INTO materialize_debug (
-      planet_id, user_id, cur_fer, cur_silice, cur_xenogas,
-      storage_fer, storage_silice, storage_xenogas,
-      prod_fer_h, prod_silice_h, prod_xenogas_h,
-      delta_fer, delta_silice, delta_xenogas,
-      new_fer, new_silice, new_xenogas,
-      elapsed_s, decision,
-      ferro_store_level, silica_store_level, xeno_store_level,
-      fer_mine_level, silice_mine_level, xenogas_ref_level,
-      energy_net
-    ) VALUES (
-      p_planet_id, p_user_id, NULL, NULL, NULL,
-      COALESCE(v_econ.storage_fer, 0), COALESCE(v_econ.storage_silice, 0), COALESCE(v_econ.storage_xenogas, 0),
-      COALESCE(v_econ.prod_fer_h, 0), COALESCE(v_econ.prod_silice_h, 0), COALESCE(v_econ.prod_xenogas_h, 0),
-      0, 0, 0,
-      NULL, NULL, NULL,
-      v_elapsed, v_decision,
-      COALESCE(v_econ.ferro_store_level, -1), COALESCE(v_econ.silica_store_level, -1), COALESCE(v_econ.xeno_store_level, -1),
-      COALESCE(v_econ.fer_mine_level, -1), COALESCE(v_econ.silice_mine_level, -1), COALESCE(v_econ.xenogas_ref_level, -1),
-      COALESCE(v_econ.energy_net, 0)
-    );
-
-    RETURN json_build_object('success', false, 'error', 'Storage anomaly detected', 'aborted', true);
+    RETURN json_build_object('success', false, 'error', 'Storage anomaly detected', 'aborted', true, 'decision', v_decision);
   END IF;
 
   SELECT fer, silice, xenogas, energy INTO v_res
@@ -454,28 +431,6 @@ BEGIN
     v_new_silice := v_cur_silice;
     v_new_xenogas := v_cur_xenogas;
   END IF;
-
-  INSERT INTO materialize_debug (
-    planet_id, user_id, cur_fer, cur_silice, cur_xenogas,
-    storage_fer, storage_silice, storage_xenogas,
-    prod_fer_h, prod_silice_h, prod_xenogas_h,
-    delta_fer, delta_silice, delta_xenogas,
-    new_fer, new_silice, new_xenogas,
-    elapsed_s, decision,
-    ferro_store_level, silica_store_level, xeno_store_level,
-    fer_mine_level, silice_mine_level, xenogas_ref_level,
-    energy_net
-  ) VALUES (
-    p_planet_id, p_user_id, v_cur_fer, v_cur_silice, v_cur_xenogas,
-    COALESCE(v_econ.storage_fer, 0), COALESCE(v_econ.storage_silice, 0), COALESCE(v_econ.storage_xenogas, 0),
-    COALESCE(v_econ.prod_fer_h, 0), COALESCE(v_econ.prod_silice_h, 0), COALESCE(v_econ.prod_xenogas_h, 0),
-    v_delta_fer, v_delta_silice, v_delta_xenogas,
-    v_new_fer, v_new_silice, v_new_xenogas,
-    v_elapsed, v_decision,
-    COALESCE(v_econ.ferro_store_level, -1), COALESCE(v_econ.silica_store_level, -1), COALESCE(v_econ.xeno_store_level, -1),
-    COALESCE(v_econ.fer_mine_level, -1), COALESCE(v_econ.silice_mine_level, -1), COALESCE(v_econ.xenogas_ref_level, -1),
-    COALESCE(v_econ.energy_net, 0)
-  );
 
   UPDATE planet_resources
   SET fer = v_new_fer,
