@@ -139,20 +139,20 @@ ON CONFLICT (research_id) DO UPDATE SET
 -- Cout fixe par unite (pas de facteur d'escalade)
 -- Temps par unite: FLOOR(build_time / (1 + (shipyard-1)*0.1) / 2^nanite)
 INSERT INTO ship_defs (ship_id, cost_fer, cost_silice, cost_xenogas, build_time, base_attack, base_shield, base_hull, base_speed, base_cargo) VALUES
-  ('novaScout',        3000,    1000,    0,       30,   50,     10,     400,     12500,     50),
-  ('ferDeLance',       6000,    4000,    0,       60,   150,    25,     1000,    10000,     100),
-  ('cyclone',          20000,   7000,    2000,    120,  400,    50,     2700,    15000,     800),
-  ('bastion',          45000,   15000,   0,       180,  1000,   200,    6000,    10000,     1500),
-  ('pyro',             50000,   25000,   15000,   240,  1000,   500,    7500,    4000,      500),
-  ('nemesis',          30000,   40000,   15000,   180,  700,    400,    7000,    10000,     750),
-  ('fulgurant',        60000,   50000,   15000,   300,  2000,   500,    11000,   5000,      2000),
-  ('titanAstral',      5000000, 4000000, 1000000, 3600, 200000, 50000,  900000,  100,       1000000),
-  ('atlasCargo',       2000,    2000,    0,       20,   5,      10,     400,     10000,     5000),
-  ('atlasCargoXL',     6000,    6000,    0,       40,   5,      25,     1200,    7500,      25000),
-  ('colonyShip',       10000,   20000,   10000,   300,  50,     100,    3000,    2500,      7500),
-  ('mantaRecup',       10000,   6000,    2000,    60,   1,      10,     1600,    2000,      20000),
-  ('spectreSonde',     0,       1000,    0,       10,   0,      0,      100,     100000000, 0),
-  ('heliosRemorqueur', 0,       2000,    500,     10,   1,      1,      200,     0,         0)
+  ('novaScout',        3000,    1000,    0,       30,   50,     10,     4000,    12500,     50),
+  ('ferDeLance',       6000,    4000,    0,       60,   150,    25,     10000,   10000,     100),
+  ('cyclone',          20000,   7000,    2000,    120,  400,    50,     27000,   15000,     800),
+  ('bastion',          45000,   15000,   0,       180,  1000,   200,    60000,   10000,     1500),
+  ('pyro',             50000,   25000,   15000,   240,  1000,   500,    75000,   4000,      500),
+  ('nemesis',          30000,   40000,   15000,   180,  700,    400,    70000,   10000,     750),
+  ('fulgurant',        60000,   50000,   15000,   300,  2000,   500,    110000,  5000,      2000),
+  ('titanAstral',      5000000, 4000000, 1000000, 3600, 200000, 50000,  9000000, 100,       1000000),
+  ('atlasCargo',       2000,    2000,    0,       20,   5,      10,     4000,    10000,     5000),
+  ('atlasCargoXL',     6000,    6000,    0,       40,   5,      25,     12000,   7500,      25000),
+  ('colonyShip',       10000,   20000,   10000,   300,  50,     100,    30000,   2500,      7500),
+  ('mantaRecup',       10000,   6000,    2000,    60,   1,      10,     16000,   2000,      20000),
+  ('spectreSonde',     0,       1000,    0,       10,   0,      0,      1000,    100000000, 0),
+  ('heliosRemorqueur', 0,       2000,    500,     10,   1,      1,      2000,    0,         0)
 ON CONFLICT (ship_id) DO UPDATE SET
   cost_fer = EXCLUDED.cost_fer,
   cost_silice = EXCLUDED.cost_silice,
@@ -167,14 +167,14 @@ ON CONFLICT (ship_id) DO UPDATE SET
 -- 2d. DEFENSES
 -- Meme principe que les vaisseaux (cout fixe par unite)
 INSERT INTO defense_defs (defense_id, cost_fer, cost_silice, cost_xenogas, build_time, base_attack, base_shield, base_hull) VALUES
-  ('kineticTurret', 2000,  0,     0,     15,  80,   20,    200),
-  ('pulseCannon',   1500,  500,   0,     20,  100,  25,    250),
-  ('beamCannon',    6000,  2000,  0,     30,  250,  100,   800),
-  ('massDriver',    20000, 15000, 2000,  60,  1100, 200,   3500),
-  ('ionProjector',  5000,  3000,  0,     30,  150,  500,   800),
-  ('solarCannon',   50000, 50000, 30000, 120, 3000, 300,   10000),
-  ('smallShield',   10000, 10000, 0,     120, 1,    2000,  2000),
-  ('largeShield',   50000, 50000, 0,     300, 1,    10000, 10000)
+  ('kineticTurret', 2000,  0,     0,     15,  80,   20,    2000),
+  ('pulseCannon',   1500,  500,   0,     20,  100,  25,    2500),
+  ('beamCannon',    6000,  2000,  0,     30,  250,  100,   8000),
+  ('massDriver',    20000, 15000, 2000,  60,  1100, 200,   35000),
+  ('ionProjector',  5000,  3000,  0,     30,  150,  500,   8000),
+  ('solarCannon',   50000, 50000, 30000, 120, 3000, 300,   100000),
+  ('smallShield',   10000, 10000, 0,     120, 1,    2000,  20000),
+  ('largeShield',   50000, 50000, 0,     300, 1,    10000, 100000)
 ON CONFLICT (defense_id) DO UPDATE SET
   cost_fer = EXCLUDED.cost_fer,
   cost_silice = EXCLUDED.cost_silice,

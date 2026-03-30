@@ -2,73 +2,7 @@ import { SHIPS, DEFENSES } from '@/constants/gameData';
 import { CombatUnit } from '@/types/fleet';
 import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/utils/gameCalculations';
 
-export const RAPIDFIRE_TABLE: Record<string, Record<string, number>> = {
-  novaScout: {
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-  },
-  ferDeLance: {
-    novaScout: 3,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-  },
-  cyclone: {
-    novaScout: 3,
-    ferDeLance: 2,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-    kineticTurret: 10,
-  },
-  bastion: {
-    cyclone: 2,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-  },
-  pyro: {
-    kineticTurret: 10,
-    pulseCannon: 10,
-    beamCannon: 5,
-    ionProjector: 4,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-  },
-  nemesis: {
-    novaScout: 6,
-    ferDeLance: 4,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-  },
-  fulgurant: {
-    novaScout: 4,
-    cyclone: 3,
-    nemesis: 2,
-    spectreSonde: 5,
-    heliosRemorqueur: 5,
-    kineticTurret: 10,
-    pulseCannon: 10,
-  },
-  titanAstral: {
-    novaScout: 200,
-    ferDeLance: 100,
-    cyclone: 33,
-    bastion: 15,
-    pyro: 15,
-    nemesis: 10,
-    fulgurant: 5,
-    atlasCargo: 250,
-    atlasCargoXL: 250,
-    colonyShip: 250,
-    mantaRecup: 250,
-    spectreSonde: 1250,
-    heliosRemorqueur: 1250,
-    kineticTurret: 200,
-    pulseCannon: 200,
-    beamCannon: 100,
-    massDriver: 30,
-    ionProjector: 100,
-    solarCannon: 10,
-  },
-};
+const MAX_COMBAT_ROUNDS = 6;
 
 const BASE_SHIP_DRIVE_TYPE: Record<string, 'chemical' | 'impulse' | 'void'> = {
   novaScout: 'chemical',
@@ -294,15 +228,6 @@ function createDefenderUnits(
   return units;
 }
 
-function getUnitTypeId(unit: CombatUnit): string {
-  const parts = unit.id.split('_');
-  if (unit.id.startsWith('def_')) {
-    return parts.slice(1, -1).join('_');
-  } else if (unit.id.startsWith('ship_')) {
-    return parts.slice(1, -1).join('_');
-  }
-  return parts.slice(0, -1).join('_');
-}
 
 function fireOneUnit(
   unit: CombatUnit,
@@ -312,46 +237,25 @@ function fireOneUnit(
   const aliveTargets = targets.filter(t => t.hull > 0);
   if (aliveTargets.length === 0) return;
 
-  const attackerTypeId = getUnitTypeId(unit);
-  let shotsRemaining = 1;
-  const maxShots = 100;
-  let totalShots = 0;
+  const target = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
 
-  while (shotsRemaining > 0 && totalShots < maxShots) {
-    totalShots++;
-    shotsRemaining--;
+  let damage = unit.attack;
+  const pending = pendingDamage.get(target.id) ?? { shield: 0, hull: 0 };
+  const effectiveShield = Math.max(0, target.shield - pending.shield);
 
-    const currentAlive = aliveTargets.filter(t => t.hull > 0);
-    if (currentAlive.length === 0) break;
-
-    const target = currentAlive[Math.floor(Math.random() * currentAlive.length)];
-    const targetTypeId = getUnitTypeId(target);
-
-    let damage = unit.attack;
-    const pending = pendingDamage.get(target.id) ?? { shield: 0, hull: 0 };
-    const effectiveShield = Math.max(0, target.shield - pending.shield);
-
-    if (effectiveShield > 0) {
-      if (damage <= effectiveShield * 0.01) {
-        continue;
-      }
-      const absorbed = Math.min(effectiveShield, damage);
-      pending.shield += absorbed;
-      damage -= absorbed;
-    }
-    if (damage > 0) {
-      pending.hull += damage;
-    }
-    pendingDamage.set(target.id, pending);
-
-    const rfValue = RAPIDFIRE_TABLE[attackerTypeId]?.[targetTypeId];
-    if (rfValue && rfValue > 1) {
-      const chance = 1 - (1 / rfValue);
-      if (Math.random() < chance) {
-        shotsRemaining++;
-      }
-    }
+  if (damage <= target.maxShield * 0.01) {
+    return;
   }
+
+  if (effectiveShield > 0) {
+    const absorbed = Math.min(effectiveShield, damage);
+    pending.shield += absorbed;
+    damage -= absorbed;
+  }
+  if (damage > 0) {
+    pending.hull += damage;
+  }
+  pendingDamage.set(target.id, pending);
 }
 
 function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[]): void {
@@ -443,7 +347,7 @@ export function simulateCombat(
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
 
-  const MAX_ROUNDS = 1000;
+  const MAX_ROUNDS = MAX_COMBAT_ROUNDS;
   let roundCount = 0;
 
   while (roundCount < MAX_ROUNDS) {
