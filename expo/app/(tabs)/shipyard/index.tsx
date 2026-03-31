@@ -64,6 +64,7 @@ const DEFENSE_ICONS: Record<string, { icon: React.ComponentType<{ size: number; 
 
 const COMBAT_SHIP_IDS = ['novaScout', 'ferDeLance', 'cyclone', 'bastion', 'pyro', 'nemesis', 'fulgurant', 'titanAstral'];
 const UTILITY_SHIP_IDS = ['atlasCargo', 'atlasCargoXL', 'colonyShip', 'mantaRecup', 'spectreSonde', 'heliosRemorqueur'];
+const UNIQUE_DEFENSE_IDS = ['smallShield', 'largeShield'];
 
 function QuantitySelector({ quantity, maxQuantity, onChange }: { quantity: number; maxQuantity: number; onChange: (q: number) => void }) {
   const decrement = useCallback(() => {
@@ -352,7 +353,13 @@ export default function ShipyardScreen() {
   const renderDefense = useCallback(
     (defense: DefenseDef) => {
       const count = activePlanet.defenses[defense.id] ?? 0;
-      const qty = getQuantity(defense.id);
+      const isUnique = UNIQUE_DEFENSE_IDS.includes(defense.id);
+      const queueCountForUnique = isUnique
+        ? (activePlanet.shipyardQueue.find(q => q.id === defense.id && q.type === 'defense')?.remainingQuantity ?? 0)
+        : 0;
+      const shieldCapReached = isUnique && (count + queueCountForUnique) >= 1;
+      const effectiveMaxQty = isUnique ? Math.max(0, 1 - count - queueCountForUnique) : undefined;
+      const qty = isUnique ? Math.min(getQuantity(defense.id), effectiveMaxQty ?? getQuantity(defense.id)) : getQuantity(defense.id);
       const unitCost: Resources = {
         fer: defense.cost.fer ?? 0,
         silice: defense.cost.silice ?? 0,
@@ -366,7 +373,7 @@ export default function ShipyardScreen() {
         energy: 0,
       };
       const affordable = canAfford(activePlanet.resources, totalCost);
-      const maxBuildable = activeGetMaxBuildableQuantity(defense.cost);
+      const maxBuildable = isUnique ? (effectiveMaxQty ?? 0) : activeGetMaxBuildableQuantity(defense.cost);
       const iconDef = DEFENSE_ICONS[defense.id];
       const IconComponent = iconDef?.icon ?? Shield;
       const iconColor = iconDef?.color ?? Colors.primary;
@@ -409,11 +416,11 @@ export default function ShipyardScreen() {
               buildTimePerUnit: queueItem.buildTimePerUnit,
             } : undefined}
             solarBalance={state.solar}
-            actionLabel={`Construire x${qty}`}
-            actionDisabled={!hasShipyard || !affordable || !prereqsMet}
-            disabledReason={!prereqsMet ? `Requis: ${missingPrereqs[0]}` : !hasShipyard ? 'Construire un Chantier Spatial' : 'Ressources insuffisantes'}
+            actionLabel={shieldCapReached ? 'Maximum atteint (1/1)' : `Construire x${qty}`}
+            actionDisabled={!hasShipyard || !affordable || !prereqsMet || shieldCapReached}
+            disabledReason={shieldCapReached ? 'Maximum 1 par planète' : !prereqsMet ? `Requis: ${missingPrereqs[0]}` : !hasShipyard ? 'Construire un Chantier Spatial' : 'Ressources insuffisantes'}
             missingPrereqs={!prereqsMet ? missingPrereqs : undefined}
-            onAction={() => activeBuildDefenseQueue(defense.id, qty)}
+            onAction={() => activeBuildDefenseQueue(defense.id, isUnique ? 1 : qty)}
             onRush={queueItem ? () => handleShipyardRush(defense.id, 'defense') : undefined}
             rushCooldownEnd={queueItem ? getSolarCooldownEnd(defense.id, 'defense') : undefined}
             onCancel={queueItem ? () => activeCancelShipyardQueue(defense.id, 'defense') : undefined}
@@ -421,7 +428,7 @@ export default function ShipyardScreen() {
             onInfo={() => setInfoModal({ id: defense.id, type: 'defense' })}
             onPrereqTree={!prereqsMet ? () => setPrereqModal({ id: defense.id, type: 'defense' }) : undefined}
           />
-          {!queueItem && hasShipyard && prereqsMet && (
+          {!queueItem && hasShipyard && prereqsMet && !shieldCapReached && !isUnique && (
             <View style={styles.quantityRow}>
               <QuantitySelector
                 quantity={qty}

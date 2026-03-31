@@ -394,6 +394,13 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[])
   }
 
   for (const unit of [...attackers, ...defenders]) {
+    if (unit.hull > 0 && unit.hull < unit.maxHull * 0.3) {
+      const explosionChance = 1 - (unit.hull / unit.maxHull);
+      if (Math.random() < explosionChance) {
+        unit.hull = 0;
+        continue;
+      }
+    }
     if (unit.hull > 0) {
       unit.shield = unit.maxShield;
     }

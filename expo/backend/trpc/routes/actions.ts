@@ -222,7 +222,8 @@ export const actionsRouter = createTRPCRouter({
       quantity: z.number().min(1),
     }))
     .mutation(async ({ input }) => {
-      const { userId, planetId, defenseId, quantity } = input;
+      const { userId, planetId, defenseId } = input;
+      let quantity = input.quantity;
       console.log("[Actions] buildDefenses:", defenseId, "x", quantity, "planet:", planetId);
 
       const defense = DEFENSES.find(d => d.id === defenseId);
@@ -235,6 +236,38 @@ export const actionsRouter = createTRPCRouter({
 
       const { met } = checkPrerequisites(defense.prerequisites, buildings, research);
       if (!met) return { success: false, error: "Prerequisites not met" };
+
+      const UNIQUE_DEFENSES = ['smallShield', 'largeShield'];
+      if (UNIQUE_DEFENSES.includes(defenseId)) {
+        const { data: existing } = await supabase
+          .from('planet_defenses')
+          .select('quantity')
+          .eq('planet_id', planetId)
+          .eq('defense_id', defenseId)
+          .maybeSingle();
+
+        const currentCount = existing?.quantity ?? 0;
+
+        const inQueue = await supabase
+          .from('shipyard_queue')
+          .select('remaining_quantity')
+          .eq('planet_id', planetId)
+          .eq('item_id', defenseId)
+          .eq('item_type', 'defense')
+          .maybeSingle();
+
+        const queueCount = inQueue.data?.remaining_quantity ?? 0;
+
+        if (currentCount + queueCount >= 1) {
+          console.log("[Actions] Shield cap reached:", defenseId, "current:", currentCount, "queue:", queueCount);
+          return { success: false, error: "Maximum 1 bouclier de ce type par planète" };
+        }
+
+        if (quantity > 1) {
+          console.log("[Actions] Shield quantity capped to 1 for:", defenseId);
+          quantity = 1;
+        }
+      }
 
       const { data, error } = await supabase.rpc("rpc_build_defenses", {
         p_user_id: userId,
