@@ -1,7 +1,14 @@
 -- =============================================================
--- ATOMIC RPC FUNCTIONS FOR SOLARIS GAME ACTIONS
--- REQUIRES: server_defs.sql to be run first
+-- ATOMIC RPC FUNCTIONS FOR SOLARIS GAME ACTIONS (HARDENED)
+-- =============================================================
+-- REQUIRES: server_defs.sql, resource_hardening.sql to be run first
 -- Run this in Supabase SQL Editor (Dashboard > SQL Editor > New Query)
+--
+-- All build RPCs use safe_materialize_inline instead of
+-- inline materialization. This guarantees:
+-- - Resources NEVER decrease from materialization
+-- - Storage caps are always respected
+-- - All materialization uses the same hardened code path
 -- =============================================================
 
 CREATE OR REPLACE FUNCTION calc_solar_cost(remaining_seconds double precision)
@@ -52,14 +59,12 @@ CREATE INDEX IF NOT EXISTS idx_combat_reports_defender_id ON combat_reports(defe
 CREATE INDEX IF NOT EXISTS idx_planets_coordinates_gin ON planets USING gin (coordinates);
 
 -- =============================================================
--- 1. BUILD STRUCTURE (building upgrade)
---    Client sends: user_id, planet_id, building_id
---    Costs & duration computed 100% server-side
---
+-- 1. BUILD STRUCTURE (hardened)
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete (avec FOR UPDATE)
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - Couts calcules depuis building_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_build_structure(
@@ -78,15 +83,15 @@ DECLARE
   v_nanite int;
   v_raw_time double precision;
   v_duration_ms bigint;
-  v_econ record;
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
+  v_energy double precision;
   v_already boolean;
+  v_mat record;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -111,10 +116,6 @@ BEGIN
   v_raw_time := FLOOR(v_def.base_time * POWER(v_def.time_factor, v_current_level));
   v_duration_ms := (GREATEST(5, FLOOR(v_raw_time / (1.0 + v_robotics * 0.1) * (CASE WHEN v_nanite > 0 THEN 1.0 / POWER(2, v_nanite) ELSE 1.0 END))) * 1000)::bigint;
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('build_structure', p_building_id);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources
   WHERE planet_id = p_planet_id
@@ -128,13 +129,13 @@ BEGIN
   FROM planets
   WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   PERFORM 1 FROM active_timers
     WHERE user_id = p_user_id AND target_id = p_building_id AND timer_type = 'building'
@@ -154,8 +155,10 @@ BEGIN
   v_silice := v_silice - v_cost_silice;
   v_xenogas := v_xenogas - v_cost_xenogas;
 
+  PERFORM set_resource_tx_context('build_structure', p_building_id);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   INSERT INTO active_timers (user_id, planet_id, timer_type, target_id, target_level, start_time, end_time)
@@ -165,20 +168,19 @@ BEGIN
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net),
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy),
     'timer', json_build_object('id', p_building_id, 'type', 'building', 'targetLevel', v_target_level, 'startTime', v_now, 'endTime', v_now + v_duration_ms)
   );
 END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
--- 2. START RESEARCH
---    Client sends: user_id, planet_id, research_id
---
+-- 2. START RESEARCH (hardened)
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete (avec FOR UPDATE)
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - Couts calcules depuis research_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_start_research(
@@ -197,15 +199,15 @@ DECLARE
   v_nanite int;
   v_raw_time double precision;
   v_duration_ms bigint;
-  v_econ record;
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
+  v_energy double precision;
   v_already boolean;
+  v_mat record;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -230,10 +232,6 @@ BEGIN
   v_raw_time := FLOOR(v_def.base_time * POWER(v_def.time_factor, v_current_level));
   v_duration_ms := (GREATEST(5, FLOOR(v_raw_time / (1.0 + v_lab_level * 0.1) * (CASE WHEN v_nanite > 0 THEN 1.0 / POWER(2, v_nanite) ELSE 1.0 END))) * 1000)::bigint;
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('start_research', p_research_id);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources
   WHERE planet_id = p_planet_id
@@ -246,13 +244,13 @@ BEGIN
   SELECT last_update INTO v_last_update
   FROM planets WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   PERFORM 1 FROM active_timers
     WHERE user_id = p_user_id AND target_id = p_research_id AND timer_type = 'research'
@@ -271,8 +269,10 @@ BEGIN
   v_silice := v_silice - v_cost_silice;
   v_xenogas := v_xenogas - v_cost_xenogas;
 
+  PERFORM set_resource_tx_context('start_research', p_research_id);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   INSERT INTO active_timers (user_id, planet_id, timer_type, target_id, target_level, start_time, end_time)
@@ -282,20 +282,19 @@ BEGIN
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net),
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy),
     'timer', json_build_object('id', p_research_id, 'type', 'research', 'targetLevel', v_target_level, 'startTime', v_now, 'endTime', v_now + v_duration_ms)
   );
 END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
--- 3. BUILD SHIPS
---    Client sends: user_id, planet_id, ship_id, quantity
---
+-- 3. BUILD SHIPS (hardened)
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete (avec FOR UPDATE)
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - Couts calcules depuis ship_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_build_ships(
@@ -312,14 +311,13 @@ DECLARE
   v_shipyard_level int;
   v_nanite int;
   v_build_time_per_unit double precision;
-  v_econ record;
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
+  v_energy double precision;
   v_existing record;
   v_new_total integer;
   v_new_remaining integer;
@@ -346,10 +344,6 @@ BEGIN
   v_nanite := COALESCE((SELECT level FROM planet_buildings WHERE planet_id = p_planet_id AND building_id = 'naniteFactory'), 0);
   v_build_time_per_unit := GREATEST(5, FLOOR(v_def.build_time / (1.0 + (v_shipyard_level - 1) * 0.1) * (CASE WHEN v_nanite > 0 THEN 1.0 / POWER(2, v_nanite) ELSE 1.0 END)));
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('build_ships', p_ship_id || 'x' || p_quantity);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
 
@@ -359,13 +353,13 @@ BEGIN
 
   SELECT last_update INTO v_last_update FROM planets WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   IF v_fer < v_cost_fer OR v_silice < v_cost_silice OR v_xenogas < v_cost_xenogas THEN
     RETURN json_build_object('success', false, 'error', 'Insufficient resources');
@@ -375,8 +369,10 @@ BEGIN
   v_silice := v_silice - v_cost_silice;
   v_xenogas := v_xenogas - v_cost_xenogas;
 
+  PERFORM set_resource_tx_context('build_ships', p_ship_id || 'x' || p_quantity);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   SELECT total_quantity, remaining_quantity, build_time_per_unit, current_unit_start_time, current_unit_end_time
@@ -410,7 +406,7 @@ BEGIN
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net),
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy),
     'queueItem', json_build_object(
       'id', p_ship_id, 'type', 'ship',
       'totalQuantity', v_new_total, 'remainingQuantity', v_new_remaining,
@@ -422,13 +418,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
--- 4. BUILD DEFENSES
---    Client sends: user_id, planet_id, defense_id, quantity
---
+-- 4. BUILD DEFENSES (hardened)
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete (avec FOR UPDATE)
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - Couts calcules depuis defense_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_build_defenses(
@@ -445,14 +440,13 @@ DECLARE
   v_shipyard_level int;
   v_nanite int;
   v_build_time_per_unit double precision;
-  v_econ record;
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
+  v_energy double precision;
   v_existing record;
   v_new_total integer;
   v_new_remaining integer;
@@ -479,10 +473,6 @@ BEGIN
   v_nanite := COALESCE((SELECT level FROM planet_buildings WHERE planet_id = p_planet_id AND building_id = 'naniteFactory'), 0);
   v_build_time_per_unit := GREATEST(5, FLOOR(v_def.build_time / (1.0 + (v_shipyard_level - 1) * 0.1) * (CASE WHEN v_nanite > 0 THEN 1.0 / POWER(2, v_nanite) ELSE 1.0 END)));
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('build_defenses', p_defense_id || 'x' || p_quantity);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
 
@@ -492,13 +482,13 @@ BEGIN
 
   SELECT last_update INTO v_last_update FROM planets WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   IF v_fer < v_cost_fer OR v_silice < v_cost_silice OR v_xenogas < v_cost_xenogas THEN
     RETURN json_build_object('success', false, 'error', 'Insufficient resources');
@@ -508,8 +498,10 @@ BEGIN
   v_silice := v_silice - v_cost_silice;
   v_xenogas := v_xenogas - v_cost_xenogas;
 
+  PERFORM set_resource_tx_context('build_defenses', p_defense_id || 'x' || p_quantity);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   SELECT total_quantity, remaining_quantity, build_time_per_unit, current_unit_start_time, current_unit_end_time
@@ -543,7 +535,7 @@ BEGIN
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net),
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy),
     'queueItem', json_build_object(
       'id', p_defense_id, 'type', 'defense',
       'totalQuantity', v_new_total, 'remainingQuantity', v_new_remaining,
@@ -556,7 +548,6 @@ $$ LANGUAGE plpgsql;
 
 -- =============================================================
 -- 5. RUSH TIMER (building or research)
---
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete
 --    - SELECT ... FOR UPDATE sur players (solar)
@@ -617,10 +608,10 @@ BEGIN
     ON CONFLICT (user_id, research_id) DO UPDATE SET level = v_timer.target_level;
   END IF;
 
-	PERFORM set_solar_tx_context(
-  'rush_' || p_timer_type, 
-  'rush_' || p_timer_id || '_lvl' || v_timer.target_level || '_cost' || v_solar_cost
-);
+  PERFORM set_solar_tx_context(
+    'rush_' || p_timer_type,
+    'rush_' || p_timer_id || '_lvl' || v_timer.target_level || '_cost' || v_solar_cost
+  );
 
   UPDATE players SET solar = v_new_solar WHERE user_id = p_user_id;
 
@@ -635,15 +626,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
--- 6. CANCEL TIMER (building or research) with 80% refund
---    Client sends: user_id, planet_id, timer_id, timer_type
---    Refund computed 100% server-side from *_defs tables
---
+-- 6. CANCEL TIMER (hardened) with 80% refund
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - SELECT ... FOR UPDATE sur active_timers
 --    - Remboursement calcule depuis *_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_cancel_timer(
@@ -657,11 +646,10 @@ DECLARE
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
-  v_econ record;
+  v_energy double precision;
   v_current_level int;
   v_refund_fer double precision := 0;
   v_refund_silice double precision := 0;
@@ -704,10 +692,6 @@ BEGIN
     END IF;
   END IF;
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('cancel_timer', p_timer_id || ':' || p_timer_type);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
 
@@ -717,13 +701,13 @@ BEGIN
 
   SELECT last_update INTO v_last_update FROM planets WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   v_fer := v_fer + v_refund_fer;
   v_silice := v_silice + v_refund_silice;
@@ -731,22 +715,23 @@ BEGIN
 
   DELETE FROM active_timers WHERE id = v_timer.id;
 
+  PERFORM set_resource_tx_context('cancel_timer', p_timer_id || ':' || p_timer_type);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   UPDATE planets SET last_update = v_now WHERE id = p_planet_id;
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net)
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy)
   );
 END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
 -- 7. RUSH SHIPYARD
---
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete
 --    - SELECT ... FOR UPDATE sur players (solar)
@@ -827,10 +812,10 @@ BEGIN
     END IF;
   END IF;
 
-	PERFORM set_solar_tx_context(
-  'rush_shipyard', 
-  'rush_' || p_item_type || '_' || p_item_id || '_x' || v_completed_qty || '_cost' || v_solar_cost
-);
+  PERFORM set_solar_tx_context(
+    'rush_shipyard',
+    'rush_' || p_item_type || '_' || p_item_id || '_x' || v_completed_qty || '_cost' || v_solar_cost
+  );
 
   UPDATE players SET solar = v_new_solar WHERE user_id = p_user_id;
 
@@ -845,15 +830,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================================
--- 8. CANCEL SHIPYARD (with 80% refund)
---    Client sends: user_id, planet_id, item_id, item_type
---    Refund computed 100% server-side from *_defs tables
---
+-- 8. CANCEL SHIPYARD (hardened) with 80% refund
 --    SECURITE:
 --    - assert_planet_owner verifie la propriete
 --    - SELECT ... FOR UPDATE sur planet_resources
 --    - SELECT ... FOR UPDATE sur shipyard_queue
 --    - Remboursement calcule depuis *_defs (jamais du client)
+--    - safe_materialize_inline pour la materialisation
 --    - Transaction context tagge pour audit
 -- =============================================================
 CREATE OR REPLACE FUNCTION rpc_cancel_shipyard(
@@ -867,11 +850,10 @@ DECLARE
   v_res record;
   v_last_update bigint;
   v_now bigint;
-  v_elapsed double precision;
   v_fer double precision;
   v_silice double precision;
   v_xenogas double precision;
-  v_econ record;
+  v_energy double precision;
   v_unit_fer double precision := 0;
   v_unit_silice double precision := 0;
   v_unit_xenogas double precision := 0;
@@ -918,10 +900,6 @@ BEGIN
 
   v_refund_qty := v_queue.remaining_quantity;
 
-  SELECT * INTO v_econ FROM calc_planet_economy(p_planet_id, p_user_id);
-
-  PERFORM set_resource_tx_context('cancel_shipyard', p_item_id || ':' || p_item_type);
-
   SELECT fer, silice, xenogas INTO v_res
   FROM planet_resources WHERE planet_id = p_planet_id FOR UPDATE;
 
@@ -931,13 +909,13 @@ BEGIN
 
   SELECT last_update INTO v_last_update FROM planets WHERE id = p_planet_id;
 
-  v_elapsed := GREATEST(0, (v_now - COALESCE(v_last_update, v_now)) / 1000.0);
-  v_fer := CASE WHEN v_res.fer >= v_econ.storage_fer THEN v_res.fer
-           ELSE LEAST(v_res.fer + (v_econ.prod_fer_h / 3600.0) * v_elapsed, v_econ.storage_fer) END;
-  v_silice := CASE WHEN v_res.silice >= v_econ.storage_silice THEN v_res.silice
-              ELSE LEAST(v_res.silice + (v_econ.prod_silice_h / 3600.0) * v_elapsed, v_econ.storage_silice) END;
-  v_xenogas := CASE WHEN v_res.xenogas >= v_econ.storage_xenogas THEN v_res.xenogas
-               ELSE LEAST(v_res.xenogas + (v_econ.prod_xenogas_h / 3600.0) * v_elapsed, v_econ.storage_xenogas) END;
+  SELECT mat_fer, mat_silice, mat_xenogas, mat_energy
+  INTO v_fer, v_silice, v_xenogas, v_energy
+  FROM safe_materialize_inline(
+    p_planet_id, p_user_id,
+    COALESCE(v_res.fer, 0), COALESCE(v_res.silice, 0), COALESCE(v_res.xenogas, 0),
+    v_last_update, v_now
+  );
 
   v_fer := v_fer + v_unit_fer * v_refund_qty * v_refund_rate;
   v_silice := v_silice + v_unit_silice * v_refund_qty * v_refund_rate;
@@ -946,15 +924,17 @@ BEGIN
   DELETE FROM shipyard_queue
   WHERE planet_id = p_planet_id AND item_id = p_item_id AND item_type = p_item_type;
 
+  PERFORM set_resource_tx_context('cancel_shipyard', p_item_id || ':' || p_item_type);
+
   UPDATE planet_resources
-  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_econ.energy_net
+  SET fer = v_fer, silice = v_silice, xenogas = v_xenogas, energy = v_energy
   WHERE planet_id = p_planet_id;
 
   UPDATE planets SET last_update = v_now WHERE id = p_planet_id;
 
   RETURN json_build_object(
     'success', true,
-    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_econ.energy_net)
+    'resources', json_build_object('fer', v_fer, 'silice', v_silice, 'xenogas', v_xenogas, 'energy', v_energy)
   );
 END;
 $$ LANGUAGE plpgsql;

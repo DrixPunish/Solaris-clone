@@ -508,7 +508,7 @@ export const actionsRouter = createTRPCRouter({
         departure_time: departureTime,
         arrival_time: arrivalTime,
         return_time: returnTime,
-        status: "traveling",
+        status: "en_route",
         processed: false,
         fuel_consumed: fuelConsumed,
       });
