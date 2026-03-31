@@ -451,7 +451,8 @@ export const actionsRouter = createTRPCRouter({
 
       const speedFraction = (input.speedPercent ?? 100) / 100;
       const cargo = input.resources ?? { fer: 0, silice: 0, xenogas: 0 };
-      const { data: deductResult, error: deductError } = await supabase.rpc("rpc_send_fleet", {
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("rpc_send_fleet", {
         p_planet_id: input.planetId,
         p_ships: input.ships,
         p_cargo_fer: cargo.fer,
@@ -463,87 +464,40 @@ export const actionsRouter = createTRPCRouter({
         p_mission_type: input.missionType,
         p_target_player_id: input.targetPlayerId ?? null,
         p_speed_percent: speedFraction,
+        p_sender_username: input.senderUsername,
+        p_sender_planet: input.senderPlanet,
+        p_target_username: input.targetUsername ?? null,
+        p_target_planet: input.targetPlanet ?? null,
       });
 
-      if (deductError) {
-        console.log("[Actions] RPC error sendFleet:", deductError.message);
-        return { success: false, error: deductError.message };
+      if (rpcError) {
+        console.log("[Actions] RPC error sendFleet:", rpcError.message, rpcError.code, rpcError.details, rpcError.hint);
+        return { success: false, error: rpcError.message };
       }
 
-      const deductRes = deductResult as {
+      const res = rpcResult as {
         success: boolean;
         error?: string;
+        mission_id?: string;
         flight_time_sec?: number;
         departure_time?: number;
         arrival_time?: number;
         return_time?: number;
         fuel_consumed?: number;
       };
-      if (!deductRes.success) {
-        console.log("[Actions] Fleet deduction rejected:", deductRes.error);
-        return { success: false, error: deductRes.error };
+
+      if (!res.success) {
+        console.log("[Actions] Fleet rejected:", res.error);
+        return { success: false, error: res.error };
       }
 
-      const departureTime = deductRes.departure_time ?? Date.now();
-      const flightTimeSec = deductRes.flight_time_sec ?? 30;
-      const arrivalTime = deductRes.arrival_time ?? (departureTime + flightTimeSec * 1000);
-      const isStationMission = input.missionType === 'station';
-      const returnTime = isStationMission ? null : (deductRes.return_time ?? (departureTime + flightTimeSec * 2000));
+      const departureTime = res.departure_time ?? Date.now();
+      const flightTimeSec = res.flight_time_sec ?? 30;
+      const arrivalTime = res.arrival_time ?? (departureTime + flightTimeSec * 1000);
+      const returnTime = res.return_time ?? null;
+      const fuelConsumed = res.fuel_consumed ?? 0;
 
-      console.log("[Actions] Server flight calc: distance flight_time_sec=", flightTimeSec, "arrival_time=", arrivalTime);
-
-      const fuelConsumed = deductRes.fuel_consumed ?? 0;
-
-      const { error: insertError } = await supabase.from("fleet_missions").insert({
-        sender_id: input.userId,
-        sender_username: input.senderUsername,
-        sender_planet: input.senderPlanet,
-        sender_coords: input.senderCoords,
-        target_coords: input.targetCoords,
-        target_player_id: input.targetPlayerId ?? null,
-        target_username: input.targetUsername ?? null,
-        target_planet: input.targetPlanet ?? null,
-        mission_type: input.missionType,
-        ships: input.ships,
-        resources: cargo,
-        departure_time: departureTime,
-        arrival_time: arrivalTime,
-        return_time: returnTime,
-        status: "en_route",
-        processed: false,
-        fuel_consumed: fuelConsumed,
-      });
-
-      if (insertError) {
-        console.log("[Actions] CRITICAL: fleet_mission insert failed AFTER deduction! Attempting rollback...", insertError.message);
-        try {
-          await supabase.rpc("rpc_rollback_fleet_deduction", {
-            p_planet_id: input.planetId,
-            p_ships: input.ships,
-            p_cargo_fer: cargo.fer,
-            p_cargo_silice: cargo.silice,
-            p_cargo_xenogas: cargo.xenogas,
-            p_fuel_consumed: fuelConsumed,
-          });
-          console.log("[Actions] Rollback successful: ships and resources restored");
-        } catch {
-          console.log("[Actions] Rollback RPC not available, attempting re-deduct via negative rpc_send_fleet or manual restore...");
-          for (const [shipId, count] of Object.entries(input.ships)) {
-            if (count > 0) {
-              const { error: restoreErr } = await supabase.rpc("increment_planet_ship", {
-                p_planet_id: input.planetId,
-                p_ship_id: shipId,
-                p_amount: count,
-              });
-              if (restoreErr) console.log("[Actions] Manual ship restore failed:", shipId, restoreErr.message);
-            }
-          }
-          console.log("[Actions] Manual rollback attempted");
-        }
-        return { success: false, error: "Mission non créée. Vos vaisseaux ont été restaurés. Réessayez." };
-      }
-
-      console.log("[Actions] Fleet sent (atomic, server-side time):", input.missionType, "arrival in", flightTimeSec, "s, fuel:", fuelConsumed);
+      console.log("[Actions] Fleet sent (atomic):", input.missionType, "mission_id=", res.mission_id, "arrival in", flightTimeSec, "s, fuel:", fuelConsumed);
       return { success: true, departureTime, arrivalTime, returnTime, flightTimeSec, fuelConsumed };
     }),
 

@@ -257,19 +257,24 @@ END;
 $fn$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 -- =============================================================
--- 2. rpc_send_fleet (SECURED)
+-- 2. rpc_send_fleet (ATOMIC - deduct + insert in same tx)
 -- =============================================================
--- Deduit atomiquement les vaisseaux et ressources cargo
--- lors de l'envoi d'une flotte.
+-- Deduit atomiquement les vaisseaux, ressources cargo ET insere
+-- la mission dans fleet_missions dans la meme transaction SQL.
+-- Si quoi que ce soit echoue, tout est rollback automatiquement.
 --
 -- SECURITE:
--- - SELECT ... FOR UPDATE sur planet_ships (deja present)
+-- - SELECT ... FOR UPDATE sur planet_ships
 -- - SELECT ... FOR UPDATE sur planet_resources avant deduction cargo
 -- - Met a jour planets.last_update dans la meme transaction
--- - Ne doit jamais recevoir de valeurs calculees par le client
---   pour les couts; ici on deduit des quantites absolues.
+-- - INSERT fleet_missions dans la meme transaction
 -- - Doit etre appelee dans un contexte authentifie
 -- =============================================================
+DROP FUNCTION IF EXISTS rpc_send_fleet(uuid, jsonb, double precision, double precision, double precision);
+DROP FUNCTION IF EXISTS rpc_send_fleet(uuid, jsonb, double precision, double precision, double precision, jsonb, jsonb, uuid, text, uuid);
+DROP FUNCTION IF EXISTS rpc_send_fleet(uuid, jsonb, double precision, double precision, double precision, jsonb, jsonb, uuid, text, uuid, double precision);
+DROP FUNCTION IF EXISTS rpc_send_fleet(uuid, jsonb, double precision, double precision, double precision, jsonb, jsonb, uuid, text, uuid, double precision, text, text, text, text);
+
 CREATE OR REPLACE FUNCTION rpc_send_fleet(
   p_planet_id uuid,
   p_ships jsonb,
@@ -281,8 +286,12 @@ CREATE OR REPLACE FUNCTION rpc_send_fleet(
   p_user_id uuid DEFAULT NULL,
   p_mission_type text DEFAULT NULL,
   p_target_player_id uuid DEFAULT NULL,
-  p_speed_percent double precision DEFAULT 1.0
-) RETURNS json AS $$
+  p_speed_percent double precision DEFAULT 1.0,
+  p_sender_username text DEFAULT '',
+  p_sender_planet text DEFAULT '',
+  p_target_username text DEFAULT NULL,
+  p_target_planet text DEFAULT NULL
+) RETURNS json AS $
 DECLARE
   v_key text;
   v_val jsonb;
@@ -301,6 +310,12 @@ DECLARE
   v_active_fleets integer;
   v_fleet_limit integer;
   v_computer_level integer;
+  v_departure_time bigint;
+  v_arrival_time bigint;
+  v_return_time bigint;
+  v_is_station boolean;
+  v_mission_id uuid;
+  v_cargo jsonb;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -326,25 +341,22 @@ BEGIN
 
     IF v_active_fleets >= v_fleet_limit THEN
       RETURN json_build_object('success', false, 'error',
-        'Limite de flottes atteinte (' || v_active_fleets || '/' || v_fleet_limit || '). Recherchez IA Stratégique pour +1 flotte.');
+        'Limite de flottes atteinte (' || v_active_fleets || '/' || v_fleet_limit || '). Recherchez IA Strategique pour +1 flotte.');
     END IF;
   END IF;
 
   -- Quantum shield + Noob protection checks for attack missions
   IF p_mission_type = 'attack' AND p_user_id IS NOT NULL AND p_target_player_id IS NOT NULL THEN
-    -- 1. Reduce attacker shield by 12h if active
     v_attacker_shield_result := reduce_quantum_shield_on_attack(p_user_id);
 
-    -- 2. Check defender quantum shield
     SELECT * INTO v_defender_shield
     FROM refresh_quantum_shield_state(p_target_player_id);
 
     IF v_defender_shield.shield_active = true THEN
       RETURN json_build_object('success', false, 'error',
-        'Bouclier quantique actif: le défenseur est protégé par un bouclier quantique.');
+        'Bouclier quantique actif: le defenseur est protege par un bouclier quantique.');
     END IF;
 
-    -- 3. Noob shield checks
     SELECT COALESCE(total_points, 0) INTO v_attacker_pts
     FROM player_scores WHERE player_id = p_user_id;
     IF NOT FOUND THEN v_attacker_pts := 0; END IF;
@@ -360,15 +372,16 @@ BEGIN
 
     IF v_defender_pts < 100 THEN
       RETURN json_build_object('success', false, 'error',
-        'Noob shield: le défenseur est protégé (moins de 100 points)');
+        'Noob shield: le defenseur est protege (moins de 100 points)');
     END IF;
 
     IF v_defender_pts <= v_attacker_pts * 0.5 THEN
       RETURN json_build_object('success', false, 'error',
-        'Écart trop grand: le défenseur (' || FLOOR(v_defender_pts) || ' pts) a moins de 50% de vos points (' || FLOOR(v_attacker_pts) || ' pts)');
+        'Ecart trop grand: le defenseur (' || FLOOR(v_defender_pts) || ' pts) a moins de 50% de vos points (' || FLOOR(v_attacker_pts) || ' pts)');
     END IF;
   END IF;
 
+  -- Calculate flight time
   IF p_sender_coords IS NOT NULL AND p_target_coords IS NOT NULL AND p_user_id IS NOT NULL THEN
     v_flight_result := rpc_calculate_flight_time(p_sender_coords, p_target_coords, p_ships, p_user_id, p_speed_percent);
     IF NOT (v_flight_result->>'success')::boolean THEN
@@ -378,6 +391,7 @@ BEGIN
     v_fuel_cost := COALESCE((v_flight_result->>'fuel_cost')::double precision, 0);
   END IF;
 
+  -- Deduct ships (with FOR UPDATE)
   FOR v_key, v_val IN SELECT * FROM jsonb_each(p_ships)
   LOOP
     v_ship_qty := (v_val::text)::integer;
@@ -397,6 +411,7 @@ BEGIN
     WHERE planet_id = p_planet_id AND ship_id = v_key;
   END LOOP;
 
+  -- Deduct cargo + fuel
   v_total_xenogas_needed := p_cargo_xenogas + v_fuel_cost;
 
   PERFORM set_resource_tx_context('fleet_send', 'cargo_and_fuel_deduction');
@@ -428,20 +443,52 @@ BEGIN
 
   UPDATE planets SET last_update = v_now WHERE id = p_planet_id;
 
+  -- Calculate times
+  v_departure_time := v_now;
   IF v_flight_time_sec IS NOT NULL THEN
-    RETURN json_build_object(
-      'success', true,
-      'flight_time_sec', v_flight_time_sec,
-      'departure_time', v_now,
-      'arrival_time', v_now + (v_flight_time_sec::bigint * 1000),
-      'return_time', v_now + (v_flight_time_sec::bigint * 2000),
-      'fuel_consumed', CEIL(v_fuel_cost)
-    );
+    v_arrival_time := v_now + (v_flight_time_sec::bigint * 1000);
+    v_is_station := (p_mission_type = 'station');
+    IF v_is_station THEN
+      v_return_time := NULL;
+    ELSE
+      v_return_time := v_now + (v_flight_time_sec::bigint * 2000);
+    END IF;
+  ELSE
+    v_arrival_time := v_now + 30000;
+    v_return_time := v_now + 60000;
+    v_flight_time_sec := 30;
   END IF;
 
-  RETURN json_build_object('success', true);
+  -- Build cargo JSON
+  v_cargo := json_build_object('fer', p_cargo_fer, 'silice', p_cargo_silice, 'xenogas', p_cargo_xenogas)::jsonb;
+
+  -- INSERT fleet_mission ATOMICALLY in the same transaction
+  INSERT INTO fleet_missions (
+    sender_id, sender_username, sender_planet, sender_coords,
+    target_coords, target_player_id, target_username, target_planet,
+    mission_type, ships, resources,
+    departure_time, arrival_time, return_time,
+    status, processed, mission_phase, fuel_consumed
+  ) VALUES (
+    p_user_id, p_sender_username, p_sender_planet, p_sender_coords,
+    p_target_coords, p_target_player_id, p_target_username, p_target_planet,
+    p_mission_type, p_ships, v_cargo,
+    v_departure_time, v_arrival_time, v_return_time,
+    'en_route', false, 'en_route', CEIL(v_fuel_cost)
+  )
+  RETURNING id INTO v_mission_id;
+
+  RETURN json_build_object(
+    'success', true,
+    'mission_id', v_mission_id,
+    'flight_time_sec', v_flight_time_sec,
+    'departure_time', v_departure_time,
+    'arrival_time', v_arrival_time,
+    'return_time', v_return_time,
+    'fuel_consumed', CEIL(v_fuel_cost)
+  );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================
 -- 3. rpc_claim_tutorial_reward (SECURED)
