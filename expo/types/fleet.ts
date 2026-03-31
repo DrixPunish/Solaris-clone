@@ -1,5 +1,5 @@
 export type MissionType = 'attack' | 'transport' | 'espionage' | 'colonize' | 'recycle' | 'station';
-export type FleetStatus = 'en_route' | 'traveling' | 'returning' | 'arrived' | 'completed';
+export type FleetStatus = 'en_route' | 'returning' | 'arrived' | 'completed';
 export type MissionPhase = 'en_route' | 'arrived' | 'returning' | 'completed';
 
 export interface FleetMission {

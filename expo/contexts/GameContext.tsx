@@ -1941,11 +1941,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
         userId: userId!,
         planetId: mainPlanetIdRef.current!,
         stepId,
-        rewardType: reward.type,
-        fer: reward.fer,
-        silice: reward.silice,
-        xenogas: reward.xenogas,
-        solar: reward.solar,
       }), 'claimTutorialReward');
 
       console.log('[TUTORIAL CLAIM] Server response:', JSON.stringify(result));

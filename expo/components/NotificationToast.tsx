@@ -56,7 +56,7 @@ export default function NotificationToast() {
         .from('fleet_missions')
         .select('*', { count: 'exact', head: true })
         .eq('target_player_id', user.id)
-        .in('status', ['traveling', 'en_route']);
+        .in('status', ['en_route']);
       if (error) return 0;
       return count ?? 0;
     },

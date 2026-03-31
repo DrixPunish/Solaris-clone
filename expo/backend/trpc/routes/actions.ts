@@ -2,6 +2,7 @@ import { createTRPCRouter, publicProcedure } from "../create-context";
 import { supabase } from "@/backend/supabase";
 import { z } from "zod";
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from "@/constants/gameData";
+import { TUTORIAL_STEPS } from "@/constants/tutorial";
 import {
   checkPrerequisites,
 } from "@/utils/gameCalculations";
@@ -580,24 +581,34 @@ export const actionsRouter = createTRPCRouter({
       userId: z.string(),
       planetId: z.string(),
       stepId: z.string(),
-      rewardType: z.enum(["resources", "solar"]),
-      fer: z.number().optional(),
-      silice: z.number().optional(),
-      xenogas: z.number().optional(),
-      solar: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      console.log("[Actions] claimTutorialReward:", input.stepId, input.rewardType, "for", input.userId);
+      console.log("[Actions] claimTutorialReward:", input.stepId, "for", input.userId);
+
+      const step = TUTORIAL_STEPS.find(s => s.id === input.stepId);
+      if (!step) {
+        console.log("[Actions] Tutorial step not found:", input.stepId);
+        return { success: false, error: "Tutorial step not found" };
+      }
+
+      const reward = step.reward;
+      const rewardType = reward.type;
+      const serverFer = reward.fer ?? 0;
+      const serverSilice = reward.silice ?? 0;
+      const serverXenogas = reward.xenogas ?? 0;
+      const serverSolar = reward.solar ?? 0;
+
+      console.log("[Actions] Server-side reward lookup for step", input.stepId, ":", rewardType, "fer=", serverFer, "silice=", serverSilice, "xenogas=", serverXenogas, "solar=", serverSolar);
 
       const { data, error } = await supabase.rpc("rpc_claim_tutorial_reward", {
         p_user_id: input.userId,
         p_planet_id: input.planetId,
         p_step_id: input.stepId,
-        p_reward_type: input.rewardType,
-        p_fer: input.fer ?? 0,
-        p_silice: input.silice ?? 0,
-        p_xenogas: input.xenogas ?? 0,
-        p_solar: input.solar ?? 0,
+        p_reward_type: rewardType,
+        p_fer: serverFer,
+        p_silice: serverSilice,
+        p_xenogas: serverXenogas,
+        p_solar: serverSolar,
       });
 
       if (error) {
@@ -610,7 +621,7 @@ export const actionsRouter = createTRPCRouter({
         console.log("[Actions] Tutorial reward rejected:", result.error);
         return { success: false, error: result.error };
       }
-      console.log("[Actions] Tutorial reward claimed (atomic):", input.stepId, input.rewardType, "result:", JSON.stringify(result));
+      console.log("[Actions] Tutorial reward claimed (server-validated):", input.stepId, rewardType, "result:", JSON.stringify(result));
       return { success: true, solar: result.solar, resources: result.resources };
     }),
 
