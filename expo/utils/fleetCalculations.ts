@@ -238,6 +238,7 @@ function createAttackerUnits(
     const shipDef = SHIPS.find(s => s.id === shipId);
     if (!shipDef) continue;
     const boosted = getBoostedShipStats(shipDef.stats, research);
+    const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
         id: `${shipId}_${i}`,
@@ -246,8 +247,8 @@ function createAttackerUnits(
         attack: boosted.attack,
         shield: boosted.shield,
         maxShield: boosted.shield,
-        hull: boosted.hull,
-        maxHull: boosted.hull,
+        hull: combatHull,
+        maxHull: combatHull,
       });
     }
   }
@@ -265,6 +266,7 @@ function createDefenderUnits(
     const shipDef = SHIPS.find(s => s.id === shipId);
     if (!shipDef) continue;
     const boosted = getBoostedShipStats(shipDef.stats, research);
+    const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
         id: `ship_${shipId}_${i}`,
@@ -273,8 +275,8 @@ function createDefenderUnits(
         attack: boosted.attack,
         shield: boosted.shield,
         maxShield: boosted.shield,
-        hull: boosted.hull,
-        maxHull: boosted.hull,
+        hull: combatHull,
+        maxHull: combatHull,
       });
     }
   }
@@ -283,6 +285,7 @@ function createDefenderUnits(
     const defDef = DEFENSES.find(d => d.id === defId);
     if (!defDef) continue;
     const boosted = getBoostedDefenseStats(defDef.stats, research);
+    const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
         id: `def_${defId}_${i}`,
@@ -291,8 +294,8 @@ function createDefenderUnits(
         attack: boosted.attack,
         shield: boosted.shield,
         maxShield: boosted.shield,
-        hull: boosted.hull,
-        maxHull: boosted.hull,
+        hull: combatHull,
+        maxHull: combatHull,
       });
     }
   }
