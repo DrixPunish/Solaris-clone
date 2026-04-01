@@ -20,7 +20,7 @@ app.use(
 );
 
 app.get("/", (c) => {
-  return c.json({ status: "ok", message: "Solaris Backend API" });
+  return c.json({ status: "ok", message: "Solaris Backend API", version: "2.1.0-player-id-fix", deployedAt: "2026-04-01T20:30:00Z" });
 });
 
 app.post("/tick", async (c) => {

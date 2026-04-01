@@ -581,7 +581,11 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
   logger.error('[WorldTick][Attack] DEBUG attacker_id:', senderId, 'defender_id:', targetPlayerId, 'result:', combatResult.result, 'rounds:', combatResult.rounds);
 
   try {
-    const attackerPayload = { ...combatReportData, player_id: senderId };
+    const safePlayerId = senderId || null;
+    if (!safePlayerId) {
+      logger.error('[WorldTick][Attack] CRITICAL: senderId is falsy, cannot insert combat report. mission.sender_id =', mission.sender_id);
+    }
+    const attackerPayload = { ...combatReportData, player_id: safePlayerId ?? combatReportData.attacker_id };
     logger.error('[WorldTick][Attack] DEBUG inserting attacker report, payload size:', JSON.stringify(attackerPayload).length);
     const { data: atkData, error: attackerReportErr } = await supabase.from('combat_reports').insert(attackerPayload).select('id');
     if (attackerReportErr) {
