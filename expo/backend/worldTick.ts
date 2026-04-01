@@ -516,8 +516,12 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     return;
   }
 
-  console.log('[WorldTick][Attack] Starting combat. Attacker ships:', JSON.stringify(attackerShips), 'Defender ships:', JSON.stringify(targetState.ships), 'Defender defenses:', JSON.stringify(targetState.defenses));
-  console.log('[WorldTick][Attack] Attacker research:', JSON.stringify(senderResearch), 'Defender research:', JSON.stringify(targetState.research));
+  console.log('[WorldTick][Attack] ===== ATTACK MISSION', mission.id, '=====');
+  console.log('[WorldTick][Attack] Attacker:', senderId, 'ships:', JSON.stringify(attackerShips));
+  console.log('[WorldTick][Attack] Defender:', targetPlayerId, 'planet:', _targetPlanetId);
+  console.log('[WorldTick][Attack] Defender ships:', JSON.stringify(targetState.ships), 'defenses:', JSON.stringify(targetState.defenses));
+  console.log('[WorldTick][Attack] Attacker research:', JSON.stringify(senderResearch));
+  console.log('[WorldTick][Attack] Defender research:', JSON.stringify(targetState.research));
 
   const combatResult = simulateCombat(
     attackerShips,

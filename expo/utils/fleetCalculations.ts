@@ -2,6 +2,7 @@ import { SHIPS, DEFENSES } from '@/constants/gameData';
 import { CombatUnit } from '@/types/fleet';
 import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/utils/gameCalculations';
 
+const COMBAT_ENGINE_VERSION = 'v3.1-2026-04-01';
 const MAX_COMBAT_ROUNDS = 6;
 const EXPLOSION_THRESHOLD = 0.7;
 
@@ -371,41 +372,60 @@ function fireOneUnit(
   }
 }
 
-function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[]): void {
+function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[], roundNum: number): void {
   const pendingDmgOnDef = new Map<string, { shield: number; hull: number }>();
   const pendingDmgOnAtt = new Map<string, { shield: number; hull: number }>();
 
+  let atkShotsFired = 0;
+  let defShotsFired = 0;
+
   for (const unit of attackers) {
     if (unit.hull <= 0) continue;
+    atkShotsFired++;
     fireOneUnit(unit, defenders, pendingDmgOnDef);
   }
 
   for (const unit of defenders) {
     if (unit.hull <= 0) continue;
+    defShotsFired++;
     fireOneUnit(unit, attackers, pendingDmgOnAtt);
   }
+
+  let totalHullDmgOnDef = 0;
+  let totalShieldDmgOnDef = 0;
+  let defUnitsHit = 0;
 
   for (const unit of defenders) {
     const pending = pendingDmgOnDef.get(unit.id);
     if (!pending) continue;
+    defUnitsHit++;
     const shieldDmg = Math.min(unit.shield, pending.shield);
     unit.shield -= shieldDmg;
-    let hullDmg = pending.hull + (pending.shield - shieldDmg);
+    const hullDmg = pending.hull + (pending.shield - shieldDmg);
+    totalShieldDmgOnDef += shieldDmg;
     if (hullDmg > 0) {
       unit.hull -= hullDmg;
+      totalHullDmgOnDef += hullDmg;
     }
   }
+
+  let totalHullDmgOnAtk = 0;
+  let totalShieldDmgOnAtk = 0;
 
   for (const unit of attackers) {
     const pending = pendingDmgOnAtt.get(unit.id);
     if (!pending) continue;
     const shieldDmg = Math.min(unit.shield, pending.shield);
     unit.shield -= shieldDmg;
-    let hullDmg = pending.hull + (pending.shield - shieldDmg);
+    const hullDmg = pending.hull + (pending.shield - shieldDmg);
+    totalShieldDmgOnAtk += shieldDmg;
     if (hullDmg > 0) {
       unit.hull -= hullDmg;
+      totalHullDmgOnAtk += hullDmg;
     }
   }
+
+  console.log(`[Combat] R${roundNum} DAMAGE: atkShooters=${atkShotsFired} defShooters=${defShotsFired} | dmgOnDef: shield=${totalShieldDmgOnDef} hull=${totalHullDmgOnDef} unitsHit=${defUnitsHit}/${pendingDmgOnDef.size} | dmgOnAtk: shield=${totalShieldDmgOnAtk} hull=${totalHullDmgOnAtk}`);
 
   let explosionChecks = 0;
   let explosions = 0;
@@ -419,15 +439,15 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[])
         unit.hull = 0;
         explosions++;
         continue;
-      } else {
-        console.log(`[Combat] SURVIVED explosion: ${unit.id} hull=${unit.hull}/${unit.maxHull} chance=${(explosionChance*100).toFixed(1)}% roll=${(roll*100).toFixed(1)}%`);
       }
     }
     if (unit.hull > 0) {
       unit.shield = unit.maxShield;
     }
   }
-  console.log(`[Combat] Explosion phase: ${explosionChecks} checks, ${explosions} explosions (threshold=${EXPLOSION_THRESHOLD*100}%)`);
+  if (explosionChecks > 0) {
+    console.log(`[Combat] R${roundNum} Explosions: ${explosions}/${explosionChecks} (threshold=${EXPLOSION_THRESHOLD*100}%)`);
+  }
 }
 
 function countLosses(
@@ -473,15 +493,36 @@ export function simulateCombat(
   defenderResearch: Record<string, number>,
   defenderResources: { fer: number; silice: number; xenogas: number },
 ): CombatSimResult {
-  console.log('[Combat] === COMBAT START === EXPLOSION_THRESHOLD=' + EXPLOSION_THRESHOLD);
-  console.log('[Combat] attackerShips:', JSON.stringify(attackerShips), 'attackerResearch:', JSON.stringify(attackerResearch));
-  console.log('[Combat] defenderShips:', JSON.stringify(defenderShips));
-  console.log('[Combat] defenderDefenses:', JSON.stringify(defenderDefenses), 'defenderResearch:', JSON.stringify(defenderResearch));
+  console.log(`[Combat] ========== COMBAT START ========== ENGINE=${COMBAT_ENGINE_VERSION} THRESHOLD=${EXPLOSION_THRESHOLD}`);
+  console.log('[Combat] INPUT attackerShips:', JSON.stringify(attackerShips));
+  console.log('[Combat] INPUT attackerResearch:', JSON.stringify(attackerResearch));
+  console.log('[Combat] INPUT defenderShips:', JSON.stringify(defenderShips));
+  console.log('[Combat] INPUT defenderDefenses:', JSON.stringify(defenderDefenses));
+  console.log('[Combat] INPUT defenderResearch:', JSON.stringify(defenderResearch));
+  console.log('[Combat] SHIPS_ARRAY length:', SHIPS.length, 'ids:', SHIPS.map(s => s.id).join(','));
+  console.log('[Combat] DEFENSES_ARRAY length:', DEFENSES.length, 'ids:', DEFENSES.map(d => d.id).join(','));
+
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
 
-  console.log('[Combat] Attacker units created:', attackerUnits.length, 'units:', attackerUnits.map(u => ({ id: u.id, atk: u.attack, shd: u.shield, hull: u.hull })));
-  console.log('[Combat] Defender units created:', defenderUnits.length, 'units:', defenderUnits.map(u => ({ id: u.id, atk: u.attack, shd: u.shield, hull: u.hull })));
+  const totalAtkInput = Object.values(attackerShips).reduce((s, c) => s + c, 0);
+  const totalDefInput = Object.values(defenderShips).reduce((s, c) => s + c, 0) + Object.values(defenderDefenses).reduce((s, c) => s + c, 0);
+
+  if (attackerUnits.length !== totalAtkInput) {
+    console.log(`[Combat] CRITICAL: Attacker unit count mismatch! Expected ${totalAtkInput} got ${attackerUnits.length}`);
+  }
+  if (defenderUnits.length !== totalDefInput) {
+    console.log(`[Combat] CRITICAL: Defender unit count mismatch! Expected ${totalDefInput} got ${defenderUnits.length}`);
+  }
+
+  const totalAtkFirepower = attackerUnits.reduce((s, u) => s + u.attack, 0);
+  const totalDefHP = defenderUnits.reduce((s, u) => s + u.hull + u.shield, 0);
+  const totalDefFirepower = defenderUnits.reduce((s, u) => s + u.attack, 0);
+  const totalAtkHP = attackerUnits.reduce((s, u) => s + u.hull + u.shield, 0);
+
+  console.log(`[Combat] FORCE ANALYSIS: atkFire=${totalAtkFirepower} vs defHP=${totalDefHP} (ratio=${(totalAtkFirepower/Math.max(1,totalDefHP)).toFixed(2)}) | defFire=${totalDefFirepower} vs atkHP=${totalAtkHP} (ratio=${(totalDefFirepower/Math.max(1,totalAtkHP)).toFixed(2)})`);
+  console.log('[Combat] Attacker units:', attackerUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
+  console.log('[Combat] Defender units:', defenderUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
 
   const MAX_ROUNDS = MAX_COMBAT_ROUNDS;
   let roundCount = 0;
@@ -492,7 +533,7 @@ export function simulateCombat(
     const atkHullBefore = attackerUnits.map(u => u.hull);
     const defHullBefore = defenderUnits.map(u => u.hull);
 
-    fireRoundSimultaneous(attackerUnits, defenderUnits);
+    fireRoundSimultaneous(attackerUnits, defenderUnits, roundCount);
 
     const atkHullAfter = attackerUnits.map(u => u.hull);
     const defHullAfter = defenderUnits.map(u => u.hull);
@@ -517,7 +558,13 @@ export function simulateCombat(
   else if (defenderAlive === 0) result = 'attacker_wins';
   else result = 'draw';
 
-  console.log('[Combat] === COMBAT END === result:', result, 'rounds:', roundCount, 'atkAlive:', attackerAlive, 'defAlive:', defenderAlive);
+  console.log(`[Combat] ========== COMBAT END ========== ENGINE=${COMBAT_ENGINE_VERSION} result=${result} rounds=${roundCount} atkAlive=${attackerAlive} defAlive=${defenderAlive}`);
+
+  if (result === 'draw' && totalAtkFirepower > totalDefHP * 2) {
+    console.log(`[Combat] ANOMALY DETECTED: attacker firepower (${totalAtkFirepower}) >> defender HP (${totalDefHP}) but result is DRAW!`);
+    console.log('[Combat] ANOMALY final attacker hulls:', attackerUnits.map(u => `${u.id}:${u.hull}`).join(','));
+    console.log('[Combat] ANOMALY final defender hulls:', defenderUnits.map(u => `${u.id}:${u.hull}`).join(','));
+  }
 
   const attackerLosses = countLosses(attackerShips, attackerUnits, '');
   const defenderShipLosses = countLosses(defenderShips, defenderUnits.filter(u => u.type === 'ship'), 'ship_');
