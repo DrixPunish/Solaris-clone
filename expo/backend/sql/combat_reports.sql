@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS combat_reports (
   defender_losses JSONB DEFAULT '{}'::jsonb,
   loot JSONB DEFAULT '{"fer":0,"silice":0,"xenogas":0}'::jsonb,
   debris JSONB DEFAULT '{"fer":0,"silice":0}'::jsonb,
+  combat_log JSONB DEFAULT NULL,
+  round_logs JSONB DEFAULT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
