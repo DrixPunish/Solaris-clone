@@ -1,50 +1,19 @@
 import { supabase } from './supabase';
-import { GameState, ShipyardQueueItem, UpgradeTimer } from '@/types/game';
+import { GameState, UpgradeTimer } from '@/types/game';
 import { calculateProduction, getResourceStorageCapacity } from './gameCalculations';
 import { getMainPlanetId, loadStateFromTables, saveMaterializedToTables } from './tableSync';
-
-function processShipyardQueue(
-  queue: ShipyardQueueItem[],
-  ships: Record<string, number>,
-  defenses: Record<string, number>,
-  now: number,
-): { queue: ShipyardQueueItem[]; ships: Record<string, number>; defenses: Record<string, number> } {
-  const newShips = { ...ships };
-  const newDefenses = { ...defenses };
-  const newQueue: ShipyardQueueItem[] = [];
-
-  for (const item of queue) {
-    const current = { ...item };
-    while (now >= current.currentUnitEndTime && current.remainingQuantity > 0) {
-      if (current.type === 'ship') {
-        newShips[current.id] = (newShips[current.id] ?? 0) + 1;
-      } else {
-        newDefenses[current.id] = (newDefenses[current.id] ?? 0) + 1;
-      }
-      current.remainingQuantity -= 1;
-      if (current.remainingQuantity > 0) {
-        current.currentUnitStartTime = current.currentUnitEndTime;
-        current.currentUnitEndTime = current.currentUnitStartTime + current.buildTimePerUnit * 1000;
-      }
-    }
-    if (current.remainingQuantity > 0) {
-      newQueue.push(current);
-    }
-  }
-
-  return { queue: newQueue, ships: newShips, defenses: newDefenses };
-}
+import { processShipyardQueue } from '@/utils/shipyardProcessor';
+import { logger } from '@/utils/logger';
 
 function materializeState(state: GameState): GameState {
   const now = Date.now();
   const elapsed = (now - (state.lastUpdate ?? now)) / 1000;
 
   if (elapsed < 2) {
-    console.log('[serverSync] State is fresh (elapsed:', Math.floor(elapsed), 's), skipping materialization');
     return state;
   }
 
-  console.log('[serverSync] Materializing state, offline for', Math.floor(elapsed), 'seconds');
+  logger.log('[serverSync] Materializing state, offline for', Math.floor(elapsed), 'seconds');
 
   const completedTimers: UpgradeTimer[] = [];
   const activeTimers: UpgradeTimer[] = [];
@@ -61,10 +30,8 @@ function materializeState(state: GameState): GameState {
   for (const timer of completedTimers) {
     if (timer.type === 'building') {
       buildings[timer.id] = timer.targetLevel;
-      console.log('[serverSync] Completed building', timer.id, 'to level', timer.targetLevel);
     } else if (timer.type === 'research') {
       research[timer.id] = timer.targetLevel;
-      console.log('[serverSync] Completed research', timer.id, 'to level', timer.targetLevel);
     }
   }
 
@@ -88,8 +55,6 @@ function materializeState(state: GameState): GameState {
     xenogas: isOverXenogas ? state.resources.xenogas : Math.min(state.resources.xenogas + (production.xenogas / 3600) * elapsed, storageCap.xenogas),
     energy: production.energy,
   };
-
-  console.log('[serverSync] Materialized resources - fer:', Math.floor(newResources.fer), 'silice:', Math.floor(newResources.silice), 'xenogas:', Math.floor(newResources.xenogas));
 
   const updatedColonies = (state.colonies ?? []).map(colony => {
     const colCompletedTimers: UpgradeTimer[] = [];
@@ -142,29 +107,21 @@ function materializeState(state: GameState): GameState {
 }
 
 export async function materializeTargetState(targetPlayerId: string, saveToDb: boolean = false): Promise<GameState | null> {
-  console.log('[serverSync] Materializing state for player', targetPlayerId, saveToDb ? '(will save)' : '(read-only)');
+  logger.log('[serverSync] Materializing state for player', targetPlayerId, saveToDb ? '(will save)' : '(read-only)');
 
   const tablesResult = await loadStateFromTables(targetPlayerId);
   if (!tablesResult) {
-    console.log('[serverSync] No state found for player', targetPlayerId);
+    logger.log('[serverSync] No state found for player', targetPlayerId);
     return null;
   }
 
   const rawState = tablesResult.state;
   const planetId = tablesResult.planetId;
-  console.log('[serverSync] Loaded target state from normalized tables');
 
   const materialized = materializeState(rawState);
 
-  console.log('[serverSync] Materialized target state. Resources:', {
-    fer: Math.floor(materialized.resources.fer),
-    silice: Math.floor(materialized.resources.silice),
-    xenogas: Math.floor(materialized.resources.xenogas),
-  });
-
   if (saveToDb) {
     await saveMaterializedToTables(planetId, targetPlayerId, materialized);
-    console.log('[serverSync] Saved materialized state to tables');
   }
 
   return materialized;
@@ -177,12 +134,10 @@ export async function deductFromTargetState(
   defenseLosses: Record<string, number>,
   defenseRebuilds: Record<string, number>,
 ): Promise<void> {
-  console.log('[serverSync] Deducting attack losses from target', targetPlayerId);
-  console.log('[serverSync] Loot:', loot, 'Ship losses:', shipLosses, 'Defense losses:', defenseLosses);
+  logger.log('[serverSync] Deducting attack losses from target', targetPlayerId);
 
   const planetId = await getMainPlanetId(targetPlayerId);
   if (planetId) {
-    console.log('[serverSync] Calling apply_attack_loot RPC for planet', planetId);
     const { error: rpcError } = await supabase.rpc('apply_attack_loot', {
       p_planet_id: planetId,
       p_loot_fer: loot.fer,
@@ -194,12 +149,10 @@ export async function deductFromTargetState(
     });
 
     if (rpcError) {
-      console.log('[serverSync] RPC apply_attack_loot error:', rpcError.message);
-    } else {
-      console.log('[serverSync] RPC attack deduction successful (atomic)');
+      logger.error('[serverSync] RPC apply_attack_loot error:', rpcError.message);
     }
   } else {
-    console.log('[serverSync] No planet found in tables, skipping RPC');
+    logger.warn('[serverSync] No planet found in tables, skipping RPC');
   }
 }
 
@@ -207,11 +160,8 @@ export async function addResourcesToTargetState(
   targetPlayerId: string,
   resources: { fer: number; silice: number; xenogas: number },
 ): Promise<void> {
-  console.log('[serverSync] Adding resources to target', targetPlayerId, resources);
-
   const planetId = await getMainPlanetId(targetPlayerId);
   if (planetId) {
-    console.log('[serverSync] Calling add_resources_to_planet RPC for planet', planetId);
     const { error: rpcError } = await supabase.rpc('add_resources_to_planet', {
       p_planet_id: planetId,
       p_fer: resources.fer,
@@ -220,13 +170,12 @@ export async function addResourcesToTargetState(
     });
 
     if (rpcError) {
-      console.log('[serverSync] RPC add_resources error:', rpcError.message);
+      logger.error('[serverSync] RPC add_resources error:', rpcError.message);
     } else {
-      console.log('[serverSync] RPC resource addition successful (atomic)');
       await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planetId);
     }
   } else {
-    console.log('[serverSync] No planet found in tables, skipping RPC');
+    logger.warn('[serverSync] No planet found in tables, skipping RPC');
   }
 }
 
@@ -234,8 +183,6 @@ export async function addResourcesToPlanetByCoords(
   coords: number[],
   resources: { fer: number; silice: number; xenogas: number },
 ): Promise<void> {
-  console.log('[serverSync] Adding resources to planet at coords', coords, resources);
-
   const { data: planet } = await supabase
     .from('planets')
     .select('id')
@@ -253,12 +200,11 @@ export async function addResourcesToPlanetByCoords(
     });
 
     if (rpcError) {
-      console.log('[serverSync] RPC add_resources_by_coords error:', rpcError.message);
+      logger.error('[serverSync] RPC add_resources_by_coords error:', rpcError.message);
     } else {
-      console.log('[serverSync] RPC resource addition by coords successful');
       await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planet.id);
     }
   } else {
-    console.log('[serverSync] No planet found at coords', coords);
+    logger.warn('[serverSync] No planet found at coords', coords);
   }
 }

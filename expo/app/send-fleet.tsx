@@ -61,7 +61,7 @@ export default function SendFleetScreen() {
   const isEmptyPosition = !params.targetPlayerId && !params.targetUsername;
 
   const attackStatusQuery = trpc.world.getPlayerAttackStatus.useQuery(
-    { attackerId: userId ?? '', defenderId: params.targetPlayerId ?? '' },
+    { defenderId: params.targetPlayerId ?? '' },
     {
       enabled: !!userId && !!params.targetPlayerId && !isOwnPlanet && !isEmptyPosition,
       staleTime: 30000,
@@ -152,7 +152,7 @@ export default function SendFleetScreen() {
     }
     try {
       console.log('[SendFleet] Fetching server resources via tRPC for planet:', activePlanetId);
-      const result = await trpcClient.world.getPlanetResources.query({ planetId: activePlanetId, userId });
+      const result = await trpcClient.world.getPlanetResources.query({ planetId: activePlanetId });
       if (result.success) {
         const res = { fer: result.fer as number, silice: result.silice as number, xenogas: result.xenogas as number };
         setServerResources(res);
@@ -190,7 +190,7 @@ export default function SendFleetScreen() {
   }, [fleetForCalc]);
 
   const fleetStatusQuery = trpc.world.getFleetStatus.useQuery(
-    { userId: userId ?? '' },
+    undefined,
     { enabled: !!userId, staleTime: 10000 },
   );
   const activeFleetCount = fleetStatusQuery.data?.activeFleets ?? 0;
@@ -231,7 +231,6 @@ export default function SendFleetScreen() {
     console.log('[SendFleet] Calculating flight from', planetCoords, 'planet:', planetName, 'speed:', speedPercent, '%');
 
     trpcClient.world.calculateFlightTime.query({
-      userId,
       senderCoords: planetCoords as number[],
       targetCoords: targetCoords as number[],
       ships: shipsToSend,

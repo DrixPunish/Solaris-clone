@@ -1,4 +1,4 @@
-import { createTRPCRouter, publicProcedure } from "../create-context";
+import { createTRPCRouter, protectedProcedure } from "../create-context";
 import { supabase } from "@/backend/supabase";
 import { z } from "zod";
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from "@/constants/gameData";
@@ -6,6 +6,7 @@ import { TUTORIAL_STEPS } from "@/constants/tutorial";
 import {
   checkPrerequisites,
 } from "@/utils/gameCalculations";
+import { logger } from "@/utils/logger";
 
 interface RpcResult {
   success: boolean;
@@ -52,17 +53,30 @@ async function loadPlayerResearch(userId: string): Promise<Record<string, number
   return result;
 }
 
+async function verifyPlanetOwnership(planetId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("planets")
+    .select("id")
+    .eq("id", planetId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return !!data;
+}
 
 export const actionsRouter = createTRPCRouter({
-  startBuilding: publicProcedure
+  startBuilding: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       buildingId: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, buildingId } = input;
-      console.log("[Actions] startBuilding:", buildingId, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, buildingId } = input;
+      logger.log("[Actions] startBuilding:", buildingId, "planet:", planetId, "user:", userId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const building = BUILDINGS.find(b => b.id === buildingId);
       if (!building) return { success: false, error: "Building not found" };
@@ -82,17 +96,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error startBuilding:", error.message);
+        logger.error("[Actions] RPC error startBuilding:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Building rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Building started (atomic):", buildingId);
+      logger.log("[Actions] Building started (atomic):", buildingId);
       return {
         success: true,
         resources: result.resources,
@@ -106,15 +119,19 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  startResearch: publicProcedure
+  startResearch: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       researchId: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, researchId } = input;
-      console.log("[Actions] startResearch:", researchId, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, researchId } = input;
+      logger.log("[Actions] startResearch:", researchId, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const researchDef = RESEARCH.find(r => r.id === researchId);
       if (!researchDef) return { success: false, error: "Research not found" };
@@ -134,17 +151,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error startResearch:", error.message);
+        logger.error("[Actions] RPC error startResearch:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Research rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Research started (atomic):", researchId);
+      logger.log("[Actions] Research started (atomic):", researchId);
       return {
         success: true,
         resources: result.resources,
@@ -158,16 +174,20 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  buildShips: publicProcedure
+  buildShips: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       shipId: z.string(),
       quantity: z.number().min(1),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, shipId, quantity } = input;
-      console.log("[Actions] buildShips:", shipId, "x", quantity, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, shipId, quantity } = input;
+      logger.log("[Actions] buildShips:", shipId, "x", quantity, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const ship = SHIPS.find(s => s.id === shipId);
       if (!ship) return { success: false, error: "Ship not found" };
@@ -188,17 +208,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error buildShips:", error.message);
+        logger.error("[Actions] RPC error buildShips:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Ships rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Ships queued (atomic):", shipId, "x", quantity);
+      logger.log("[Actions] Ships queued (atomic):", shipId, "x", quantity);
       return {
         success: true,
         resources: result.resources,
@@ -214,17 +233,21 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  buildDefenses: publicProcedure
+  buildDefenses: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       defenseId: z.string(),
       quantity: z.number().min(1),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, defenseId } = input;
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, defenseId } = input;
       let quantity = input.quantity;
-      console.log("[Actions] buildDefenses:", defenseId, "x", quantity, "planet:", planetId);
+      logger.log("[Actions] buildDefenses:", defenseId, "x", quantity, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const defense = DEFENSES.find(d => d.id === defenseId);
       if (!defense) return { success: false, error: "Defense not found" };
@@ -237,38 +260,6 @@ export const actionsRouter = createTRPCRouter({
       const { met } = checkPrerequisites(defense.prerequisites, buildings, research);
       if (!met) return { success: false, error: "Prerequisites not met" };
 
-      const UNIQUE_DEFENSES = ['smallShield', 'largeShield'];
-      if (UNIQUE_DEFENSES.includes(defenseId)) {
-        const { data: existing } = await supabase
-          .from('planet_defenses')
-          .select('quantity')
-          .eq('planet_id', planetId)
-          .eq('defense_id', defenseId)
-          .maybeSingle();
-
-        const currentCount = existing?.quantity ?? 0;
-
-        const inQueue = await supabase
-          .from('shipyard_queue')
-          .select('remaining_quantity')
-          .eq('planet_id', planetId)
-          .eq('item_id', defenseId)
-          .eq('item_type', 'defense')
-          .maybeSingle();
-
-        const queueCount = inQueue.data?.remaining_quantity ?? 0;
-
-        if (currentCount + queueCount >= 1) {
-          console.log("[Actions] Shield cap reached:", defenseId, "current:", currentCount, "queue:", queueCount);
-          return { success: false, error: "Maximum 1 bouclier de ce type par planète" };
-        }
-
-        if (quantity > 1) {
-          console.log("[Actions] Shield quantity capped to 1 for:", defenseId);
-          quantity = 1;
-        }
-      }
-
       const { data, error } = await supabase.rpc("rpc_build_defenses", {
         p_user_id: userId,
         p_planet_id: planetId,
@@ -277,17 +268,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error buildDefenses:", error.message);
+        logger.error("[Actions] RPC error buildDefenses:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Defenses rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Defenses queued (atomic):", defenseId, "x", quantity);
+      logger.log("[Actions] Defenses queued (atomic):", defenseId, "x", quantity);
       return {
         success: true,
         resources: result.resources,
@@ -303,16 +293,20 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  rushTimer: publicProcedure
+  rushTimer: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       timerId: z.string(),
       timerType: z.enum(["building", "research"]),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, timerId, timerType } = input;
-      console.log("[Actions] rushTimer:", timerId, timerType, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, timerId, timerType } = input;
+      logger.log("[Actions] rushTimer:", timerId, timerType, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const { data, error } = await supabase.rpc("rpc_rush_timer", {
         p_user_id: userId,
@@ -322,17 +316,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error rushTimer:", error.message);
+        logger.error("[Actions] RPC error rushTimer:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Rush rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Rush completed (atomic):", timerId, timerType);
+      logger.log("[Actions] Rush completed (atomic):", timerId, timerType);
       return {
         success: true,
         solar: result.solar,
@@ -342,16 +335,20 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  cancelTimer: publicProcedure
+  cancelTimer: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       timerId: z.string(),
       timerType: z.enum(["building", "research"]),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, timerId, timerType } = input;
-      console.log("[Actions] cancelTimer:", timerId, timerType, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, timerId, timerType } = input;
+      logger.log("[Actions] cancelTimer:", timerId, timerType, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const { data, error } = await supabase.rpc("rpc_cancel_timer", {
         p_user_id: userId,
@@ -361,30 +358,33 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error cancelTimer:", error.message);
+        logger.error("[Actions] RPC error cancelTimer:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Cancel rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Timer cancelled (atomic):", timerId);
+      logger.log("[Actions] Timer cancelled (atomic):", timerId);
       return { success: true, resources: result.resources };
     }),
 
-  rushShipyard: publicProcedure
+  rushShipyard: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       itemId: z.string(),
       itemType: z.enum(["ship", "defense"]),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, itemId, itemType } = input;
-      console.log("[Actions] rushShipyard:", itemId, itemType, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, itemId, itemType } = input;
+      logger.log("[Actions] rushShipyard:", itemId, itemType, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const { data, error } = await supabase.rpc("rpc_rush_shipyard", {
         p_user_id: userId,
@@ -394,17 +394,16 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error rushShipyard:", error.message);
+        logger.error("[Actions] RPC error rushShipyard:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Shipyard rush rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Shipyard rushed (atomic):", itemId, "x", result.completedQuantity);
+      logger.log("[Actions] Shipyard rushed (atomic):", itemId, "x", result.completedQuantity);
       return {
         success: true,
         solar: result.solar,
@@ -414,16 +413,15 @@ export const actionsRouter = createTRPCRouter({
       };
     }),
 
-  renamePlanet: publicProcedure
+  renamePlanet: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       newName: z.string().min(1).max(24),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, newName } = input;
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, newName } = input;
       const trimmed = newName.trim();
-      console.log("[Actions] renamePlanet:", planetId, "to", trimmed);
 
       if (!trimmed || trimmed.length > 24) {
         return { success: false, error: "Nom invalide (1-24 caractères)" };
@@ -438,7 +436,7 @@ export const actionsRouter = createTRPCRouter({
         .single();
 
       if (error) {
-        console.log("[Actions] renamePlanet error:", error.message);
+        logger.error("[Actions] renamePlanet error:", error.message);
         return { success: false, error: error.message };
       }
 
@@ -459,13 +457,11 @@ export const actionsRouter = createTRPCRouter({
           .eq("user_id", userId);
       }
 
-      console.log("[Actions] Planet renamed:", planetId, "→", trimmed);
       return { success: true, name: trimmed };
     }),
 
-  sendFleet: publicProcedure
+  sendFleet: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       ships: z.record(z.string(), z.number()),
       resources: z.object({ fer: z.number(), silice: z.number(), xenogas: z.number() }).optional(),
@@ -479,8 +475,13 @@ export const actionsRouter = createTRPCRouter({
       senderCoords: z.array(z.number()),
       speedPercent: z.number().min(10).max(100).default(100).optional(),
     }))
-    .mutation(async ({ input }) => {
-      console.log("[Actions] sendFleet:", input.missionType, "from", input.planetId, "speed:", input.speedPercent ?? 100, "%");
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      logger.log("[Actions] sendFleet:", input.missionType, "from", input.planetId, "speed:", input.speedPercent ?? 100, "%");
+
+      if (!await verifyPlanetOwnership(input.planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const speedFraction = (input.speedPercent ?? 100) / 100;
       const cargo = input.resources ?? { fer: 0, silice: 0, xenogas: 0 };
@@ -493,7 +494,7 @@ export const actionsRouter = createTRPCRouter({
         p_cargo_xenogas: cargo.xenogas,
         p_sender_coords: input.senderCoords,
         p_target_coords: input.targetCoords,
-        p_user_id: input.userId,
+        p_user_id: userId,
         p_mission_type: input.missionType,
         p_target_player_id: input.targetPlayerId ?? null,
         p_speed_percent: speedFraction,
@@ -504,7 +505,7 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (rpcError) {
-        console.log("[Actions] RPC error sendFleet:", rpcError.message, rpcError.code, rpcError.details, rpcError.hint);
+        logger.error("[Actions] RPC error sendFleet:", rpcError.message);
         return { success: false, error: rpcError.message };
       }
 
@@ -520,7 +521,6 @@ export const actionsRouter = createTRPCRouter({
       };
 
       if (!res.success) {
-        console.log("[Actions] Fleet rejected:", res.error);
         return { success: false, error: res.error };
       }
 
@@ -530,18 +530,18 @@ export const actionsRouter = createTRPCRouter({
       const returnTime = res.return_time ?? null;
       const fuelConsumed = res.fuel_consumed ?? 0;
 
-      console.log("[Actions] Fleet sent (atomic):", input.missionType, "mission_id=", res.mission_id, "arrival in", flightTimeSec, "s, fuel:", fuelConsumed);
+      logger.log("[Actions] Fleet sent (atomic):", input.missionType, "mission_id=", res.mission_id);
       return { success: true, departureTime, arrivalTime, returnTime, flightTimeSec, fuelConsumed };
     }),
 
-  recallFleet: publicProcedure
+  recallFleet: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       missionId: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, missionId } = input;
-      console.log("[Actions] recallFleet:", missionId, "user:", userId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { missionId } = input;
+      logger.log("[Actions] recallFleet:", missionId, "user:", userId);
 
       const { data, error } = await supabase.rpc("rpc_recall_fleet", {
         p_user_id: userId,
@@ -549,32 +549,33 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error recallFleet:", error.message);
+        logger.error("[Actions] RPC error recallFleet:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as { success: boolean; error?: string; return_time?: number; return_duration_sec?: number };
       if (!result.success) {
-        console.log("[Actions] Recall rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Fleet recalled:", missionId, "return in", result.return_duration_sec, "s");
       return { success: true, returnTime: result.return_time, returnDurationSec: result.return_duration_sec };
     }),
 
-  claimTutorialReward: publicProcedure
+  claimTutorialReward: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       stepId: z.string(),
     }))
-    .mutation(async ({ input }) => {
-      console.log("[Actions] claimTutorialReward:", input.stepId, "for", input.userId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      logger.log("[Actions] claimTutorialReward:", input.stepId, "for", userId);
+
+      if (!await verifyPlanetOwnership(input.planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const step = TUTORIAL_STEPS.find(s => s.id === input.stepId);
       if (!step) {
-        console.log("[Actions] Tutorial step not found:", input.stepId);
         return { success: false, error: "Tutorial step not found" };
       }
 
@@ -585,10 +586,8 @@ export const actionsRouter = createTRPCRouter({
       const serverXenogas = reward.xenogas ?? 0;
       const serverSolar = reward.solar ?? 0;
 
-      console.log("[Actions] Server-side reward lookup for step", input.stepId, ":", rewardType, "fer=", serverFer, "silice=", serverSilice, "xenogas=", serverXenogas, "solar=", serverSolar);
-
       const { data, error } = await supabase.rpc("rpc_claim_tutorial_reward", {
-        p_user_id: input.userId,
+        p_user_id: userId,
         p_planet_id: input.planetId,
         p_step_id: input.stepId,
         p_reward_type: rewardType,
@@ -599,22 +598,19 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error claimTutorialReward:", error.message);
+        logger.error("[Actions] RPC error claimTutorialReward:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as { success: boolean; error?: string; solar?: number; resources?: { fer: number; silice: number; xenogas: number } };
       if (!result.success) {
-        console.log("[Actions] Tutorial reward rejected:", result.error);
         return { success: false, error: result.error };
       }
-      console.log("[Actions] Tutorial reward claimed (server-validated):", input.stepId, rewardType, "result:", JSON.stringify(result));
       return { success: true, solar: result.solar, resources: result.resources };
     }),
 
-  setProductionPercentages: publicProcedure
+  setProductionPercentages: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       percentages: z.object({
         ferMine: z.number(),
@@ -624,34 +620,37 @@ export const actionsRouter = createTRPCRouter({
         heliosRemorqueur: z.number(),
       }),
     }))
-    .mutation(async ({ input }) => {
-      console.log("[Actions] setProductionPercentages for planet:", input.planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
 
       const { error } = await supabase
         .from("planets")
         .update({ production_percentages: input.percentages })
         .eq("id", input.planetId)
-        .eq("user_id", input.userId);
+        .eq("user_id", userId);
 
       if (error) {
-        console.log("[Actions] Error saving production percentages:", error.message);
+        logger.error("[Actions] Error saving production percentages:", error.message);
         return { success: false, error: error.message };
       }
 
-      console.log("[Actions] Production percentages saved");
       return { success: true };
     }),
 
-  cancelShipyard: publicProcedure
+  cancelShipyard: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       planetId: z.string(),
       itemId: z.string(),
       itemType: z.enum(["ship", "defense"]),
     }))
-    .mutation(async ({ input }) => {
-      const { userId, planetId, itemId, itemType } = input;
-      console.log("[Actions] cancelShipyard:", itemId, itemType, "planet:", planetId);
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { planetId, itemId, itemType } = input;
+      logger.log("[Actions] cancelShipyard:", itemId, itemType, "planet:", planetId);
+
+      if (!await verifyPlanetOwnership(planetId, userId)) {
+        return { success: false, error: "Planet not owned by user" };
+      }
 
       const { data, error } = await supabase.rpc("rpc_cancel_shipyard", {
         p_user_id: userId,
@@ -661,17 +660,15 @@ export const actionsRouter = createTRPCRouter({
       });
 
       if (error) {
-        console.log("[Actions] RPC error cancelShipyard:", error.message);
+        logger.error("[Actions] RPC error cancelShipyard:", error.message);
         return { success: false, error: error.message };
       }
 
       const result = data as RpcResult;
       if (!result.success) {
-        console.log("[Actions] Shipyard cancel rejected:", result.error);
         return { success: false, error: result.error };
       }
 
-      console.log("[Actions] Shipyard cancelled (atomic):", itemId);
       return { success: true, resources: result.resources };
     }),
 });

@@ -1,6 +1,7 @@
 import { SHIPS, DEFENSES } from '@/constants/gameData';
-import { CombatUnit } from '@/types/fleet';
+import { CombatUnit, CombatRoundLog as CombatRoundLogType, CombatLogEntry as CombatLogEntryType } from '@/types/fleet';
 import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/utils/gameCalculations';
+import { logger } from '@/utils/logger';
 
 const COMBAT_ENGINE_VERSION = 'v3.1-2026-04-01';
 const MAX_COMBAT_ROUNDS = 6;
@@ -235,16 +236,16 @@ function createAttackerUnits(
   research: Record<string, number>,
 ): CombatUnit[] {
   const units: CombatUnit[] = [];
-  console.log('[Combat] createAttackerUnits input:', JSON.stringify(ships), 'research:', JSON.stringify(research));
+  logger.debug('[Combat] createAttackerUnits input:', JSON.stringify(ships), 'research:', JSON.stringify(research));
   for (const [shipId, count] of Object.entries(ships)) {
     if (count <= 0) continue;
     const shipDef = SHIPS.find(s => s.id === shipId);
     if (!shipDef) {
-      console.log('[Combat] WARNING: ship not found in SHIPS:', shipId, 'SHIPS count:', SHIPS.length);
+      logger.debug('[Combat] WARNING: ship not found in SHIPS:', shipId, 'SHIPS count:', SHIPS.length);
       continue;
     }
     const boosted = getBoostedShipStats(shipDef.stats, research);
-    console.log('[Combat] Attacker unit:', shipId, 'x', count, 'baseStats:', JSON.stringify(shipDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
+    logger.debug('[Combat] Attacker unit:', shipId, 'x', count, 'baseStats:', JSON.stringify(shipDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
     const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
@@ -268,7 +269,7 @@ function createDefenderUnits(
   research: Record<string, number>,
 ): CombatUnit[] {
   const units: CombatUnit[] = [];
-  console.log('[Combat] createDefenderUnits ships:', JSON.stringify(ships), 'defenses:', JSON.stringify(defenses), 'research:', JSON.stringify(research));
+  logger.debug('[Combat] createDefenderUnits ships:', JSON.stringify(ships), 'defenses:', JSON.stringify(defenses), 'research:', JSON.stringify(research));
   for (const [shipId, count] of Object.entries(ships)) {
     if (count <= 0) continue;
     const shipDef = SHIPS.find(s => s.id === shipId);
@@ -292,11 +293,11 @@ function createDefenderUnits(
     if (count <= 0) continue;
     const defDef = DEFENSES.find(d => d.id === defId);
     if (!defDef) {
-      console.log('[Combat] WARNING: defense not found in DEFENSES:', defId, 'DEFENSES count:', DEFENSES.length);
+      logger.debug('[Combat] WARNING: defense not found in DEFENSES:', defId, 'DEFENSES count:', DEFENSES.length);
       continue;
     }
     const boosted = getBoostedDefenseStats(defDef.stats, research);
-    console.log('[Combat] Defender defense:', defId, 'x', count, 'baseStats:', JSON.stringify(defDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
+    logger.debug('[Combat] Defender defense:', defId, 'x', count, 'baseStats:', JSON.stringify(defDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
     const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
@@ -436,7 +437,7 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[],
     }
   }
 
-  console.log(`[Combat] R${roundNum} DAMAGE: atkShooters=${atkShotsFired} defShooters=${defShotsFired} | dmgOnDef: shield=${totalShieldDmgOnDef} hull=${totalHullDmgOnDef} unitsHit=${defUnitsHit}/${pendingDmgOnDef.size} | dmgOnAtk: shield=${totalShieldDmgOnAtk} hull=${totalHullDmgOnAtk}`);
+  logger.debug(`[Combat] R${roundNum} DAMAGE: atkShooters=${atkShotsFired} defShooters=${defShotsFired} | dmgOnDef: shield=${totalShieldDmgOnDef} hull=${totalHullDmgOnDef} unitsHit=${defUnitsHit}/${pendingDmgOnDef.size} | dmgOnAtk: shield=${totalShieldDmgOnAtk} hull=${totalHullDmgOnAtk}`);
 
   let explosionChecks = 0;
   let explosions = 0;
@@ -446,7 +447,7 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[],
       const explosionChance = 1 - (unit.hull / unit.maxHull);
       const roll = Math.random();
       if (roll < explosionChance) {
-        console.log(`[Combat] EXPLOSION: ${unit.id} hull=${unit.hull}/${unit.maxHull} chance=${(explosionChance*100).toFixed(1)}% roll=${(roll*100).toFixed(1)}%`);
+        logger.debug(`[Combat] EXPLOSION: ${unit.id} hull=${unit.hull}/${unit.maxHull} chance=${(explosionChance*100).toFixed(1)}% roll=${(roll*100).toFixed(1)}%`);
         unit.hull = 0;
         explosions++;
         continue;
@@ -457,7 +458,7 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[],
     }
   }
   if (explosionChecks > 0) {
-    console.log(`[Combat] R${roundNum} Explosions: ${explosions}/${explosionChecks} (threshold=${EXPLOSION_THRESHOLD*100}%)`);
+    logger.debug(`[Combat] R${roundNum} Explosions: ${explosions}/${explosionChecks} (threshold=${EXPLOSION_THRESHOLD*100}%)`);
   }
 
   return {
@@ -496,29 +497,8 @@ function countLosses(
   return losses;
 }
 
-export interface CombatRoundLog {
-  round: number;
-  attackerShooters: number;
-  defenderShooters: number;
-  dmgOnDefShield: number;
-  dmgOnDefHull: number;
-  dmgOnAtkShield: number;
-  dmgOnAtkHull: number;
-  attackerAlive: number;
-  attackerTotal: number;
-  defenderAlive: number;
-  defenderTotal: number;
-  attackerKilled: number;
-  defenderKilled: number;
-  explosions: number;
-  explosionChecks: number;
-}
-
-export interface CombatLogEntry {
-  type: 'init' | 'round' | 'end' | 'anomaly';
-  message: string;
-  data?: Record<string, unknown>;
-}
+export type CombatRoundLog = CombatRoundLogType;
+export type CombatLogEntry = CombatLogEntryType;
 
 export interface CombatSimResult {
   result: 'attacker_wins' | 'defender_wins' | 'draw';
@@ -544,14 +524,14 @@ export function simulateCombat(
   const combatLog: CombatLogEntry[] = [];
   const roundLogs: CombatRoundLog[] = [];
 
-  console.log(`[Combat] ========== COMBAT START ========== ENGINE=${COMBAT_ENGINE_VERSION} THRESHOLD=${EXPLOSION_THRESHOLD}`);
-  console.log('[Combat] INPUT attackerShips:', JSON.stringify(attackerShips));
-  console.log('[Combat] INPUT attackerResearch:', JSON.stringify(attackerResearch));
-  console.log('[Combat] INPUT defenderShips:', JSON.stringify(defenderShips));
-  console.log('[Combat] INPUT defenderDefenses:', JSON.stringify(defenderDefenses));
-  console.log('[Combat] INPUT defenderResearch:', JSON.stringify(defenderResearch));
-  console.log('[Combat] SHIPS_ARRAY length:', SHIPS.length, 'ids:', SHIPS.map(s => s.id).join(','));
-  console.log('[Combat] DEFENSES_ARRAY length:', DEFENSES.length, 'ids:', DEFENSES.map(d => d.id).join(','));
+  logger.debug(`[Combat] ========== COMBAT START ========== ENGINE=${COMBAT_ENGINE_VERSION} THRESHOLD=${EXPLOSION_THRESHOLD}`);
+  logger.debug('[Combat] INPUT attackerShips:', JSON.stringify(attackerShips));
+  logger.debug('[Combat] INPUT attackerResearch:', JSON.stringify(attackerResearch));
+  logger.debug('[Combat] INPUT defenderShips:', JSON.stringify(defenderShips));
+  logger.debug('[Combat] INPUT defenderDefenses:', JSON.stringify(defenderDefenses));
+  logger.debug('[Combat] INPUT defenderResearch:', JSON.stringify(defenderResearch));
+  logger.debug('[Combat] SHIPS_ARRAY length:', SHIPS.length, 'ids:', SHIPS.map(s => s.id).join(','));
+  logger.debug('[Combat] DEFENSES_ARRAY length:', DEFENSES.length, 'ids:', DEFENSES.map(d => d.id).join(','));
 
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
@@ -560,11 +540,11 @@ export function simulateCombat(
   const totalDefInput = Object.values(defenderShips).reduce((s, c) => s + c, 0) + Object.values(defenderDefenses).reduce((s, c) => s + c, 0);
 
   if (attackerUnits.length !== totalAtkInput) {
-    console.log(`[Combat] CRITICAL: Attacker unit count mismatch! Expected ${totalAtkInput} got ${attackerUnits.length}`);
+    logger.debug(`[Combat] CRITICAL: Attacker unit count mismatch! Expected ${totalAtkInput} got ${attackerUnits.length}`);
     combatLog.push({ type: 'init', message: `CRITICAL: Attacker unit mismatch! Expected ${totalAtkInput}, got ${attackerUnits.length}` });
   }
   if (defenderUnits.length !== totalDefInput) {
-    console.log(`[Combat] CRITICAL: Defender unit count mismatch! Expected ${totalDefInput} got ${defenderUnits.length}`);
+    logger.debug(`[Combat] CRITICAL: Defender unit count mismatch! Expected ${totalDefInput} got ${defenderUnits.length}`);
     combatLog.push({ type: 'init', message: `CRITICAL: Defender unit mismatch! Expected ${totalDefInput}, got ${defenderUnits.length}` });
   }
 
@@ -573,9 +553,9 @@ export function simulateCombat(
   const totalDefFirepower = defenderUnits.reduce((s, u) => s + u.attack, 0);
   const totalAtkHP = attackerUnits.reduce((s, u) => s + u.hull + u.shield, 0);
 
-  console.log(`[Combat] FORCE ANALYSIS: atkFire=${totalAtkFirepower} vs defHP=${totalDefHP} (ratio=${(totalAtkFirepower/Math.max(1,totalDefHP)).toFixed(2)}) | defFire=${totalDefFirepower} vs atkHP=${totalAtkHP} (ratio=${(totalDefFirepower/Math.max(1,totalAtkHP)).toFixed(2)})`);
-  console.log('[Combat] Attacker units:', attackerUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
-  console.log('[Combat] Defender units:', defenderUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
+  logger.debug(`[Combat] FORCE ANALYSIS: atkFire=${totalAtkFirepower} vs defHP=${totalDefHP} (ratio=${(totalAtkFirepower/Math.max(1,totalDefHP)).toFixed(2)}) | defFire=${totalDefFirepower} vs atkHP=${totalAtkHP} (ratio=${(totalDefFirepower/Math.max(1,totalAtkHP)).toFixed(2)})`);
+  logger.debug('[Combat] Attacker units:', attackerUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
+  logger.debug('[Combat] Defender units:', defenderUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
 
   combatLog.push({
     type: 'init',
@@ -614,8 +594,8 @@ export function simulateCombat(
 
     const atkKilled = atkHullBefore.filter((h, i) => h > 0 && atkHullAfter[i] <= 0).length;
     const defKilled = defHullBefore.filter((h, i) => h > 0 && defHullAfter[i] <= 0).length;
-    console.log(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length} (killed=${atkKilled}), def alive=${defenderAlive}/${defenderUnits.length} (killed=${defKilled})`);
-    console.log(`[Combat] Round ${roundCount} def hull:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
+    logger.debug(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length} (killed=${atkKilled}), def alive=${defenderAlive}/${defenderUnits.length} (killed=${defKilled})`);
+    logger.debug(`[Combat] Round ${roundCount} def hull:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
 
     const rLog: CombatRoundLog = {
       round: roundCount,
@@ -654,7 +634,7 @@ export function simulateCombat(
   else if (defenderAlive === 0) result = 'attacker_wins';
   else result = 'draw';
 
-  console.log(`[Combat] ========== COMBAT END ========== ENGINE=${COMBAT_ENGINE_VERSION} result=${result} rounds=${roundCount} atkAlive=${attackerAlive} defAlive=${defenderAlive}`);
+  logger.debug(`[Combat] ========== COMBAT END ========== ENGINE=${COMBAT_ENGINE_VERSION} result=${result} rounds=${roundCount} atkAlive=${attackerAlive} defAlive=${defenderAlive}`);
 
   combatLog.push({
     type: 'end',
@@ -663,9 +643,9 @@ export function simulateCombat(
   });
 
   if (result === 'draw' && totalAtkFirepower > totalDefHP * 2) {
-    console.log(`[Combat] ANOMALY DETECTED: attacker firepower (${totalAtkFirepower}) >> defender HP (${totalDefHP}) but result is DRAW!`);
-    console.log('[Combat] ANOMALY final attacker hulls:', attackerUnits.map(u => `${u.id}:${u.hull}`).join(','));
-    console.log('[Combat] ANOMALY final defender hulls:', defenderUnits.map(u => `${u.id}:${u.hull}`).join(','));
+    logger.debug(`[Combat] ANOMALY DETECTED: attacker firepower (${totalAtkFirepower}) >> defender HP (${totalDefHP}) but result is DRAW!`);
+    logger.debug('[Combat] ANOMALY final attacker hulls:', attackerUnits.map(u => `${u.id}:${u.hull}`).join(','));
+    logger.debug('[Combat] ANOMALY final defender hulls:', defenderUnits.map(u => `${u.id}:${u.hull}`).join(','));
     combatLog.push({
       type: 'anomaly',
       message: `ANOMALY: atkFirepower(${totalAtkFirepower}) >> defHP(${totalDefHP}) but DRAW`,

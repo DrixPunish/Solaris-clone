@@ -28,7 +28,7 @@ export default function QuantumShieldCard() {
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
 
   const shieldQuery = trpc.world.getQuantumShieldStatus.useQuery(
-    { playerId: userId ?? '' },
+    undefined,
     { enabled: !!userId, refetchInterval: 30000, staleTime: 10000 },
   );
 
@@ -84,7 +84,7 @@ export default function QuantumShieldCard() {
 
   const handleBuy = useCallback(() => {
     if (!userId) return;
-    buyMutation.mutate({ playerId: userId });
+    buyMutation.mutate();
   }, [userId, buyMutation]);
 
   const solarBalance = state.solar ?? 0;

@@ -9,6 +9,7 @@ import {
   calculateProduction,
   getResourceStorageCapacity,
 } from '@/utils/gameCalculations';
+import { logger } from '@/utils/logger';
 
 interface TimerRow {
   id: string;
@@ -52,21 +53,21 @@ async function processExpiredTimers(): Promise<number> {
     .lte('end_time', now);
 
   if (error) {
-    console.log('[WorldTick] ERROR querying active_timers:', error.message, error.code, error.details);
+    logger.log('[WorldTick] ERROR querying active_timers:', error.message, error.code, error.details);
     return 0;
   }
 
-  console.log('[WorldTick] Expired query returned', expired?.length ?? 0, 'rows for now =', now);
+  logger.log('[WorldTick] Expired query returned', expired?.length ?? 0, 'rows for now =', now);
 
   if (!expired?.length) {
     return 0;
   }
 
-  console.log('[WorldTick] Found', expired.length, 'expired timers to process');
+  logger.log('[WorldTick] Found', expired.length, 'expired timers to process');
 
   let count = 0;
   for (const timer of expired as TimerRow[]) {
-    console.log('[WorldTick] Processing timer:', timer.id, 'type:', timer.timer_type, 'target:', timer.target_id, 'lv:', timer.target_level, 'planet:', timer.planet_id, 'user:', timer.user_id, 'end_time:', timer.end_time, '(' + new Date(timer.end_time).toISOString() + ')');
+    logger.log('[WorldTick] Processing timer:', timer.id, 'type:', timer.timer_type, 'target:', timer.target_id, 'lv:', timer.target_level, 'planet:', timer.planet_id, 'user:', timer.user_id, 'end_time:', timer.end_time, '(' + new Date(timer.end_time).toISOString() + ')');
 
     const { data: deleted, error: delErr } = await supabase
       .from('active_timers')
@@ -75,11 +76,11 @@ async function processExpiredTimers(): Promise<number> {
       .select();
 
     if (delErr) {
-      console.log('[WorldTick] ERROR deleting timer', timer.id, ':', delErr.message, delErr.code);
+      logger.log('[WorldTick] ERROR deleting timer', timer.id, ':', delErr.message, delErr.code);
       continue;
     }
     if (!deleted?.length) {
-      console.log('[WorldTick] Timer already claimed by another tick:', timer.id);
+      logger.log('[WorldTick] Timer already claimed by another tick:', timer.id);
       continue;
     }
 
@@ -91,7 +92,7 @@ async function processExpiredTimers(): Promise<number> {
         .eq('building_id', timer.target_id)
         .maybeSingle();
 
-      console.log('[WorldTick] Building before upsert:', timer.target_id, 'current level:', beforeData?.level ?? 0, '-> target level:', timer.target_level);
+      logger.log('[WorldTick] Building before upsert:', timer.target_id, 'current level:', beforeData?.level ?? 0, '-> target level:', timer.target_level);
 
       const { error: upsertErr } = await supabase
         .from('planet_buildings')
@@ -102,7 +103,7 @@ async function processExpiredTimers(): Promise<number> {
         }, { onConflict: 'planet_id,building_id' });
 
       if (upsertErr) {
-        console.log('[WorldTick] ERROR applying building:', upsertErr.message, upsertErr.code, upsertErr.details);
+        logger.log('[WorldTick] ERROR applying building:', upsertErr.message, upsertErr.code, upsertErr.details);
       } else {
         const { data: afterData } = await supabase
           .from('planet_buildings')
@@ -110,7 +111,7 @@ async function processExpiredTimers(): Promise<number> {
           .eq('planet_id', timer.planet_id)
           .eq('building_id', timer.target_id)
           .maybeSingle();
-        console.log('[WorldTick] Building completed:', timer.target_id, 'lv', timer.target_level, 'planet', timer.planet_id, '| verified level in DB:', afterData?.level);
+        logger.log('[WorldTick] Building completed:', timer.target_id, 'lv', timer.target_level, 'planet', timer.planet_id, '| verified level in DB:', afterData?.level);
       }
     } else if (timer.timer_type === 'research') {
       const { data: beforeData } = await supabase
@@ -120,7 +121,7 @@ async function processExpiredTimers(): Promise<number> {
         .eq('research_id', timer.target_id)
         .maybeSingle();
 
-      console.log('[WorldTick] Research before upsert:', timer.target_id, 'current level:', beforeData?.level ?? 0, '-> target level:', timer.target_level);
+      logger.log('[WorldTick] Research before upsert:', timer.target_id, 'current level:', beforeData?.level ?? 0, '-> target level:', timer.target_level);
 
       const { error: upsertErr } = await supabase
         .from('player_research')
@@ -131,17 +132,17 @@ async function processExpiredTimers(): Promise<number> {
         }, { onConflict: 'user_id,research_id' });
 
       if (upsertErr) {
-        console.log('[WorldTick] ERROR applying research:', upsertErr.message, upsertErr.code, upsertErr.details);
+        logger.log('[WorldTick] ERROR applying research:', upsertErr.message, upsertErr.code, upsertErr.details);
       } else {
-        console.log('[WorldTick] Research completed:', timer.target_id, 'lv', timer.target_level, 'user', timer.user_id);
+        logger.log('[WorldTick] Research completed:', timer.target_id, 'lv', timer.target_level, 'user', timer.user_id);
       }
     } else {
-      console.log('[WorldTick] Unknown timer type:', timer.timer_type, 'for timer:', timer.id);
+      logger.log('[WorldTick] Unknown timer type:', timer.timer_type, 'for timer:', timer.id);
     }
     count++;
   }
 
-  console.log('[WorldTick] Processed', count, 'expired timers out of', expired.length, 'found');
+  logger.log('[WorldTick] Processed', count, 'expired timers out of', expired.length, 'found');
   return count;
 }
 
@@ -228,11 +229,11 @@ async function processExpiredShipyardQueues(): Promise<number> {
       }, { onConflict: 'planet_id,defense_id' });
     }
 
-    console.log('[WorldTick] Built', completed, 'x', item.item_id, '(' + item.item_type + ') planet', item.planet_id);
+    logger.log('[WorldTick] Built', completed, 'x', item.item_id, '(' + item.item_type + ') planet', item.planet_id);
     count++;
   }
 
-  if (count > 0) console.log('[WorldTick] Processed', count, 'shipyard queue items');
+  if (count > 0) logger.log('[WorldTick] Processed', count, 'shipyard queue items');
   return count;
 }
 
@@ -242,7 +243,7 @@ async function processReturningFleets(): Promise<number> {
   const { data: result, error } = await supabase.rpc('rpc_process_fleet_returns');
 
   if (error) {
-    console.log('[WorldTick] rpc_process_fleet_returns error:', error.message, error.code);
+    logger.log('[WorldTick] rpc_process_fleet_returns error:', error.message, error.code);
     return 0;
   }
 
@@ -250,11 +251,11 @@ async function processReturningFleets(): Promise<number> {
   const count = res?.processed ?? 0;
 
   if (res?.errors && res.errors.length > 0) {
-    console.log('[WorldTick] Fleet return errors:', JSON.stringify(res.errors));
+    logger.log('[WorldTick] Fleet return errors:', JSON.stringify(res.errors));
   }
 
   if (count > 0) {
-    console.log('[WorldTick] Processed', count, 'fleet returns via RPC');
+    logger.log('[WorldTick] Processed', count, 'fleet returns via RPC');
   }
 
   return count;
@@ -351,13 +352,13 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
   const targetCoords = mission.target_coords as number[];
   const ships = mission.ships as Record<string, number>;
 
-  console.log('[WorldTick][Espionage] === START === mission', mission.id, 'sender:', senderId, 'targetCoords:', JSON.stringify(targetCoords), 'targetPlayerId:', targetPlayerId, 'ships:', JSON.stringify(ships));
+  logger.log('[WorldTick][Espionage] === START === mission', mission.id, 'sender:', senderId, 'targetCoords:', JSON.stringify(targetCoords), 'targetPlayerId:', targetPlayerId, 'ships:', JSON.stringify(ships));
 
   const targetPlanetInfo = await getPlanetIdByCoords(targetCoords);
-  console.log('[WorldTick][Espionage] Target planet lookup:', targetPlanetInfo ? `planetId=${targetPlanetInfo.planetId}, userId=${targetPlanetInfo.userId}` : 'NOT FOUND');
+  logger.log('[WorldTick][Espionage] Target planet lookup:', targetPlanetInfo ? `planetId=${targetPlanetInfo.planetId}, userId=${targetPlanetInfo.userId}` : 'NOT FOUND');
 
   if (!targetPlanetInfo) {
-    console.log('[WorldTick][Espionage] Target planet not found at coords', JSON.stringify(targetCoords), '- aborting, returning probes');
+    logger.log('[WorldTick][Espionage] Target planet not found at coords', JSON.stringify(targetCoords), '- aborting, returning probes');
     const travelTime = (mission.arrival_time as number) - (mission.departure_time as number);
     await supabase.from('fleet_missions').update({
       status: 'returning',
@@ -371,25 +372,25 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
 
   if (!targetPlayerId) {
     targetPlayerId = targetPlanetInfo.userId;
-    console.log('[WorldTick][Espionage] targetPlayerId resolved from coords:', targetPlayerId);
+    logger.log('[WorldTick][Espionage] targetPlayerId resolved from coords:', targetPlayerId);
   }
 
   const senderResearch = await loadResearchFromDB(senderId);
-  console.log('[WorldTick][Espionage] Sender espionageTech:', senderResearch.espionageTech ?? 0);
+  logger.log('[WorldTick][Espionage] Sender espionageTech:', senderResearch.espionageTech ?? 0);
 
   let targetState: Awaited<ReturnType<typeof loadPlanetState>> | null = null;
   try {
     targetState = await loadPlanetState(targetPlanetInfo.planetId, targetPlanetInfo.userId);
-    console.log('[WorldTick][Espionage] Target state loaded: resources=', JSON.stringify(targetState.resources), 'buildings=', Object.keys(targetState.buildings).length, 'ships=', Object.keys(targetState.ships).length, 'defenses=', Object.keys(targetState.defenses).length, 'planetName=', targetState.planetName);
+    logger.log('[WorldTick][Espionage] Target state loaded: resources=', JSON.stringify(targetState.resources), 'buildings=', Object.keys(targetState.buildings).length, 'ships=', Object.keys(targetState.ships).length, 'defenses=', Object.keys(targetState.defenses).length, 'planetName=', targetState.planetName);
   } catch (e) {
-    console.log('[WorldTick][Espionage] ERROR loading target state:', e);
+    logger.log('[WorldTick][Espionage] ERROR loading target state:', e);
   }
 
   const probesSent = ships.spectreSonde ?? 1;
   const attackerEspionage = senderResearch.espionageTech ?? 0;
   const defenderEspionage = targetState?.research?.espionageTech ?? 0;
 
-  console.log('[WorldTick][Espionage] probesSent:', probesSent, 'attackerEsp:', attackerEspionage, 'defenderEsp:', defenderEspionage);
+  logger.log('[WorldTick][Espionage] probesSent:', probesSent, 'attackerEsp:', attackerEspionage, 'defenderEsp:', defenderEspionage);
 
   const espResult = processEspionage(
     attackerEspionage,
@@ -406,12 +407,12 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
   );
 
   const allProbesLost = espResult.probesLost >= probesSent;
-  console.log('[WorldTick][Espionage] espResult: probesLost=', espResult.probesLost, '/', probesSent, 'allLost=', allProbesLost, 'resources=', espResult.resources !== null ? 'present' : 'NULL', 'buildings=', espResult.buildings !== null ? 'present' : 'NULL', 'research=', espResult.research !== null ? 'present' : 'NULL', 'ships=', espResult.ships !== null ? 'present' : 'NULL', 'defenses=', espResult.defenses !== null ? 'present' : 'NULL');
+  logger.log('[WorldTick][Espionage] espResult: probesLost=', espResult.probesLost, '/', probesSent, 'allLost=', allProbesLost, 'resources=', espResult.resources !== null ? 'present' : 'NULL', 'buildings=', espResult.buildings !== null ? 'present' : 'NULL', 'research=', espResult.research !== null ? 'present' : 'NULL', 'ships=', espResult.ships !== null ? 'present' : 'NULL', 'defenses=', espResult.defenses !== null ? 'present' : 'NULL');
 
   const targetPlanetName = espResult.planetName || targetState?.planetName || 'Inconnue';
 
   if (!allProbesLost) {
-    console.log('[WorldTick][Espionage] Inserting ATTACKER report for', senderId, 'planetName=', targetPlanetName);
+    logger.log('[WorldTick][Espionage] Inserting ATTACKER report for', senderId, 'planetName=', targetPlanetName);
     const { error: attackerReportErr } = await supabase.from('espionage_reports').insert({
       player_id: senderId,
       target_player_id: targetPlayerId,
@@ -429,16 +430,16 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     });
 
     if (attackerReportErr) {
-      console.log('[WorldTick][Espionage] ERROR inserting attacker report:', attackerReportErr.message, attackerReportErr.code, attackerReportErr.details);
+      logger.log('[WorldTick][Espionage] ERROR inserting attacker report:', attackerReportErr.message, attackerReportErr.code, attackerReportErr.details);
     } else {
-      console.log('[WorldTick][Espionage] Attacker report inserted OK');
+      logger.log('[WorldTick][Espionage] Attacker report inserted OK');
     }
   } else {
-    console.log('[WorldTick][Espionage] All probes destroyed - NO attacker report');
+    logger.log('[WorldTick][Espionage] All probes destroyed - NO attacker report');
   }
 
   if (targetPlayerId && targetPlayerId !== senderId) {
-    console.log('[WorldTick][Espionage] Inserting VICTIM alert for', targetPlayerId, 'planet=', targetPlanetName, 'coords=', JSON.stringify(targetCoords));
+    logger.log('[WorldTick][Espionage] Inserting VICTIM alert for', targetPlayerId, 'planet=', targetPlanetName, 'coords=', JSON.stringify(targetCoords));
     const { error: victimReportErr } = await supabase.from('espionage_reports').insert({
       player_id: targetPlayerId,
       target_player_id: senderId,
@@ -456,12 +457,12 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     });
 
     if (victimReportErr) {
-      console.log('[WorldTick][Espionage] ERROR inserting victim report:', victimReportErr.message, victimReportErr.code, victimReportErr.details);
+      logger.log('[WorldTick][Espionage] ERROR inserting victim report:', victimReportErr.message, victimReportErr.code, victimReportErr.details);
     } else {
-      console.log('[WorldTick][Espionage] Victim alert inserted OK for:', targetPlayerId);
+      logger.log('[WorldTick][Espionage] Victim alert inserted OK for:', targetPlayerId);
     }
   } else {
-    console.log('[WorldTick][Espionage] No victim report: targetPlayerId=', targetPlayerId, 'senderId=', senderId);
+    logger.log('[WorldTick][Espionage] No victim report: targetPlayerId=', targetPlayerId, 'senderId=', senderId);
   }
 
   const travelTime = (mission.arrival_time as number) - (mission.departure_time as number);
@@ -482,7 +483,7 @@ async function processEspionageMission(mission: Record<string, unknown>): Promis
     ...(finalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick][Espionage] === DONE === mission', mission.id, 'survivingProbes:', survivingProbes, 'status:', finalStatus);
+  logger.log('[WorldTick][Espionage] === DONE === mission', mission.id, 'survivingProbes:', survivingProbes, 'status:', finalStatus);
 }
 
 async function processAttackMission(mission: Record<string, unknown>): Promise<void> {
@@ -516,12 +517,12 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     return;
   }
 
-  console.log('[WorldTick][Attack] ===== ATTACK MISSION', mission.id, '=====');
-  console.log('[WorldTick][Attack] Attacker:', senderId, 'ships:', JSON.stringify(attackerShips));
-  console.log('[WorldTick][Attack] Defender:', targetPlayerId, 'planet:', _targetPlanetId);
-  console.log('[WorldTick][Attack] Defender ships:', JSON.stringify(targetState.ships), 'defenses:', JSON.stringify(targetState.defenses));
-  console.log('[WorldTick][Attack] Attacker research:', JSON.stringify(senderResearch));
-  console.log('[WorldTick][Attack] Defender research:', JSON.stringify(targetState.research));
+  logger.log('[WorldTick][Attack] ===== ATTACK MISSION', mission.id, '=====');
+  logger.log('[WorldTick][Attack] Attacker:', senderId, 'ships:', JSON.stringify(attackerShips));
+  logger.log('[WorldTick][Attack] Defender:', targetPlayerId, 'planet:', _targetPlanetId);
+  logger.log('[WorldTick][Attack] Defender ships:', JSON.stringify(targetState.ships), 'defenses:', JSON.stringify(targetState.defenses));
+  logger.log('[WorldTick][Attack] Attacker research:', JSON.stringify(senderResearch));
+  logger.log('[WorldTick][Attack] Defender research:', JSON.stringify(targetState.research));
 
   const combatResult = simulateCombat(
     attackerShips,
@@ -532,13 +533,13 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     targetState.resources,
   );
 
-  console.log('[WorldTick][Attack] Combat result:', combatResult.result, 'rounds:', combatResult.rounds);
-  console.log('[WorldTick][Attack] Attacker losses:', JSON.stringify(combatResult.attackerLosses));
-  console.log('[WorldTick][Attack] Defender ship losses:', JSON.stringify(combatResult.defenderShipLosses));
-  console.log('[WorldTick][Attack] Defender defense losses:', JSON.stringify(combatResult.defenderDefenseLosses));
-  console.log('[WorldTick][Attack] Loot:', JSON.stringify(combatResult.loot), 'Debris:', JSON.stringify(combatResult.debris));
+  logger.log('[WorldTick][Attack] Combat result:', combatResult.result, 'rounds:', combatResult.rounds);
+  logger.log('[WorldTick][Attack] Attacker losses:', JSON.stringify(combatResult.attackerLosses));
+  logger.log('[WorldTick][Attack] Defender ship losses:', JSON.stringify(combatResult.defenderShipLosses));
+  logger.log('[WorldTick][Attack] Defender defense losses:', JSON.stringify(combatResult.defenderDefenseLosses));
+  logger.log('[WorldTick][Attack] Loot:', JSON.stringify(combatResult.loot), 'Debris:', JSON.stringify(combatResult.debris));
 
-  await supabase.from('combat_reports').insert({
+  const combatReportData = {
     attacker_id: senderId,
     defender_id: targetPlayerId,
     attacker_username: mission.sender_username,
@@ -556,14 +557,32 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     debris: combatResult.debris,
     combat_log: combatResult.combatLog,
     round_logs: combatResult.roundLogs,
+  };
+
+  const { error: attackerReportErr } = await supabase.from('combat_reports').insert({
+    ...combatReportData,
+    player_id: senderId,
   });
+  if (attackerReportErr) {
+    logger.error('[WorldTick][Attack] Error inserting attacker combat report:', attackerReportErr.message);
+  }
+
+  if (targetPlayerId && targetPlayerId !== senderId) {
+    const { error: defenderReportErr } = await supabase.from('combat_reports').insert({
+      ...combatReportData,
+      player_id: targetPlayerId,
+    });
+    if (defenderReportErr) {
+      logger.error('[WorldTick][Attack] Error inserting defender combat report:', defenderReportErr.message);
+    }
+  }
 
   if (_targetPlanetId) {
     const defenseRebuilds = Object.fromEntries(
       Object.entries(combatResult.defenderDefenseLosses).map(([id, count]) => [id, getDefenseRebuildCount(count)])
     );
-    console.log('[WorldTick][Attack] Applying loot to planet:', _targetPlanetId);
-    console.log('[WorldTick][Attack] Defense losses:', JSON.stringify(combatResult.defenderDefenseLosses), 'Rebuilds:', JSON.stringify(defenseRebuilds));
+    logger.log('[WorldTick][Attack] Applying loot to planet:', _targetPlanetId);
+    logger.log('[WorldTick][Attack] Defense losses:', JSON.stringify(combatResult.defenderDefenseLosses), 'Rebuilds:', JSON.stringify(defenseRebuilds));
 
     const { data: rpcResult, error: rpcError } = await supabase.rpc('apply_attack_loot', {
       p_planet_id: _targetPlanetId,
@@ -575,9 +594,9 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
       p_defense_rebuilds: defenseRebuilds,
     });
     if (rpcError) {
-      console.log('[WorldTick][Attack] RPC apply_attack_loot ERROR:', rpcError.message, rpcError.code, rpcError.details);
+      logger.log('[WorldTick][Attack] RPC apply_attack_loot ERROR:', rpcError.message, rpcError.code, rpcError.details);
     } else {
-      console.log('[WorldTick][Attack] RPC apply_attack_loot result:', JSON.stringify(rpcResult));
+      logger.log('[WorldTick][Attack] RPC apply_attack_loot result:', JSON.stringify(rpcResult));
     }
   }
 
@@ -621,7 +640,7 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     ...(attackFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Attack processed:', mission.id, 'result:', combatResult.result);
+  logger.log('[WorldTick] Attack processed:', mission.id, 'result:', combatResult.result);
 }
 
 async function processTransportMission(mission: Record<string, unknown>): Promise<void> {
@@ -645,7 +664,7 @@ async function processTransportMission(mission: Record<string, unknown>): Promis
       p_xenogas: deliveredResources.xenogas,
     });
     if (rpcErr) {
-      console.log('[WorldTick] Error adding transport resources:', rpcErr.message);
+      logger.log('[WorldTick] Error adding transport resources:', rpcErr.message);
     } else {
       await supabase.from('planets').update({ last_update: Date.now() }).eq('id', targetPlanetInfo.planetId);
     }
@@ -663,7 +682,7 @@ async function processTransportMission(mission: Record<string, unknown>): Promis
     result: { type: 'transport', delivered: resources },
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Transport processed:', mission.id, 'to', targetCoords);
+  logger.log('[WorldTick] Transport processed:', mission.id, 'to', targetCoords);
 }
 
 async function processRecycleMission(mission: Record<string, unknown>): Promise<void> {
@@ -724,7 +743,7 @@ async function processRecycleMission(mission: Record<string, unknown>): Promise<
     result: { type: 'recycle', collected: { fer: collectedFer, silice: collectedSilice } },
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Recycled:', collectedFer, 'fer,', collectedSilice, 'silice');
+  logger.log('[WorldTick] Recycled:', collectedFer, 'fer,', collectedSilice, 'silice');
 }
 
 async function processColonizeMission(mission: Record<string, unknown>): Promise<void> {
@@ -755,7 +774,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
       ships,
       result: { type: 'colonize', success: false, reason: 'Position déjà occupée' },
     }).eq('id', mission.id);
-    console.log('[WorldTick] Colonize failed (occupied):', mission.id);
+    logger.log('[WorldTick] Colonize failed (occupied):', mission.id);
     return;
   }
 
@@ -779,7 +798,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
       ships,
       result: { type: 'colonize', success: false, reason: 'Nombre maximum de colonies atteint' },
     }).eq('id', mission.id);
-    console.log('[WorldTick] Colonize failed (max colonies):', mission.id);
+    logger.log('[WorldTick] Colonize failed (max colonies):', mission.id);
     return;
   }
 
@@ -792,7 +811,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
   }).select('id').single();
 
   if (insertErr || !newPlanet) {
-    console.log('[WorldTick] Error creating colony planet:', insertErr?.message);
+    logger.log('[WorldTick] Error creating colony planet:', insertErr?.message);
     await supabase.from('fleet_missions').update({
       status: 'returning',
       processed: true,
@@ -833,7 +852,7 @@ async function processColonizeMission(mission: Record<string, unknown>): Promise
     ...(colonizeFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Colony created:', newPlanet.id, 'at', targetCoords);
+  logger.log('[WorldTick] Colony created:', newPlanet.id, 'at', targetCoords);
 }
 
 async function processStationMission(mission: Record<string, unknown>): Promise<void> {
@@ -877,7 +896,7 @@ async function processStationMission(mission: Record<string, unknown>): Promise<
     result: { type: 'station', delivered_ships: ships, delivered_resources: resources },
   }).eq('id', mission.id);
 
-  console.log('[WorldTick] Station mission completed:', mission.id);
+  logger.log('[WorldTick] Station mission completed:', mission.id);
 }
 
 async function processArrivedFleets(): Promise<number> {
@@ -901,7 +920,7 @@ async function processArrivedFleets(): Promise<number> {
       .select();
 
     if (!claimed?.length) {
-      console.log('[WorldTick] Mission already claimed:', mission.id);
+      logger.log('[WorldTick] Mission already claimed:', mission.id);
       continue;
     }
 
@@ -920,16 +939,16 @@ async function processArrivedFleets(): Promise<number> {
       } else if (missionType === 'station') {
         await processStationMission(mission);
       } else {
-        console.log('[WorldTick] Unknown mission type:', missionType);
+        logger.log('[WorldTick] Unknown mission type:', missionType);
       }
       count++;
     } catch (e) {
-      console.log('[WorldTick] Error processing mission', mission.id, ':', e);
+      logger.log('[WorldTick] Error processing mission', mission.id, ':', e);
       await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', mission.id);
     }
   }
 
-  if (count > 0) console.log('[WorldTick] Processed', count, 'arrived fleets');
+  if (count > 0) logger.log('[WorldTick] Processed', count, 'arrived fleets');
   return count;
 }
 
@@ -952,7 +971,7 @@ async function updateSinglePlanetResources(
   });
 
   if (rpcErr) {
-    console.log('[WorldTick] materialize_planet_resources error for planet', planet.id, ':', rpcErr.message);
+    logger.log('[WorldTick] materialize_planet_resources error for planet', planet.id, ':', rpcErr.message);
     return false;
   }
 
@@ -973,12 +992,12 @@ async function updateAllPlanetResources(): Promise<number> {
     .limit(100);
 
   if (error) {
-    console.log('[WorldTick] Error fetching stale planets:', error.message);
+    logger.log('[WorldTick] Error fetching stale planets:', error.message);
     return 0;
   }
   if (!planets?.length) return 0;
 
-  console.log('[WorldTick] Found', planets.length, 'stale planets to update');
+  logger.log('[WorldTick] Found', planets.length, 'stale planets to update');
 
   const researchCache = new Map<string, Record<string, number>>();
   let count = 0;
@@ -987,14 +1006,14 @@ async function updateAllPlanetResources(): Promise<number> {
     const batch = (planets as PlanetRow[]).slice(i, i + BATCH_SIZE);
     const results = await Promise.all(
       batch.map(planet => updateSinglePlanetResources(planet, now, researchCache).catch(e => {
-        console.log('[WorldTick] Error updating planet', planet.id, ':', e);
+        logger.log('[WorldTick] Error updating planet', planet.id, ':', e);
         return false;
       }))
     );
     count += results.filter(Boolean).length;
   }
 
-  if (count > 0) console.log('[WorldTick] Updated resources for', count, 'planets');
+  if (count > 0) logger.log('[WorldTick] Updated resources for', count, 'planets');
   return count;
 }
 
@@ -1012,7 +1031,7 @@ async function recalcAllScores(): Promise<number> {
   const { data, error } = await supabase.rpc('recalc_all_player_scores');
 
   if (error) {
-    console.log('[WorldTick] recalc_all_player_scores error:', error.message);
+    logger.log('[WorldTick] recalc_all_player_scores error:', error.message);
     return 0;
   }
 
@@ -1020,7 +1039,7 @@ async function recalcAllScores(): Promise<number> {
   const count = res?.players_updated ?? 0;
 
   if (count > 0) {
-    console.log('[WorldTick] Recalculated scores for', count, 'players');
+    logger.log('[WorldTick] Recalculated scores for', count, 'players');
   }
 
   return count;
@@ -1043,7 +1062,7 @@ export async function runWorldTick(): Promise<{
   if (isRunning) {
     skippedTicks++;
     const timeSinceLastTick = Date.now() - lastSuccessfulTickTime;
-    console.log(`[WorldTick] Already running, skipping (skipped=${skippedTicks}, lastDuration=${lastTickDuration}ms, timeSinceLastSuccess=${timeSinceLastTick}ms)`);
+    logger.log(`[WorldTick] Already running, skipping (skipped=${skippedTicks}, lastDuration=${lastTickDuration}ms, timeSinceLastSuccess=${timeSinceLastTick}ms)`);
     return { timers: 0, queues: 0, arrivals: 0, returns: 0, resources: 0 };
   }
 
@@ -1054,19 +1073,19 @@ export async function runWorldTick(): Promise<{
 
   try {
     if (currentSkipped > 0) {
-      console.log(`[WorldTick] Resuming after ${currentSkipped} skipped ticks`);
+      logger.log(`[WorldTick] Resuming after ${currentSkipped} skipped ticks`);
     }
 
     const [timers, queues, arrivals, returns] = await Promise.all([
-      processExpiredTimers().catch(e => { console.log('[WorldTick] Timer error:', e); return 0; }),
-      processExpiredShipyardQueues().catch(e => { console.log('[WorldTick] Queue error:', e); return 0; }),
-      processArrivedFleets().catch(e => { console.log('[WorldTick] Fleet arrival error:', e); return 0; }),
-      processReturningFleets().catch(e => { console.log('[WorldTick] Fleet return error:', e); return 0; }),
+      processExpiredTimers().catch(e => { logger.log('[WorldTick] Timer error:', e); return 0; }),
+      processExpiredShipyardQueues().catch(e => { logger.log('[WorldTick] Queue error:', e); return 0; }),
+      processArrivedFleets().catch(e => { logger.log('[WorldTick] Fleet arrival error:', e); return 0; }),
+      processReturningFleets().catch(e => { logger.log('[WorldTick] Fleet return error:', e); return 0; }),
     ]);
 
-    const resources = await updateAllPlanetResources().catch(e => { console.log('[WorldTick] Resource error:', e); return 0; });
+    const resources = await updateAllPlanetResources().catch(e => { logger.log('[WorldTick] Resource error:', e); return 0; });
 
-    const scores = await recalcAllScores().catch(e => { console.log('[WorldTick] Score recalc error:', e); return 0; });
+    const scores = await recalcAllScores().catch(e => { logger.log('[WorldTick] Score recalc error:', e); return 0; });
 
     const duration = Date.now() - start;
     lastTickDuration = duration;
@@ -1074,16 +1093,16 @@ export async function runWorldTick(): Promise<{
 
     const total = timers + queues + arrivals + returns + resources + scores;
     if (total > 0 || duration > 3000) {
-      console.log(`[WorldTick] Tick complete in ${duration}ms: timers=${timers} queues=${queues} arrivals=${arrivals} returns=${returns} resources=${resources} scores=${scores}${currentSkipped > 0 ? ` (after ${currentSkipped} skipped)` : ''}`);
+      logger.log(`[WorldTick] Tick complete in ${duration}ms: timers=${timers} queues=${queues} arrivals=${arrivals} returns=${returns} resources=${resources} scores=${scores}${currentSkipped > 0 ? ` (after ${currentSkipped} skipped)` : ''}`);
     }
 
     if (duration > 4000) {
-      console.log(`[WorldTick] WARNING: Tick took ${duration}ms, exceeding safe threshold. Consider scaling.`);
+      logger.log(`[WorldTick] WARNING: Tick took ${duration}ms, exceeding safe threshold. Consider scaling.`);
     }
 
     return { timers, queues, arrivals, returns, resources };
   } catch (e) {
-    console.log('[WorldTick] Critical tick error:', e);
+    logger.log('[WorldTick] Critical tick error:', e);
     return { timers: 0, queues: 0, arrivals: 0, returns: 0, resources: 0 };
   } finally {
     isRunning = false;
@@ -1098,16 +1117,16 @@ let lastHeartbeat = Date.now();
 
 export function startWorldTickLoop(intervalMs: number = 5000): void {
   if (tickInterval) {
-    console.log('[WorldTick] Loop already running');
+    logger.log('[WorldTick] Loop already running');
     return;
   }
 
-  console.log(`[WorldTick] Starting world tick loop every ${intervalMs}ms`);
+  logger.log(`[WorldTick] Starting world tick loop every ${intervalMs}ms`);
   tickInterval = setInterval(() => {
     tickCount++;
     const now = Date.now();
     if (now - lastHeartbeat >= 300_000) {
-      console.log(`[WorldTick] ♥ Heartbeat: ${tickCount} ticks executed, skipped=${skippedTicks}, lastDuration=${lastTickDuration}ms, uptime ${Math.round((now - startedAt) / 60_000)}min`);
+      logger.log(`[WorldTick] ♥ Heartbeat: ${tickCount} ticks executed, skipped=${skippedTicks}, lastDuration=${lastTickDuration}ms, uptime ${Math.round((now - startedAt) / 60_000)}min`);
       lastHeartbeat = now;
     }
     void runWorldTick();
@@ -1122,6 +1141,6 @@ export function stopWorldTickLoop(): void {
   if (tickInterval) {
     clearInterval(tickInterval);
     tickInterval = null;
-    console.log('[WorldTick] Loop stopped');
+    logger.log('[WorldTick] Loop stopped');
   }
 }

@@ -51,7 +51,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
       if (!userId) return [];
 
       try {
-        const result = await trpcClient.world.getActiveMissions.query({ userId });
+        const result = await trpcClient.world.getActiveMissions.query();
         if (result.success) {
           console.log('[Fleet] Missions loaded via tRPC:', result.missions.length, 'phases:', result.missions.map((m: Record<string, unknown>) => m.mission_phase));
           return result.missions as FleetMission[];
@@ -93,7 +93,6 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
       const senderPlanet = activePlanet.planetName;
 
       const result = await trpcClient.actions.sendFleet.mutate({
-        userId,
         planetId,
         ships: params.ships,
         resources: params.resources,
@@ -194,7 +193,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
       const { data, error } = await supabase
         .from('combat_reports')
         .select('*')
-        .or(`attacker_id.eq.${userId},defender_id.eq.${userId}`)
+        .eq('player_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) return [];
@@ -257,7 +256,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     console.log('[FleetContext] Deleting espionage report via tRPC:', reportId);
     markAsDeleted(reportId);
     try {
-      const result = await deleteEspionageReportRef.current.mutateAsync({ reportId, playerId: userId });
+      const result = await deleteEspionageReportRef.current.mutateAsync({ reportId });
       if (!result.success) console.log('[FleetContext] tRPC delete espionage report failed:', result.error);
       else console.log('[FleetContext] Espionage report deleted from DB:', reportId);
     } catch (e) {
@@ -270,7 +269,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     console.log('[FleetContext] Deleting combat report via tRPC:', reportId);
     markAsDeleted(reportId);
     try {
-      const result = await deleteCombatReportRef.current.mutateAsync({ reportId, playerId: userId });
+      const result = await deleteCombatReportRef.current.mutateAsync({ reportId });
       if (!result.success) console.log('[FleetContext] tRPC delete combat report failed:', result.error);
       else console.log('[FleetContext] Combat report deleted from DB:', reportId);
     } catch (e) {
@@ -283,7 +282,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     console.log('[FleetContext] Deleting transport report via tRPC:', missionId);
     markAsDeleted(missionId);
     try {
-      const result = await deleteTransportReportRef.current.mutateAsync({ missionId, playerId: userId });
+      const result = await deleteTransportReportRef.current.mutateAsync({ missionId });
       if (!result.success) console.log('[FleetContext] tRPC delete transport report failed:', result.error);
       else console.log('[FleetContext] Transport report deleted from DB:', missionId);
     } catch (e) {
@@ -297,7 +296,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     const ids = (espionageReportsQuery.data ?? []).map(r => r.id);
     markAsDeleted(...ids);
     try {
-      await deleteAllEspionageReportsRef.current.mutateAsync({ playerId: userId });
+      await deleteAllEspionageReportsRef.current.mutateAsync();
       console.log('[FleetContext] All espionage reports deleted from DB');
     } catch (e) {
       console.log('[FleetContext] Error deleting all espionage reports:', e);
@@ -310,7 +309,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     const ids = (combatReportsQuery.data ?? []).map(r => r.id);
     markAsDeleted(...ids);
     try {
-      await deleteAllCombatReportsRef.current.mutateAsync({ playerId: userId });
+      await deleteAllCombatReportsRef.current.mutateAsync();
       console.log('[FleetContext] All combat reports deleted from DB');
     } catch (e) {
       console.log('[FleetContext] Error deleting all combat reports:', e);
@@ -323,7 +322,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     const ids = (transportReportsQuery.data ?? []).map(r => r.id);
     markAsDeleted(...ids);
     try {
-      await deleteAllTransportReportsRef.current.mutateAsync({ playerId: userId });
+      await deleteAllTransportReportsRef.current.mutateAsync();
       console.log('[FleetContext] All transport reports deleted from DB');
     } catch (e) {
       console.log('[FleetContext] Error deleting all transport reports:', e);
@@ -334,7 +333,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     mutationFn: async (missionId: string) => {
       if (!userId) throw new Error('Not authenticated');
       console.log('[FleetContext] Recalling fleet:', missionId);
-      const result = await trpcClient.actions.recallFleet.mutate({ userId, missionId });
+      const result = await trpcClient.actions.recallFleet.mutate({ missionId });
       if (!result.success) {
         throw new Error(result.error || 'Rappel échoué');
       }

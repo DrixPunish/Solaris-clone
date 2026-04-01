@@ -147,7 +147,7 @@ export default function ResourceBar() {
   const insets = useSafeAreaInsets();
 
   const shieldQuery = trpc.world.getQuantumShieldStatus.useQuery(
-    { playerId: userId ?? '' },
+    undefined,
     { enabled: !!userId, refetchInterval: 60000, staleTime: 30000 },
   );
   const shieldActive = shieldQuery.data?.shield_active === true && (shieldQuery.data?.remaining_seconds ?? 0) > 0;

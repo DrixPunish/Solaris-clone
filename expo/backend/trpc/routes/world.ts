@@ -1,7 +1,8 @@
-import { createTRPCRouter, publicProcedure } from "../create-context";
+import { createTRPCRouter, publicProcedure, protectedProcedure } from "../create-context";
 import { runWorldTick } from "@/backend/worldTick";
 import { supabase } from "@/backend/supabase";
 import { z } from "zod";
+import { logger } from "@/utils/logger";
 
 interface LeaderboardRow {
   player_id: string;
@@ -33,102 +34,101 @@ export const worldRouter = createTRPCRouter({
     };
   }),
 
-  getActiveMissions: publicProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
+  getActiveMissions: protectedProcedure
+    .query(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { data, error } = await supabase
         .from('fleet_missions')
         .select('*')
-        .or(`sender_id.eq.${input.userId},target_player_id.eq.${input.userId}`)
+        .or(`sender_id.eq.${userId},target_player_id.eq.${userId}`)
         .in('mission_phase', ['en_route', 'arrived', 'returning'])
         .order('arrival_time', { ascending: true });
 
       if (error) {
-        console.log('[tRPC] Error fetching active missions:', error.message);
+        logger.error('[tRPC] Error fetching active missions:', error.message);
         return { success: false as const, error: error.message, missions: [] };
       }
 
-      console.log('[tRPC] Active missions for', input.userId, ':', (data ?? []).length);
       return { success: true as const, missions: data ?? [] };
     }),
 
-  deleteEspionageReport: publicProcedure
-    .input(z.object({ reportId: z.string(), playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteEspionageReport: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
       const { error } = await supabase
         .from('espionage_reports')
         .delete()
         .eq('id', input.reportId)
-        .eq('player_id', input.playerId);
+        .eq('player_id', userId);
       if (error) {
-        console.log('[tRPC] Error deleting espionage report:', error.message);
+        logger.error('[tRPC] Error deleting espionage report:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] Espionage report deleted:', input.reportId);
       return { success: true };
     }),
 
-  deleteAllEspionageReports: publicProcedure
-    .input(z.object({ playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteAllEspionageReports: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { error } = await supabase
         .from('espionage_reports')
         .delete()
-        .eq('player_id', input.playerId);
+        .eq('player_id', userId);
       if (error) {
-        console.log('[tRPC] Error deleting all espionage reports:', error.message);
+        logger.error('[tRPC] Error deleting all espionage reports:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] All espionage reports deleted for:', input.playerId);
       return { success: true };
     }),
 
-  deleteCombatReport: publicProcedure
-    .input(z.object({ reportId: z.string(), playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteCombatReport: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
       const { error } = await supabase
         .from('combat_reports')
         .delete()
-        .eq('id', input.reportId);
+        .eq('id', input.reportId)
+        .eq('player_id', userId);
       if (error) {
-        console.log('[tRPC] Error deleting combat report:', error.message);
+        logger.error('[tRPC] Error deleting combat report:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] Combat report deleted:', input.reportId);
       return { success: true };
     }),
 
-  deleteAllCombatReports: publicProcedure
-    .input(z.object({ playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteAllCombatReports: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { error } = await supabase
         .from('combat_reports')
         .delete()
-        .or(`attacker_id.eq.${input.playerId},defender_id.eq.${input.playerId}`);
+        .eq('player_id', userId);
       if (error) {
-        console.log('[tRPC] Error deleting all combat reports:', error.message);
+        logger.error('[tRPC] Error deleting all combat reports:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] All combat reports deleted for:', input.playerId);
       return { success: true };
     }),
 
-  deleteTransportReport: publicProcedure
-    .input(z.object({ missionId: z.string(), playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteTransportReport: protectedProcedure
+    .input(z.object({ missionId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.userId;
       const { error } = await supabase
         .from('fleet_missions')
         .delete()
-        .eq('id', input.missionId);
+        .eq('id', input.missionId)
+        .or(`sender_id.eq.${userId},target_player_id.eq.${userId}`);
       if (error) {
-        console.log('[tRPC] Error deleting transport report:', error.message);
+        logger.error('[tRPC] Error deleting transport report:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] Transport report deleted:', input.missionId);
       return { success: true };
     }),
 
-  insertTargetEspionageNotification: publicProcedure
+  insertTargetEspionageNotification: protectedProcedure
     .input(z.object({
       targetPlayerId: z.string(),
       targetCoords: z.array(z.number()),
@@ -152,10 +152,9 @@ export const worldRouter = createTRPCRouter({
           probes_lost: 0,
         });
       if (error) {
-        console.log('[tRPC] Error inserting target espionage notification:', error.message);
+        logger.error('[tRPC] Error inserting target espionage notification:', error.message);
         return { success: false, error: error.message };
       }
-      console.log('[tRPC] Target espionage notification inserted for:', input.targetPlayerId);
       return { success: true };
     }),
 
@@ -166,18 +165,29 @@ export const worldRouter = createTRPCRouter({
       const { data, error } = await supabase.rpc('get_leaderboard', { p_limit: limit });
 
       if (error) {
-        console.log('[tRPC] Error fetching leaderboard:', error.message);
+        logger.error('[tRPC] Error fetching leaderboard:', error.message);
         return { success: false as const, error: error.message, players: [] };
       }
 
       const rows = (data ?? []) as LeaderboardRow[];
-      console.log('[tRPC] Leaderboard fetched:', rows.length, 'players');
       return { success: true as const, players: rows };
     }),
 
-  getPlanetResources: publicProcedure
-    .input(z.object({ planetId: z.string(), userId: z.string() }))
-    .query(async ({ input }) => {
+  getPlanetResources: protectedProcedure
+    .input(z.object({ planetId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const { data: planet } = await supabase
+        .from('planets')
+        .select('id')
+        .eq('id', input.planetId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!planet) {
+        return { success: false as const, error: 'Planet not found or not owned' };
+      }
+
       const { data, error } = await supabase
         .from('planet_resources')
         .select('fer, silice, xenogas, energy')
@@ -185,15 +195,14 @@ export const worldRouter = createTRPCRouter({
         .maybeSingle();
 
       if (error) {
-        console.log('[tRPC] Error fetching planet resources:', error.message);
+        logger.error('[tRPC] Error fetching planet resources:', error.message);
         return { success: false as const, error: error.message };
       }
 
       if (!data) {
-        return { success: false as const, error: 'Planet not found' };
+        return { success: false as const, error: 'Planet resources not found' };
       }
 
-      console.log('[tRPC] Planet resources fetched:', input.planetId, 'fer:', data.fer, 'silice:', data.silice, 'xenogas:', data.xenogas);
       return {
         success: true as const,
         fer: data.fer as number,
@@ -203,28 +212,28 @@ export const worldRouter = createTRPCRouter({
       };
     }),
 
-  getPlayerScore: publicProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
+  getPlayerScore: protectedProcedure
+    .query(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { data, error } = await supabase
         .from('player_scores')
         .select('*')
-        .eq('player_id', input.userId)
+        .eq('player_id', userId)
         .maybeSingle();
 
       if (error) {
-        console.log('[tRPC] Error fetching player score:', error.message);
+        logger.error('[tRPC] Error fetching player score:', error.message);
         return { success: false as const, error: error.message };
       }
 
       return { success: true as const, score: data };
     }),
 
-  getPlayerAttackStatus: publicProcedure
-    .input(z.object({ attackerId: z.string(), defenderId: z.string() }))
-    .query(async ({ input }) => {
-      const { attackerId, defenderId } = input;
-      console.log('[tRPC] getPlayerAttackStatus:', attackerId, 'vs', defenderId);
+  getPlayerAttackStatus: protectedProcedure
+    .input(z.object({ defenderId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const attackerId = ctx.userId;
+      const { defenderId } = input;
 
       const { data: defenderShield } = await supabase.rpc('get_quantum_shield_status', { p_player_id: defenderId });
       const shieldData = defenderShield as { shield_active?: boolean; shield_expires_at?: string | null } | null;
@@ -269,14 +278,13 @@ export const worldRouter = createTRPCRouter({
       return { can_attack: true, reason: null, attacker_pts, defender_pts };
     }),
 
-  getQuantumShieldStatus: publicProcedure
-    .input(z.object({ playerId: z.string() }))
-    .query(async ({ input }) => {
-      console.log('[tRPC] getQuantumShieldStatus for', input.playerId);
-      const { data, error } = await supabase.rpc('get_quantum_shield_status', { p_player_id: input.playerId });
+  getQuantumShieldStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const userId = ctx.userId;
+      const { data, error } = await supabase.rpc('get_quantum_shield_status', { p_player_id: userId });
 
       if (error) {
-        console.log('[tRPC] Error fetching quantum shield status:', error.message);
+        logger.error('[tRPC] Error fetching quantum shield status:', error.message);
         return {
           shield_active: false,
           shield_expires_at: null as string | null,
@@ -297,18 +305,16 @@ export const worldRouter = createTRPCRouter({
         can_buy: boolean;
         cost_solar: number;
       };
-      console.log('[tRPC] Quantum shield status:', JSON.stringify(result));
       return result;
     }),
 
-  buyQuantumShield: publicProcedure
-    .input(z.object({ playerId: z.string() }))
-    .mutation(async ({ input }) => {
-      console.log('[tRPC] buyQuantumShield for', input.playerId);
-      const { data, error } = await supabase.rpc('rpc_buy_quantum_shield', { p_player_id: input.playerId });
+  buyQuantumShield: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
+      const { data, error } = await supabase.rpc('rpc_buy_quantum_shield', { p_player_id: userId });
 
       if (error) {
-        console.log('[tRPC] Error buying quantum shield:', error.message);
+        logger.error('[tRPC] Error buying quantum shield:', error.message);
         return { success: false as const, error: error.message };
       }
 
@@ -320,7 +326,6 @@ export const worldRouter = createTRPCRouter({
         cooldown_expires_at?: string | null;
         remaining_solar?: number;
       };
-      console.log('[tRPC] Buy quantum shield result:', JSON.stringify(result));
 
       if (!result.success) {
         return { success: false as const, error: result.error ?? 'Erreur inconnue' };
@@ -334,36 +339,36 @@ export const worldRouter = createTRPCRouter({
       };
     }),
 
-  recalcPlayerScore: publicProcedure
-    .input(z.object({ userId: z.string() }))
-    .mutation(async ({ input }) => {
-      const { data, error } = await supabase.rpc('recalc_player_score', { p_player_id: input.userId });
+  recalcPlayerScore: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
+      const { data, error } = await supabase.rpc('recalc_player_score', { p_player_id: userId });
 
       if (error) {
-        console.log('[tRPC] Error recalcing player score:', error.message);
+        logger.error('[tRPC] Error recalcing player score:', error.message);
         return { success: false as const, error: error.message };
       }
 
       return { success: true as const, ...(data as Record<string, unknown>) };
     }),
 
-  getFleetStatus: publicProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
+  getFleetStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { count, error: countError } = await supabase
         .from('fleet_missions')
         .select('id', { count: 'exact', head: true })
-        .eq('sender_id', input.userId)
+        .eq('sender_id', userId)
         .in('mission_phase', ['en_route', 'arrived', 'returning']);
 
       if (countError) {
-        console.log('[tRPC] Error fetching fleet count:', countError.message);
+        logger.error('[tRPC] Error fetching fleet count:', countError.message);
       }
 
       const { data: research } = await supabase
         .from('player_research')
         .select('level')
-        .eq('user_id', input.userId)
+        .eq('user_id', userId)
         .eq('research_id', 'computerTech')
         .maybeSingle();
 
@@ -377,26 +382,26 @@ export const worldRouter = createTRPCRouter({
       };
     }),
 
-  calculateFlightTime: publicProcedure
+  calculateFlightTime: protectedProcedure
     .input(z.object({
-      userId: z.string(),
       senderCoords: z.array(z.number()),
       targetCoords: z.array(z.number()),
       ships: z.record(z.string(), z.number()),
       speedPercent: z.number().min(10).max(100).default(100).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      const userId = ctx.userId;
       const speedFraction = (input.speedPercent ?? 100) / 100;
       const { data, error } = await supabase.rpc('rpc_calculate_flight_time', {
         p_sender_coords: input.senderCoords,
         p_target_coords: input.targetCoords,
         p_fleet_ships: input.ships,
-        p_user_id: input.userId,
+        p_user_id: userId,
         p_speed_percent: speedFraction,
       });
 
       if (error) {
-        console.log('[tRPC] Error calculating flight time:', error.message);
+        logger.error('[tRPC] Error calculating flight time:', error.message);
         return { success: false as const, error: error.message };
       }
 
@@ -409,7 +414,6 @@ export const worldRouter = createTRPCRouter({
         return_time_sec?: number;
         fuel_cost?: number;
       };
-      console.log('[tRPC] Flight time calculated:', JSON.stringify(result));
       if (!result.success) {
         return { success: false as const, error: result.error ?? 'Unknown error' };
       }
@@ -423,28 +427,27 @@ export const worldRouter = createTRPCRouter({
       };
     }),
 
-  deleteAllTransportReports: publicProcedure
-    .input(z.object({ playerId: z.string() }))
-    .mutation(async ({ input }) => {
+  deleteAllTransportReports: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
       const { error: e1 } = await supabase
         .from('fleet_missions')
         .delete()
-        .eq('sender_id', input.playerId)
+        .eq('sender_id', userId)
         .in('mission_type', ['transport', 'recycle'])
         .eq('status', 'completed');
-      if (e1) console.log('[tRPC] Error deleting sent transport reports:', e1.message);
+      if (e1) logger.error('[tRPC] Error deleting sent transport reports:', e1.message);
 
       const { error: e2 } = await supabase
         .from('fleet_missions')
         .delete()
-        .eq('target_player_id', input.playerId)
-        .neq('sender_id', input.playerId)
+        .eq('target_player_id', userId)
+        .neq('sender_id', userId)
         .eq('mission_type', 'transport')
         .eq('processed', true)
         .eq('status', 'completed');
-      if (e2) console.log('[tRPC] Error deleting received transport reports:', e2.message);
+      if (e2) logger.error('[tRPC] Error deleting received transport reports:', e2.message);
 
-      console.log('[tRPC] All transport reports deleted for:', input.playerId);
       return { success: true };
     }),
 });

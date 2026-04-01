@@ -11,6 +11,9 @@ import { supabase } from '@/utils/supabase';
 import { removeColonyFromPlanetsTable, loadFullStateFromTables, syncTimersToTable, syncShipyardQueueToTable, getMainPlanetId, syncFullStateToTables } from '@/utils/tableSync';
 import { trpcClient } from '@/lib/trpc';
 import { withRetry } from '@/utils/trpcRetry';
+import { processShipyardQueue } from '@/utils/shipyardProcessor';
+import { processCompletedTimersAndQueue } from '@/utils/timerProcessor';
+import { logger } from '@/utils/logger';
 
 const STORAGE_KEY = 'solaris_game_state';
 
@@ -28,130 +31,14 @@ function generateCoordinates(): [number, number, number] {
   return [galaxy, system, position];
 }
 
-function processShipyardQueue(
-  queue: ShipyardQueueItem[],
-  ships: Record<string, number>,
-  defenses: Record<string, number>,
-  now: number,
-): { queue: ShipyardQueueItem[]; ships: Record<string, number>; defenses: Record<string, number>; changed: boolean } {
-  let changed = false;
-  const newShips = { ...ships };
-  const newDefenses = { ...defenses };
-  const newQueue: ShipyardQueueItem[] = [];
-
-  for (const item of queue) {
-    let current = { ...item };
-    while (now >= current.currentUnitEndTime && current.remainingQuantity > 0) {
-      changed = true;
-      if (current.type === 'ship') {
-        newShips[current.id] = (newShips[current.id] ?? 0) + 1;
-      } else {
-        newDefenses[current.id] = (newDefenses[current.id] ?? 0) + 1;
-      }
-      current.remainingQuantity -= 1;
-      if (current.remainingQuantity > 0) {
-        current.currentUnitStartTime = current.currentUnitEndTime;
-        current.currentUnitEndTime = current.currentUnitStartTime + current.buildTimePerUnit * 1000;
-      }
-    }
-    if (current.remainingQuantity > 0) {
-      newQueue.push(current);
-    }
-  }
-
-  return { queue: newQueue, ships: newShips, defenses: newDefenses, changed };
-}
-
-function clampCoordinates(coords: [number, number, number]): [number, number, number] {
-  const galaxy = Math.min(Math.max(coords[0], 1), 1);
-  const system = Math.min(Math.max(coords[1], 1), 100);
-  const position = Math.min(Math.max(coords[2], 1), 15);
-  return [galaxy, system, position];
-}
-
-function processCompletedTimersAndQueue(parsed: GameState): GameState {
-  const now = Date.now();
-  const elapsed = (now - parsed.lastUpdate) / 1000;
-  if (elapsed > 5) console.log('[GameContext] Processing timers/queue, elapsed', Math.floor(elapsed), 's');
-
-  const completedTimers: UpgradeTimer[] = [];
-  const activeTimers: UpgradeTimer[] = [];
-  for (const timer of (parsed.activeTimers ?? [])) {
-    if (now >= timer.endTime) {
-      completedTimers.push(timer);
-    } else {
-      activeTimers.push(timer);
-    }
-  }
-
-  let buildings = { ...parsed.buildings };
-  let research = { ...parsed.research };
-  for (const timer of completedTimers) {
-    if (timer.type === 'building') {
-      buildings[timer.id] = timer.targetLevel;
-      console.log('[GameContext] Completed building', timer.id, 'to level', timer.targetLevel);
-    } else if (timer.type === 'research') {
-      research[timer.id] = timer.targetLevel;
-      console.log('[GameContext] Completed research', timer.id, 'to level', timer.targetLevel);
-    }
-  }
-
-  const shipyardResult = processShipyardQueue(
-    parsed.shipyardQueue ?? [],
-    parsed.ships ?? {},
-    parsed.defenses ?? {},
-    now,
-  );
-
-  const updatedColonies = (parsed.colonies ?? []).map(colony => {
-    const colCompleted: UpgradeTimer[] = [];
-    const colActive: UpgradeTimer[] = [];
-    for (const t of (colony.activeTimers ?? [])) {
-      if (now >= t.endTime) colCompleted.push(t);
-      else colActive.push(t);
-    }
-    let colBuildings = { ...colony.buildings };
-    for (const t of colCompleted) {
-      if (t.type === 'building') {
-        colBuildings[t.id] = t.targetLevel;
-      } else if (t.type === 'research') {
-        research = { ...research, [t.id]: t.targetLevel };
-      }
-    }
-    const colShipyard = processShipyardQueue(colony.shipyardQueue ?? [], colony.ships, colony.defenses, now);
-    return {
-      ...colony,
-      buildings: colBuildings,
-      ships: colShipyard.ships,
-      defenses: colShipyard.defenses,
-      activeTimers: colActive,
-      shipyardQueue: colShipyard.queue,
-    };
-  });
-
-  return {
-    ...parsed,
-    coordinates: clampCoordinates(parsed.coordinates),
-    buildings,
-    research,
-    ships: shipyardResult.ships,
-    defenses: shipyardResult.defenses,
-    solar: parsed.solar ?? 500,
-    activeTimers,
-    shipyardQueue: shipyardResult.queue,
-    colonies: updatedColonies.length > 0 ? updatedColonies : parsed.colonies,
-    lastUpdate: now,
-  };
-}
-
 async function loadStateFromSupabase(userId: string): Promise<GameState | null> {
-  console.log('[GameContext] Loading state from normalized tables for user', userId);
+  logger.log('[GameContext] Loading state from normalized tables for user', userId);
   const state = await loadFullStateFromTables(userId);
   if (state) {
-    console.log('[GameContext] Found state in normalized tables');
+    logger.log('[GameContext] Found state in normalized tables');
     return state;
   }
-  console.log('[GameContext] No state found in normalized tables for user', userId);
+  logger.log('[GameContext] No state found in normalized tables for user', userId);
   return null;
 }
 
@@ -169,7 +56,7 @@ async function saveStateToSupabase(userId: string, state: GameState, email: stri
     }, { onConflict: 'user_id' });
 
   if (error) {
-    console.log('[GameContext] Supabase save error:', error.message);
+    logger.log('[GameContext] Supabase save error:', error.message);
   }
 }
 
@@ -633,7 +520,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic building upgrade:', buildingId, 'lv', currentLevel + 1);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.startBuilding.mutate({ userId, planetId: mainPlanetIdRef.current!, buildingId }), 'startBuilding');
+      const result = await withRetry(() => trpcClient.actions.startBuilding.mutate({ planetId: mainPlanetIdRef.current!, buildingId }), 'startBuilding');
       if (!result.success) {
         console.log('[GameContext] Server rejected building upgrade:', result.error);
         setState(p => ({
@@ -696,7 +583,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic research:', researchId, 'lv', currentLevel + 1);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.startResearch.mutate({ userId, planetId: mainPlanetIdRef.current!, researchId }), 'startResearch');
+      const result = await withRetry(() => trpcClient.actions.startResearch.mutate({ planetId: mainPlanetIdRef.current!, researchId }), 'startResearch');
       if (!result.success) {
         console.log('[GameContext] Server rejected research:', result.error);
         setState(p => ({
@@ -760,7 +647,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic ship build:', shipId, 'x', quantity);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.buildShips.mutate({ userId, planetId: mainPlanetIdRef.current!, shipId, quantity }), 'buildShips');
+      const result = await withRetry(() => trpcClient.actions.buildShips.mutate({ planetId: mainPlanetIdRef.current!, shipId, quantity }), 'buildShips');
       if (!result.success) {
         console.log('[GameContext] Server rejected ship build:', result.error);
         setState(p => {
@@ -820,7 +707,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic defense build:', defenseId, 'x', quantity);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.buildDefenses.mutate({ userId, planetId: mainPlanetIdRef.current!, defenseId, quantity }), 'buildDefenses');
+      const result = await withRetry(() => trpcClient.actions.buildDefenses.mutate({ planetId: mainPlanetIdRef.current!, defenseId, quantity }), 'buildDefenses');
       if (!result.success) {
         console.log('[GameContext] Server rejected defense build:', result.error);
         setState(p => {
@@ -875,7 +762,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic rush:', timerId, timerType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.rushTimer.mutate({ userId, planetId: mainPlanetIdRef.current!, timerId, timerType }), 'rushTimer');
+      const result = await withRetry(() => trpcClient.actions.rushTimer.mutate({ planetId: mainPlanetIdRef.current!, timerId, timerType }), 'rushTimer');
       if (!result.success) {
         console.log('[GameContext] Server rejected rush:', result.error);
         setState(p => {
@@ -924,7 +811,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic cancel:', timerId, timerType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.cancelTimer.mutate({ userId, planetId: mainPlanetIdRef.current!, timerId, timerType }), 'cancelTimer');
+      const result = await withRetry(() => trpcClient.actions.cancelTimer.mutate({ planetId: mainPlanetIdRef.current!, timerId, timerType }), 'cancelTimer');
       if (!result.success) {
         console.log('[GameContext] Server rejected cancel:', result.error);
         setState(p => ({ ...p, activeTimers: [...p.activeTimers, timer] }));
@@ -960,7 +847,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic shipyard cancel:', itemId, itemType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.cancelShipyard.mutate({ userId, planetId: mainPlanetIdRef.current!, itemId, itemType }), 'cancelShipyard');
+      const result = await withRetry(() => trpcClient.actions.cancelShipyard.mutate({ planetId: mainPlanetIdRef.current!, itemId, itemType }), 'cancelShipyard');
       if (!result.success) {
         console.log('[GameContext] Server rejected shipyard cancel:', result.error);
         setState(p => ({ ...p, shipyardQueue: [...p.shipyardQueue, queueItem] }));
@@ -1005,7 +892,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic shipyard rush:', itemId, itemType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.rushShipyard.mutate({ userId, planetId: mainPlanetIdRef.current!, itemId, itemType }), 'rushShipyard');
+      const result = await withRetry(() => trpcClient.actions.rushShipyard.mutate({ planetId: mainPlanetIdRef.current!, itemId, itemType }), 'rushShipyard');
       if (!result.success) {
         console.log('[GameContext] Server rejected shipyard rush:', result.error);
         setState(p => {
@@ -1077,7 +964,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
     try {
       const result = await withRetry(() => trpcClient.actions.renamePlanet.mutate({
-        userId: userId!,
         planetId: mainPlanetIdRef.current!,
         newName: trimmed,
       }), 'renamePlanet');
@@ -1146,7 +1032,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
     try {
       const result = await withRetry(() => trpcClient.actions.renamePlanet.mutate({
-        userId: userId!,
         planetId: colonyId,
         newName: trimmed,
       }), 'colonyRenamePlanet');
@@ -1208,7 +1093,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony building:', colonyId, buildingId, 'lv', currentLevel + 1);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.startBuilding.mutate({ userId: userId!, planetId: colonyId, buildingId }), 'colonyStartBuilding');
+      const result = await withRetry(() => trpcClient.actions.startBuilding.mutate({ planetId: colonyId, buildingId }), 'colonyStartBuilding');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony building:', result.error);
         setState(p => ({
@@ -1285,7 +1170,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony ship build:', colonyId, shipId, 'x', quantity);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.buildShips.mutate({ userId: userId!, planetId: colonyId, shipId, quantity }), 'colonyBuildShips');
+      const result = await withRetry(() => trpcClient.actions.buildShips.mutate({ planetId: colonyId, shipId, quantity }), 'colonyBuildShips');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony ship build:', result.error);
         setState(p => ({
@@ -1363,7 +1248,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony defense build:', colonyId, defenseId, 'x', quantity);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.buildDefenses.mutate({ userId: userId!, planetId: colonyId, defenseId, quantity }), 'colonyBuildDefenses');
+      const result = await withRetry(() => trpcClient.actions.buildDefenses.mutate({ planetId: colonyId, defenseId, quantity }), 'colonyBuildDefenses');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony defense build:', result.error);
         setState(p => ({
@@ -1427,7 +1312,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony cancel:', colonyId, timerId);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.cancelTimer.mutate({ userId: userId!, planetId: colonyId, timerId, timerType }), 'colonyCancelTimer');
+      const result = await withRetry(() => trpcClient.actions.cancelTimer.mutate({ planetId: colonyId, timerId, timerType }), 'colonyCancelTimer');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony cancel:', result.error);
         setState(p => ({
@@ -1498,7 +1383,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony research:', colonyId, researchId, 'lv', currentLevel + 1);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.startResearch.mutate({ userId: userId!, planetId: colonyId, researchId }), 'colonyStartResearch');
+      const result = await withRetry(() => trpcClient.actions.startResearch.mutate({ planetId: colonyId, researchId }), 'colonyStartResearch');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony research:', result.error);
         setState(p => ({
@@ -1570,7 +1455,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony rush:', colonyId, timerId, timerType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.rushTimer.mutate({ userId: userId!, planetId: colonyId, timerId, timerType }), 'colonyRushTimer');
+      const result = await withRetry(() => trpcClient.actions.rushTimer.mutate({ planetId: colonyId, timerId, timerType }), 'colonyRushTimer');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony rush:', result.error);
         setState(p => {
@@ -1636,7 +1521,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony shipyard cancel:', colonyId, itemId);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.cancelShipyard.mutate({ userId: userId!, planetId: colonyId, itemId, itemType }), 'colonyCancelShipyard');
+      const result = await withRetry(() => trpcClient.actions.cancelShipyard.mutate({ planetId: colonyId, itemId, itemType }), 'colonyCancelShipyard');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony shipyard cancel:', result.error);
         setState(p => ({
@@ -1703,7 +1588,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     console.log('[GameContext] Optimistic colony shipyard rush:', colonyId, itemId, itemType);
 
     try {
-      const result = await withRetry(() => trpcClient.actions.rushShipyard.mutate({ userId: userId!, planetId: colonyId, itemId, itemType }), 'colonyRushShipyard');
+      const result = await withRetry(() => trpcClient.actions.rushShipyard.mutate({ planetId: colonyId, itemId, itemType }), 'colonyRushShipyard');
       if (!result.success) {
         console.log('[GameContext] Server rejected colony shipyard rush:', result.error);
         setState(p => {
@@ -1938,7 +1823,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
     try {
       const result = await withRetry(() => trpcClient.actions.claimTutorialReward.mutate({
-        userId: userId!,
         planetId: mainPlanetIdRef.current!,
         stepId,
       }), 'claimTutorialReward');
@@ -1998,7 +1882,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
     });
     if (userId && planetId) {
       void withRetry(() => trpcClient.actions.setProductionPercentages.mutate({
-        userId,
         planetId,
         percentages,
       }), 'setProductionPercentages').catch(e => console.log('[GameContext] Error persisting production percentages:', e));

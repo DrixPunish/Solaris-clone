@@ -69,7 +69,7 @@ export default function StatisticsScreen() {
   const { userId } = useGame();
 
   const playerScoreQuery = trpc.world.getPlayerScore.useQuery(
-    { userId: userId ?? '' },
+    undefined,
     { enabled: !!userId, refetchInterval: 30000 },
   );
 
