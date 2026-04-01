@@ -3,6 +3,7 @@ import { CombatUnit } from '@/types/fleet';
 import { getCargoBoost, getBoostedShipStats, getBoostedDefenseStats } from '@/utils/gameCalculations';
 
 const MAX_COMBAT_ROUNDS = 6;
+const EXPLOSION_THRESHOLD = 0.7;
 
 export const RAPIDFIRE_TABLE: Record<string, Record<string, number>> = {
   novaScout: {
@@ -406,18 +407,27 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[])
     }
   }
 
+  let explosionChecks = 0;
+  let explosions = 0;
   for (const unit of [...attackers, ...defenders]) {
-    if (unit.hull > 0 && unit.hull < unit.maxHull * 0.7) {
+    if (unit.hull > 0 && unit.hull < unit.maxHull * EXPLOSION_THRESHOLD) {
+      explosionChecks++;
       const explosionChance = 1 - (unit.hull / unit.maxHull);
-      if (Math.random() < explosionChance) {
+      const roll = Math.random();
+      if (roll < explosionChance) {
+        console.log(`[Combat] EXPLOSION: ${unit.id} hull=${unit.hull}/${unit.maxHull} chance=${(explosionChance*100).toFixed(1)}% roll=${(roll*100).toFixed(1)}%`);
         unit.hull = 0;
+        explosions++;
         continue;
+      } else {
+        console.log(`[Combat] SURVIVED explosion: ${unit.id} hull=${unit.hull}/${unit.maxHull} chance=${(explosionChance*100).toFixed(1)}% roll=${(roll*100).toFixed(1)}%`);
       }
     }
     if (unit.hull > 0) {
       unit.shield = unit.maxShield;
     }
   }
+  console.log(`[Combat] Explosion phase: ${explosionChecks} checks, ${explosions} explosions (threshold=${EXPLOSION_THRESHOLD*100}%)`);
 }
 
 function countLosses(
@@ -463,10 +473,10 @@ export function simulateCombat(
   defenderResearch: Record<string, number>,
   defenderResources: { fer: number; silice: number; xenogas: number },
 ): CombatSimResult {
-  console.log('[Combat] === COMBAT START ===');
-  console.log('[Combat] attackerShips:', JSON.stringify(attackerShips));
+  console.log('[Combat] === COMBAT START === EXPLOSION_THRESHOLD=' + EXPLOSION_THRESHOLD);
+  console.log('[Combat] attackerShips:', JSON.stringify(attackerShips), 'attackerResearch:', JSON.stringify(attackerResearch));
   console.log('[Combat] defenderShips:', JSON.stringify(defenderShips));
-  console.log('[Combat] defenderDefenses:', JSON.stringify(defenderDefenses));
+  console.log('[Combat] defenderDefenses:', JSON.stringify(defenderDefenses), 'defenderResearch:', JSON.stringify(defenderResearch));
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
 
@@ -490,9 +500,10 @@ export function simulateCombat(
     const attackerAlive = attackerUnits.filter(u => u.hull > 0).length;
     const defenderAlive = defenderUnits.filter(u => u.hull > 0).length;
 
-    console.log(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length}, def alive=${defenderAlive}/${defenderUnits.length}`);
-    console.log(`[Combat] Round ${roundCount} atk hull change:`, atkHullBefore.map((h, i) => `${h}->${atkHullAfter[i]}`).join(', '));
-    console.log(`[Combat] Round ${roundCount} def hull change:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
+    const atkKilled = atkHullBefore.filter((h, i) => h > 0 && atkHullAfter[i] <= 0).length;
+    const defKilled = defHullBefore.filter((h, i) => h > 0 && defHullAfter[i] <= 0).length;
+    console.log(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length} (killed=${atkKilled}), def alive=${defenderAlive}/${defenderUnits.length} (killed=${defKilled})`);
+    console.log(`[Combat] Round ${roundCount} def hull:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
 
     if (attackerAlive === 0 || defenderAlive === 0) break;
   }

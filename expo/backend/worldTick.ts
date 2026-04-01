@@ -516,6 +516,9 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     return;
   }
 
+  console.log('[WorldTick][Attack] Starting combat. Attacker ships:', JSON.stringify(attackerShips), 'Defender ships:', JSON.stringify(targetState.ships), 'Defender defenses:', JSON.stringify(targetState.defenses));
+  console.log('[WorldTick][Attack] Attacker research:', JSON.stringify(senderResearch), 'Defender research:', JSON.stringify(targetState.research));
+
   const combatResult = simulateCombat(
     attackerShips,
     senderResearch,
@@ -524,6 +527,12 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     targetState.research ?? {},
     targetState.resources,
   );
+
+  console.log('[WorldTick][Attack] Combat result:', combatResult.result, 'rounds:', combatResult.rounds);
+  console.log('[WorldTick][Attack] Attacker losses:', JSON.stringify(combatResult.attackerLosses));
+  console.log('[WorldTick][Attack] Defender ship losses:', JSON.stringify(combatResult.defenderShipLosses));
+  console.log('[WorldTick][Attack] Defender defense losses:', JSON.stringify(combatResult.defenderDefenseLosses));
+  console.log('[WorldTick][Attack] Loot:', JSON.stringify(combatResult.loot), 'Debris:', JSON.stringify(combatResult.debris));
 
   await supabase.from('combat_reports').insert({
     attacker_id: senderId,
@@ -544,18 +553,26 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
   });
 
   if (_targetPlanetId) {
-    const { error: rpcError } = await supabase.rpc('apply_attack_loot', {
+    const defenseRebuilds = Object.fromEntries(
+      Object.entries(combatResult.defenderDefenseLosses).map(([id, count]) => [id, getDefenseRebuildCount(count)])
+    );
+    console.log('[WorldTick][Attack] Applying loot to planet:', _targetPlanetId);
+    console.log('[WorldTick][Attack] Defense losses:', JSON.stringify(combatResult.defenderDefenseLosses), 'Rebuilds:', JSON.stringify(defenseRebuilds));
+
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('apply_attack_loot', {
       p_planet_id: _targetPlanetId,
       p_loot_fer: combatResult.loot.fer,
       p_loot_silice: combatResult.loot.silice,
       p_loot_xenogas: combatResult.loot.xenogas,
       p_ship_losses: combatResult.defenderShipLosses,
       p_defense_losses: combatResult.defenderDefenseLosses,
-      p_defense_rebuilds: Object.fromEntries(
-        Object.entries(combatResult.defenderDefenseLosses).map(([id, count]) => [id, getDefenseRebuildCount(count)])
-      ),
+      p_defense_rebuilds: defenseRebuilds,
     });
-    if (rpcError) console.log('[WorldTick] RPC apply_attack_loot error:', rpcError.message);
+    if (rpcError) {
+      console.log('[WorldTick][Attack] RPC apply_attack_loot ERROR:', rpcError.message, rpcError.code, rpcError.details);
+    } else {
+      console.log('[WorldTick][Attack] RPC apply_attack_loot result:', JSON.stringify(rpcResult));
+    }
   }
 
   if (combatResult.debris && (combatResult.debris.fer > 0 || combatResult.debris.silice > 0)) {
