@@ -8,6 +8,7 @@ import { runWorldTick, startWorldTickLoop } from "./worldTick";
 
 const app = new Hono();
 
+
 app.use("*", cors());
 
 app.use(
