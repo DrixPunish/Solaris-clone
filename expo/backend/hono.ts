@@ -32,6 +32,50 @@ app.get("/tick/status", (c) => {
   return c.json({ running: true, timestamp: Date.now() });
 });
 
+app.get("/debug/combat-report-test", async (c) => {
+  const { supabase } = await import("./supabase");
+
+  const testData = {
+    attacker_id: 'ca7eb6df-059e-4c10-bb29-3c66a87295df',
+    defender_id: '8fb0d35f-d117-4a9c-968b-b8bd23f620c0',
+    player_id: 'ca7eb6df-059e-4c10-bb29-3c66a87295df',
+    attacker_username: 'test_attacker',
+    defender_username: 'test_defender',
+    attacker_coords: [1, 1, 1],
+    target_coords: [1, 1, 2],
+    attacker_fleet: { fighter: 10 },
+    defender_fleet: { fighter: 5 },
+    defender_defenses_initial: {},
+    rounds: 3,
+    result: 'attacker_wins' as const,
+    attacker_losses: { fighter: 2 },
+    defender_losses: { fighter: 5 },
+    loot: { fer: 100, silice: 50, xenogas: 25 },
+    debris: { fer: 30, silice: 15 },
+    combat_log: [{ type: 'init', message: 'test' }],
+    round_logs: [{ round: 1, attackerAlive: 8, defenderAlive: 0 }],
+  };
+
+  const { data, error } = await supabase.from('combat_reports').insert(testData).select('id');
+
+  if (error) {
+    return c.json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      fullError: JSON.stringify(error),
+    });
+  }
+
+  if (data?.[0]?.id) {
+    await supabase.from('combat_reports').delete().eq('id', data[0].id);
+  }
+
+  return c.json({ success: true, insertedId: data?.[0]?.id, message: 'Insert OK, cleaned up test row' });
+});
+
 app.get("/debug/timers", async (c) => {
   const { supabase } = await import("./supabase");
   const now = Date.now();
