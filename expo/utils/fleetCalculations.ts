@@ -372,7 +372,18 @@ function fireOneUnit(
   }
 }
 
-function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[], roundNum: number): void {
+interface RoundDamageStats {
+  atkShotsFired: number;
+  defShotsFired: number;
+  totalShieldDmgOnDef: number;
+  totalHullDmgOnDef: number;
+  totalShieldDmgOnAtk: number;
+  totalHullDmgOnAtk: number;
+  explosions: number;
+  explosionChecks: number;
+}
+
+function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[], roundNum: number): RoundDamageStats {
   const pendingDmgOnDef = new Map<string, { shield: number; hull: number }>();
   const pendingDmgOnAtt = new Map<string, { shield: number; hull: number }>();
 
@@ -448,6 +459,17 @@ function fireRoundSimultaneous(attackers: CombatUnit[], defenders: CombatUnit[],
   if (explosionChecks > 0) {
     console.log(`[Combat] R${roundNum} Explosions: ${explosions}/${explosionChecks} (threshold=${EXPLOSION_THRESHOLD*100}%)`);
   }
+
+  return {
+    atkShotsFired,
+    defShotsFired,
+    totalShieldDmgOnDef,
+    totalHullDmgOnDef,
+    totalShieldDmgOnAtk,
+    totalHullDmgOnAtk,
+    explosions,
+    explosionChecks,
+  };
 }
 
 function countLosses(
@@ -474,6 +496,30 @@ function countLosses(
   return losses;
 }
 
+export interface CombatRoundLog {
+  round: number;
+  attackerShooters: number;
+  defenderShooters: number;
+  dmgOnDefShield: number;
+  dmgOnDefHull: number;
+  dmgOnAtkShield: number;
+  dmgOnAtkHull: number;
+  attackerAlive: number;
+  attackerTotal: number;
+  defenderAlive: number;
+  defenderTotal: number;
+  attackerKilled: number;
+  defenderKilled: number;
+  explosions: number;
+  explosionChecks: number;
+}
+
+export interface CombatLogEntry {
+  type: 'init' | 'round' | 'end' | 'anomaly';
+  message: string;
+  data?: Record<string, unknown>;
+}
+
 export interface CombatSimResult {
   result: 'attacker_wins' | 'defender_wins' | 'draw';
   rounds: number;
@@ -483,6 +529,8 @@ export interface CombatSimResult {
   loot: { fer: number; silice: number; xenogas: number };
   debris: { fer: number; silice: number };
   attackerSurvivingShips: Record<string, number>;
+  combatLog: CombatLogEntry[];
+  roundLogs: CombatRoundLog[];
 }
 
 export function simulateCombat(
@@ -493,6 +541,9 @@ export function simulateCombat(
   defenderResearch: Record<string, number>,
   defenderResources: { fer: number; silice: number; xenogas: number },
 ): CombatSimResult {
+  const combatLog: CombatLogEntry[] = [];
+  const roundLogs: CombatRoundLog[] = [];
+
   console.log(`[Combat] ========== COMBAT START ========== ENGINE=${COMBAT_ENGINE_VERSION} THRESHOLD=${EXPLOSION_THRESHOLD}`);
   console.log('[Combat] INPUT attackerShips:', JSON.stringify(attackerShips));
   console.log('[Combat] INPUT attackerResearch:', JSON.stringify(attackerResearch));
@@ -510,9 +561,11 @@ export function simulateCombat(
 
   if (attackerUnits.length !== totalAtkInput) {
     console.log(`[Combat] CRITICAL: Attacker unit count mismatch! Expected ${totalAtkInput} got ${attackerUnits.length}`);
+    combatLog.push({ type: 'init', message: `CRITICAL: Attacker unit mismatch! Expected ${totalAtkInput}, got ${attackerUnits.length}` });
   }
   if (defenderUnits.length !== totalDefInput) {
     console.log(`[Combat] CRITICAL: Defender unit count mismatch! Expected ${totalDefInput} got ${defenderUnits.length}`);
+    combatLog.push({ type: 'init', message: `CRITICAL: Defender unit mismatch! Expected ${totalDefInput}, got ${defenderUnits.length}` });
   }
 
   const totalAtkFirepower = attackerUnits.reduce((s, u) => s + u.attack, 0);
@@ -524,6 +577,24 @@ export function simulateCombat(
   console.log('[Combat] Attacker units:', attackerUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
   console.log('[Combat] Defender units:', defenderUnits.map(u => `${u.id}(atk=${u.attack},shd=${u.shield},hull=${u.hull})`).join(' | '));
 
+  combatLog.push({
+    type: 'init',
+    message: `Combat START - Engine ${COMBAT_ENGINE_VERSION} - Explosion threshold ${EXPLOSION_THRESHOLD * 100}%`,
+    data: {
+      attackerShips,
+      defenderShips,
+      defenderDefenses,
+      atkUnits: attackerUnits.length,
+      defUnits: defenderUnits.length,
+      atkFirepower: totalAtkFirepower,
+      defHP: totalDefHP,
+      defFirepower: totalDefFirepower,
+      atkHP: totalAtkHP,
+      atkFireToDefHPRatio: parseFloat((totalAtkFirepower / Math.max(1, totalDefHP)).toFixed(2)),
+      defFireToAtkHPRatio: parseFloat((totalDefFirepower / Math.max(1, totalAtkHP)).toFixed(2)),
+    },
+  });
+
   const MAX_ROUNDS = MAX_COMBAT_ROUNDS;
   let roundCount = 0;
 
@@ -533,7 +604,7 @@ export function simulateCombat(
     const atkHullBefore = attackerUnits.map(u => u.hull);
     const defHullBefore = defenderUnits.map(u => u.hull);
 
-    fireRoundSimultaneous(attackerUnits, defenderUnits, roundCount);
+    const roundStats = fireRoundSimultaneous(attackerUnits, defenderUnits, roundCount);
 
     const atkHullAfter = attackerUnits.map(u => u.hull);
     const defHullAfter = defenderUnits.map(u => u.hull);
@@ -545,6 +616,31 @@ export function simulateCombat(
     const defKilled = defHullBefore.filter((h, i) => h > 0 && defHullAfter[i] <= 0).length;
     console.log(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length} (killed=${atkKilled}), def alive=${defenderAlive}/${defenderUnits.length} (killed=${defKilled})`);
     console.log(`[Combat] Round ${roundCount} def hull:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
+
+    const rLog: CombatRoundLog = {
+      round: roundCount,
+      attackerShooters: roundStats.atkShotsFired,
+      defenderShooters: roundStats.defShotsFired,
+      dmgOnDefShield: roundStats.totalShieldDmgOnDef,
+      dmgOnDefHull: roundStats.totalHullDmgOnDef,
+      dmgOnAtkShield: roundStats.totalShieldDmgOnAtk,
+      dmgOnAtkHull: roundStats.totalHullDmgOnAtk,
+      attackerAlive,
+      attackerTotal: attackerUnits.length,
+      defenderAlive,
+      defenderTotal: defenderUnits.length,
+      attackerKilled: atkKilled,
+      defenderKilled: defKilled,
+      explosions: roundStats.explosions,
+      explosionChecks: roundStats.explosionChecks,
+    };
+    roundLogs.push(rLog);
+
+    combatLog.push({
+      type: 'round',
+      message: `Round ${roundCount}: Atk ${attackerAlive}/${attackerUnits.length} (-${atkKilled}) | Def ${defenderAlive}/${defenderUnits.length} (-${defKilled}) | Explosions ${roundStats.explosions}/${roundStats.explosionChecks}`,
+      data: rLog as unknown as Record<string, unknown>,
+    });
 
     if (attackerAlive === 0 || defenderAlive === 0) break;
   }
@@ -560,10 +656,24 @@ export function simulateCombat(
 
   console.log(`[Combat] ========== COMBAT END ========== ENGINE=${COMBAT_ENGINE_VERSION} result=${result} rounds=${roundCount} atkAlive=${attackerAlive} defAlive=${defenderAlive}`);
 
+  combatLog.push({
+    type: 'end',
+    message: `Combat END - ${result} after ${roundCount} rounds (atk: ${attackerAlive} alive, def: ${defenderAlive} alive)`,
+    data: { result, rounds: roundCount, attackerAlive, defenderAlive },
+  });
+
   if (result === 'draw' && totalAtkFirepower > totalDefHP * 2) {
     console.log(`[Combat] ANOMALY DETECTED: attacker firepower (${totalAtkFirepower}) >> defender HP (${totalDefHP}) but result is DRAW!`);
     console.log('[Combat] ANOMALY final attacker hulls:', attackerUnits.map(u => `${u.id}:${u.hull}`).join(','));
     console.log('[Combat] ANOMALY final defender hulls:', defenderUnits.map(u => `${u.id}:${u.hull}`).join(','));
+    combatLog.push({
+      type: 'anomaly',
+      message: `ANOMALY: atkFirepower(${totalAtkFirepower}) >> defHP(${totalDefHP}) but DRAW`,
+      data: {
+        finalAtkHulls: attackerUnits.map(u => ({ id: u.id, hull: u.hull, maxHull: u.maxHull })),
+        finalDefHulls: defenderUnits.map(u => ({ id: u.id, hull: u.hull, maxHull: u.maxHull })),
+      },
+    });
   }
 
   const attackerLosses = countLosses(attackerShips, attackerUnits, '');
@@ -625,6 +735,8 @@ export function simulateCombat(
     loot,
     debris: { fer: debrisFer, silice: debrisSilice },
     attackerSurvivingShips,
+    combatLog,
+    roundLogs,
   };
 }
 

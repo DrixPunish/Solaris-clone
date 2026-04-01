@@ -80,6 +80,30 @@ export interface CombatUnit {
   maxHull: number;
 }
 
+export interface CombatLogEntry {
+  type: 'init' | 'round' | 'end' | 'anomaly';
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export interface CombatRoundLog {
+  round: number;
+  attackerShooters: number;
+  defenderShooters: number;
+  dmgOnDefShield: number;
+  dmgOnDefHull: number;
+  dmgOnAtkShield: number;
+  dmgOnAtkHull: number;
+  attackerAlive: number;
+  attackerTotal: number;
+  defenderAlive: number;
+  defenderTotal: number;
+  attackerKilled: number;
+  defenderKilled: number;
+  explosions: number;
+  explosionChecks: number;
+}
+
 export interface CombatReport {
   id: string;
   attacker_id: string;
@@ -97,6 +121,8 @@ export interface CombatReport {
   defender_losses: Record<string, number> | null;
   loot: { fer: number; silice: number; xenogas: number } | null;
   debris: { fer: number; silice: number } | null;
+  combat_log: CombatLogEntry[] | null;
+  round_logs: CombatRoundLog[] | null;
   created_at: string;
 }
 

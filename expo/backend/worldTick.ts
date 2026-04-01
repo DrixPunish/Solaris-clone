@@ -554,6 +554,8 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     defender_losses: { ...combatResult.defenderShipLosses, ...combatResult.defenderDefenseLosses },
     loot: combatResult.loot,
     debris: combatResult.debris,
+    combat_log: combatResult.combatLog,
+    round_logs: combatResult.roundLogs,
   });
 
   if (_targetPlanetId) {

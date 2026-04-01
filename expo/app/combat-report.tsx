@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Swords, Rocket, Shield, Package, AlertCircle } from 'lucide-react-native';
+import { Swords, Rocket, Shield, Package, AlertCircle, ChevronDown, ChevronUp, Activity } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFleet } from '@/contexts/FleetContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGame } from '@/contexts/GameContext';
 import { SHIPS, DEFENSES } from '@/constants/gameData';
+import { CombatRoundLog, CombatLogEntry } from '@/types/fleet';
 import Colors from '@/constants/colors';
 import ClickableCoords from '@/components/ClickableCoords';
 
@@ -22,6 +23,134 @@ function shipName(id: string): string {
 
 function defenseName(id: string): string {
   return DEFENSES.find(d => d.id === id)?.name ?? id;
+}
+
+function CombatLogSection({ roundLogs, combatLog }: { roundLogs: CombatRoundLog[] | null; combatLog: CombatLogEntry[] | null }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!roundLogs?.length && !combatLog?.length) return null;
+
+  const initEntry = combatLog?.find(e => e.type === 'init');
+  const initData = initEntry?.data as Record<string, unknown> | undefined;
+  const anomalyEntries = combatLog?.filter(e => e.type === 'anomaly') ?? [];
+
+  return (
+    <View style={styles.section}>
+      <TouchableOpacity
+        style={styles.sectionHeader}
+        onPress={() => setExpanded(prev => !prev)}
+        activeOpacity={0.7}
+      >
+        <Activity size={16} color={Colors.primary} />
+        <Text style={styles.sectionTitle}>Journal de combat détaillé</Text>
+        <View style={{ flex: 1 }} />
+        {expanded ? (
+          <ChevronUp size={16} color={Colors.textMuted} />
+        ) : (
+          <ChevronDown size={16} color={Colors.textMuted} />
+        )}
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={logStyles.logContainer}>
+          {initData && (
+            <View style={logStyles.initBlock}>
+              <Text style={logStyles.initTitle}>Analyse des forces</Text>
+              <View style={logStyles.forceRow}>
+                <View style={logStyles.forceCol}>
+                  <Text style={logStyles.forceLabel}>Puissance ATK</Text>
+                  <Text style={logStyles.forceValue}>{formatN(initData.atkFirepower as number)}</Text>
+                </View>
+                <Text style={logStyles.forceVs}>vs</Text>
+                <View style={logStyles.forceCol}>
+                  <Text style={logStyles.forceLabel}>PV DEF</Text>
+                  <Text style={logStyles.forceValue}>{formatN(initData.defHP as number)}</Text>
+                </View>
+                <View style={logStyles.ratioChip}>
+                  <Text style={logStyles.ratioText}>×{initData.atkFireToDefHPRatio as number}</Text>
+                </View>
+              </View>
+              <View style={logStyles.forceRow}>
+                <View style={logStyles.forceCol}>
+                  <Text style={logStyles.forceLabel}>Puissance DEF</Text>
+                  <Text style={logStyles.forceValue}>{formatN(initData.defFirepower as number)}</Text>
+                </View>
+                <Text style={logStyles.forceVs}>vs</Text>
+                <View style={logStyles.forceCol}>
+                  <Text style={logStyles.forceLabel}>PV ATK</Text>
+                  <Text style={logStyles.forceValue}>{formatN(initData.atkHP as number)}</Text>
+                </View>
+                <View style={logStyles.ratioChip}>
+                  <Text style={logStyles.ratioText}>×{initData.defFireToAtkHPRatio as number}</Text>
+                </View>
+              </View>
+              <Text style={logStyles.unitCountText}>
+                Unités: {initData.atkUnits as number} ATK vs {initData.defUnits as number} DEF
+              </Text>
+            </View>
+          )}
+
+          {(roundLogs ?? []).map((r) => (
+            <View key={r.round} style={logStyles.roundBlock}>
+              <View style={logStyles.roundHeader}>
+                <Text style={logStyles.roundTitle}>Round {r.round}</Text>
+                {r.explosions > 0 && (
+                  <View style={logStyles.explosionBadge}>
+                    <Text style={logStyles.explosionText}>💥 {r.explosions}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={logStyles.dmgGrid}>
+                <View style={logStyles.dmgCol}>
+                  <Text style={logStyles.dmgSide}>ATK → DEF</Text>
+                  <Text style={logStyles.dmgDetail}>
+                    🛡 {formatN(r.dmgOnDefShield)}  ❤️ {formatN(r.dmgOnDefHull)}
+                  </Text>
+                  <Text style={logStyles.dmgKills}>
+                    {r.defenderKilled > 0 ? `−${r.defenderKilled} détruits` : 'Aucune perte'}
+                  </Text>
+                </View>
+                <View style={logStyles.dmgSep} />
+                <View style={logStyles.dmgCol}>
+                  <Text style={logStyles.dmgSide}>DEF → ATK</Text>
+                  <Text style={logStyles.dmgDetail}>
+                    🛡 {formatN(r.dmgOnAtkShield)}  ❤️ {formatN(r.dmgOnAtkHull)}
+                  </Text>
+                  <Text style={logStyles.dmgKills}>
+                    {r.attackerKilled > 0 ? `−${r.attackerKilled} détruits` : 'Aucune perte'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={logStyles.survivorRow}>
+                <Text style={logStyles.survivorText}>
+                  ATK: {r.attackerAlive}/{r.attackerTotal}
+                </Text>
+                <Text style={logStyles.survivorText}>
+                  DEF: {r.defenderAlive}/{r.defenderTotal}
+                </Text>
+                {r.explosionChecks > 0 && (
+                  <Text style={logStyles.explosionDetail}>
+                    Checks: {r.explosionChecks}
+                  </Text>
+                )}
+              </View>
+            </View>
+          ))}
+
+          {anomalyEntries.length > 0 && (
+            <View style={logStyles.anomalyBlock}>
+              <Text style={logStyles.anomalyTitle}>⚠️ Anomalies détectées</Text>
+              {anomalyEntries.map((a, i) => (
+                <Text key={i} style={logStyles.anomalyText}>{a.message}</Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function CombatReportScreen() {
@@ -214,6 +343,8 @@ export default function CombatReportScreen() {
             </View>
           )}
 
+          <CombatLogSection roundLogs={report.round_logs} combatLog={report.combat_log} />
+
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
@@ -308,4 +439,157 @@ const styles = StyleSheet.create({
   lootValue: { color: Colors.text, fontSize: 14, fontWeight: '700' as const, marginTop: 2 },
   emptyState: { flex: 1, alignItems: 'center' as const, justifyContent: 'center' as const },
   emptyText: { color: Colors.textMuted, fontSize: 14 },
+});
+
+const logStyles = StyleSheet.create({
+  logContainer: {
+    marginTop: 4,
+  },
+  initBlock: {
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  initTitle: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    marginBottom: 8,
+  },
+  forceRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 6,
+    gap: 6,
+  },
+  forceCol: {
+    flex: 1,
+  },
+  forceLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+  },
+  forceValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  forceVs: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  ratioChip: {
+    backgroundColor: Colors.primaryGlow,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  ratioText: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  unitCountText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  roundBlock: {
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  roundHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginBottom: 6,
+  },
+  roundTitle: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  explosionBadge: {
+    backgroundColor: 'rgba(194, 59, 59, 0.2)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  explosionText: {
+    color: Colors.danger,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  dmgGrid: {
+    flexDirection: 'row' as const,
+    gap: 4,
+  },
+  dmgCol: {
+    flex: 1,
+  },
+  dmgSide: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    marginBottom: 2,
+  },
+  dmgDetail: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+  },
+  dmgKills: {
+    color: Colors.danger,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    marginTop: 2,
+  },
+  dmgSep: {
+    width: 1,
+    backgroundColor: Colors.border,
+    marginHorizontal: 4,
+  },
+  survivorRow: {
+    flexDirection: 'row' as const,
+    gap: 12,
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  survivorText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  explosionDetail: {
+    color: Colors.textMuted,
+    fontSize: 10,
+  },
+  anomalyBlock: {
+    backgroundColor: 'rgba(194, 59, 59, 0.1)',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+  },
+  anomalyTitle: {
+    color: Colors.danger,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    marginBottom: 4,
+  },
+  anomalyText: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    marginTop: 2,
+  },
 });
