@@ -233,11 +233,16 @@ function createAttackerUnits(
   research: Record<string, number>,
 ): CombatUnit[] {
   const units: CombatUnit[] = [];
+  console.log('[Combat] createAttackerUnits input:', JSON.stringify(ships), 'research:', JSON.stringify(research));
   for (const [shipId, count] of Object.entries(ships)) {
     if (count <= 0) continue;
     const shipDef = SHIPS.find(s => s.id === shipId);
-    if (!shipDef) continue;
+    if (!shipDef) {
+      console.log('[Combat] WARNING: ship not found in SHIPS:', shipId, 'SHIPS count:', SHIPS.length);
+      continue;
+    }
     const boosted = getBoostedShipStats(shipDef.stats, research);
+    console.log('[Combat] Attacker unit:', shipId, 'x', count, 'baseStats:', JSON.stringify(shipDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
     const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
@@ -261,6 +266,7 @@ function createDefenderUnits(
   research: Record<string, number>,
 ): CombatUnit[] {
   const units: CombatUnit[] = [];
+  console.log('[Combat] createDefenderUnits ships:', JSON.stringify(ships), 'defenses:', JSON.stringify(defenses), 'research:', JSON.stringify(research));
   for (const [shipId, count] of Object.entries(ships)) {
     if (count <= 0) continue;
     const shipDef = SHIPS.find(s => s.id === shipId);
@@ -283,8 +289,12 @@ function createDefenderUnits(
   for (const [defId, count] of Object.entries(defenses)) {
     if (count <= 0) continue;
     const defDef = DEFENSES.find(d => d.id === defId);
-    if (!defDef) continue;
+    if (!defDef) {
+      console.log('[Combat] WARNING: defense not found in DEFENSES:', defId, 'DEFENSES count:', DEFENSES.length);
+      continue;
+    }
     const boosted = getBoostedDefenseStats(defDef.stats, research);
+    console.log('[Combat] Defender defense:', defId, 'x', count, 'baseStats:', JSON.stringify(defDef.stats), 'boosted:', JSON.stringify(boosted), 'combatHull:', Math.floor(boosted.hull / 10));
     const combatHull = Math.floor(boosted.hull / 10);
     for (let i = 0; i < count; i++) {
       units.push({
@@ -453,18 +463,36 @@ export function simulateCombat(
   defenderResearch: Record<string, number>,
   defenderResources: { fer: number; silice: number; xenogas: number },
 ): CombatSimResult {
+  console.log('[Combat] === COMBAT START ===');
+  console.log('[Combat] attackerShips:', JSON.stringify(attackerShips));
+  console.log('[Combat] defenderShips:', JSON.stringify(defenderShips));
+  console.log('[Combat] defenderDefenses:', JSON.stringify(defenderDefenses));
   const attackerUnits = createAttackerUnits(attackerShips, attackerResearch);
   const defenderUnits = createDefenderUnits(defenderShips, defenderDefenses, defenderResearch);
+
+  console.log('[Combat] Attacker units created:', attackerUnits.length, 'units:', attackerUnits.map(u => ({ id: u.id, atk: u.attack, shd: u.shield, hull: u.hull })));
+  console.log('[Combat] Defender units created:', defenderUnits.length, 'units:', defenderUnits.map(u => ({ id: u.id, atk: u.attack, shd: u.shield, hull: u.hull })));
 
   const MAX_ROUNDS = MAX_COMBAT_ROUNDS;
   let roundCount = 0;
 
   while (roundCount < MAX_ROUNDS) {
     roundCount++;
+
+    const atkHullBefore = attackerUnits.map(u => u.hull);
+    const defHullBefore = defenderUnits.map(u => u.hull);
+
     fireRoundSimultaneous(attackerUnits, defenderUnits);
+
+    const atkHullAfter = attackerUnits.map(u => u.hull);
+    const defHullAfter = defenderUnits.map(u => u.hull);
 
     const attackerAlive = attackerUnits.filter(u => u.hull > 0).length;
     const defenderAlive = defenderUnits.filter(u => u.hull > 0).length;
+
+    console.log(`[Combat] Round ${roundCount}: atk alive=${attackerAlive}/${attackerUnits.length}, def alive=${defenderAlive}/${defenderUnits.length}`);
+    console.log(`[Combat] Round ${roundCount} atk hull change:`, atkHullBefore.map((h, i) => `${h}->${atkHullAfter[i]}`).join(', '));
+    console.log(`[Combat] Round ${roundCount} def hull change:`, defHullBefore.map((h, i) => `${h}->${defHullAfter[i]}`).join(', '));
 
     if (attackerAlive === 0 || defenderAlive === 0) break;
   }
@@ -477,6 +505,8 @@ export function simulateCombat(
   else if (attackerAlive === 0) result = 'defender_wins';
   else if (defenderAlive === 0) result = 'attacker_wins';
   else result = 'draw';
+
+  console.log('[Combat] === COMBAT END === result:', result, 'rounds:', roundCount, 'atkAlive:', attackerAlive, 'defAlive:', defenderAlive);
 
   const attackerLosses = countLosses(attackerShips, attackerUnits, '');
   const defenderShipLosses = countLosses(defenderShips, defenderUnits.filter(u => u.type === 'ship'), 'ship_');
