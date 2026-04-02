@@ -196,12 +196,15 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
         .or(`attacker_id.eq.${userId},defender_id.eq.${userId}`)
         .order('created_at', { ascending: false })
         .limit(50);
+      if (error) {
+        console.log('[FleetContext] Error loading combat reports:', error.message);
+        return [];
+      }
       const filtered = (data ?? []).filter((r: Record<string, unknown>) => {
         if (r.viewer_role === 'attacker' && r.attacker_id === userId) return true;
         if (r.viewer_role === 'defender' && r.defender_id === userId) return true;
         return false;
       });
-      if (error) return [];
       return filtered as CombatReport[];
     },
     enabled: !!userId,

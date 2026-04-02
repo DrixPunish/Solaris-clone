@@ -586,13 +586,11 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
 
   const attackerReportPayload = {
     ...baseReportPayload,
-    player_id: attackerPlayerId,
     viewer_role: 'attacker',
   };
 
   const defenderReportPayload = (defenderPlayerId && defenderPlayerId !== attackerPlayerId) ? {
     ...baseReportPayload,
-    player_id: defenderPlayerId,
     viewer_role: 'defender',
   } : null;
 
