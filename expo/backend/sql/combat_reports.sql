@@ -2,7 +2,7 @@
 -- COMBAT REPORTS TABLE
 -- =============================================================
 -- Stores full combat report data for attacker and defender.
--- Referenced by fleet_missions.result.report_id
+-- Each combat creates 2 rows: one viewer_role='attacker', one viewer_role='defender'
 -- =============================================================
 
 CREATE TABLE IF NOT EXISTS combat_reports (
@@ -32,3 +32,34 @@ CREATE INDEX IF NOT EXISTS idx_combat_reports_attacker ON combat_reports(attacke
 CREATE INDEX IF NOT EXISTS idx_combat_reports_defender ON combat_reports(defender_id);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_created ON combat_reports(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_viewer_role ON combat_reports(viewer_role);
+
+-- =============================================================
+-- RLS POLICIES
+-- =============================================================
+ALTER TABLE combat_reports ENABLE ROW LEVEL SECURITY;
+
+-- Service role full access (for worldTick backend inserts)
+CREATE POLICY service_role_all ON combat_reports
+  FOR ALL
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- Attacker can read their own reports
+CREATE POLICY attacker_select ON combat_reports
+  FOR SELECT
+  USING (auth.uid() = attacker_id AND viewer_role = 'attacker');
+
+-- Defender can read their own reports
+CREATE POLICY defender_select ON combat_reports
+  FOR SELECT
+  USING (auth.uid() = defender_id AND viewer_role = 'defender');
+
+-- Attacker can delete their own reports
+CREATE POLICY attacker_delete ON combat_reports
+  FOR DELETE
+  USING (auth.uid() = attacker_id AND viewer_role = 'attacker');
+
+-- Defender can delete their own reports
+CREATE POLICY defender_delete ON combat_reports
+  FOR DELETE
+  USING (auth.uid() = defender_id AND viewer_role = 'defender');
