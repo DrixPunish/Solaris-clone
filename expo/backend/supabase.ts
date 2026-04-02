@@ -10,3 +10,11 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
     detectSessionInUrl: false,
   },
 });
+
+export const supabaseAuth = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+    detectSessionInUrl: false,
+  },
+});

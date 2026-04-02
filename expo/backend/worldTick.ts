@@ -591,42 +591,64 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     round_logs: safeRoundLogs,
   };
 
-  const insertSingleReport = async (viewerRole: string, attempt: number = 1): Promise<boolean> => {
-    const payload = { ...baseReportPayload, viewer_role: viewerRole };
-    try {
-      const { data, error } = await supabase
-        .from('combat_reports')
-        .insert(payload)
-        .select('id, viewer_role');
+  const insertReport = async (viewerRole: string): Promise<boolean> => {
+    const payload = {
+      attacker_id: baseReportPayload.attacker_id,
+      defender_id: baseReportPayload.defender_id,
+      attacker_username: baseReportPayload.attacker_username,
+      defender_username: baseReportPayload.defender_username,
+      attacker_coords: baseReportPayload.attacker_coords,
+      target_coords: baseReportPayload.target_coords,
+      attacker_fleet: baseReportPayload.attacker_fleet,
+      defender_fleet: baseReportPayload.defender_fleet,
+      defender_defenses_initial: baseReportPayload.defender_defenses_initial,
+      rounds: baseReportPayload.rounds,
+      result: baseReportPayload.result,
+      attacker_losses: baseReportPayload.attacker_losses,
+      defender_losses: baseReportPayload.defender_losses,
+      loot: baseReportPayload.loot,
+      debris: baseReportPayload.debris,
+      combat_log: baseReportPayload.combat_log,
+      round_logs: baseReportPayload.round_logs,
+      viewer_role: viewerRole,
+    };
 
-      if (error) {
-        logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message, error.code, error.details, error.hint);
-        if (attempt < 3) {
-          logger.log(`[WorldTick][Attack] Retrying ${viewerRole} insert (attempt ${attempt + 1})...`);
-          await new Promise(r => setTimeout(r, 200 * attempt));
-          return insertSingleReport(viewerRole, attempt + 1);
+    logger.log(`[WorldTick][Attack] INSERT ${viewerRole} payload keys:`, Object.keys(payload).join(','));
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { error } = await supabase
+          .from('combat_reports')
+          .insert(payload);
+
+        if (error) {
+          logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message, error.code, error.details, error.hint);
+          if (attempt < 3) {
+            await new Promise(r => setTimeout(r, 300 * attempt));
+            continue;
+          }
+          return false;
         }
-        logger.error(`[WorldTick][Attack] GAVE UP inserting ${viewerRole} report after ${attempt} attempts`);
+
+        logger.log(`[WorldTick][Attack] INSERT OK ${viewerRole}`);
+        return true;
+      } catch (ex) {
+        logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, ex);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 300 * attempt));
+          continue;
+        }
         return false;
       }
-
-      logger.log(`[WorldTick][Attack] INSERT OK ${viewerRole} id:`, data?.[0]?.id);
-      return true;
-    } catch (ex) {
-      logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, ex);
-      if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 200 * attempt));
-        return insertSingleReport(viewerRole, attempt + 1);
-      }
-      return false;
     }
+    return false;
   };
 
-  const atkOk = await insertSingleReport('attacker');
+  const atkOk = await insertReport('attacker');
   logger.log('[WorldTick][Attack] Attacker report inserted:', atkOk);
 
   if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
-    const defOk = await insertSingleReport('defender');
+    const defOk = await insertReport('defender');
     logger.log('[WorldTick][Attack] Defender report inserted:', defOk);
   } else {
     logger.log('[WorldTick][Attack] No defender report needed (same player or no defender)');
