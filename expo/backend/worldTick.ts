@@ -557,9 +557,15 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     return val;
   };
 
-  const combatReportData = {
-    attacker_id: senderId,
-    defender_id: targetPlayerId ?? null,
+  const attackerPlayerId = String(senderId);
+  const defenderPlayerId = targetPlayerId ? String(targetPlayerId) : null;
+
+  logger.error('[WorldTick][Attack] DEBUG attackerPlayerId:', attackerPlayerId, 'defenderPlayerId:', defenderPlayerId);
+
+  const attackerReportPayload = {
+    player_id: attackerPlayerId,
+    attacker_id: attackerPlayerId,
+    defender_id: defenderPlayerId,
     attacker_username: (mission.sender_username as string) ?? null,
     defender_username: (mission.target_username as string) ?? null,
     attacker_coords: mission.sender_coords ?? null,
@@ -577,17 +583,12 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     round_logs: sanitizeForJsonb(combatResult.roundLogs) ?? null,
   };
 
-  logger.error('[WorldTick][Attack] DEBUG combat report data keys:', Object.keys(combatReportData).join(','));
-  logger.error('[WorldTick][Attack] DEBUG attacker_id:', senderId, 'defender_id:', targetPlayerId, 'result:', combatResult.result, 'rounds:', combatResult.rounds);
+  logger.error('[WorldTick][Attack] DEBUG attacker payload keys:', Object.keys(attackerReportPayload).join(','));
+  logger.error('[WorldTick][Attack] DEBUG attacker payload player_id value:', attackerReportPayload.player_id, 'type:', typeof attackerReportPayload.player_id);
+  logger.error('[WorldTick][Attack] DEBUG full attacker payload JSON:', JSON.stringify(attackerReportPayload));
 
   try {
-    const safePlayerId = senderId || null;
-    if (!safePlayerId) {
-      logger.error('[WorldTick][Attack] CRITICAL: senderId is falsy, cannot insert combat report. mission.sender_id =', mission.sender_id);
-    }
-    const attackerPayload = { ...combatReportData, player_id: safePlayerId ?? combatReportData.attacker_id };
-    logger.error('[WorldTick][Attack] DEBUG inserting attacker report, payload size:', JSON.stringify(attackerPayload).length);
-    const { data: atkData, error: attackerReportErr } = await supabase.from('combat_reports').insert(attackerPayload).select('id');
+    const { data: atkData, error: attackerReportErr } = await supabase.from('combat_reports').insert(attackerReportPayload).select('id');
     if (attackerReportErr) {
       logger.error('[WorldTick][Attack] ATTACKER REPORT INSERT FAILED:', attackerReportErr.message, attackerReportErr.code, attackerReportErr.details, attackerReportErr.hint);
       logger.error('[WorldTick][Attack] Full error object:', JSON.stringify(attackerReportErr));
@@ -598,10 +599,14 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     logger.error('[WorldTick][Attack] ATTACKER REPORT EXCEPTION:', insertErr);
   }
 
-  if (targetPlayerId && targetPlayerId !== senderId) {
+  if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
     try {
-      const defenderPayload = { ...combatReportData, player_id: targetPlayerId };
-      const { data: defData, error: defenderReportErr } = await supabase.from('combat_reports').insert(defenderPayload).select('id');
+      const defenderReportPayload = {
+        ...attackerReportPayload,
+        player_id: defenderPlayerId,
+      };
+      logger.error('[WorldTick][Attack] DEBUG defender payload player_id:', defenderReportPayload.player_id);
+      const { data: defData, error: defenderReportErr } = await supabase.from('combat_reports').insert(defenderReportPayload).select('id');
       if (defenderReportErr) {
         logger.error('[WorldTick][Attack] DEFENDER REPORT INSERT FAILED:', defenderReportErr.message, defenderReportErr.code, defenderReportErr.details, defenderReportErr.hint);
         logger.error('[WorldTick][Attack] Full error object:', JSON.stringify(defenderReportErr));
