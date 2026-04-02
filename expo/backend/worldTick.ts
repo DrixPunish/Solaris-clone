@@ -578,47 +578,57 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     defender_losses: sanitizeForJsonb({ ...combatResult.defenderShipLosses, ...combatResult.defenderDefenseLosses }) ?? {},
     loot: sanitizeForJsonb(combatResult.loot) ?? { fer: 0, silice: 0, xenogas: 0 },
     debris: sanitizeForJsonb(combatResult.debris) ?? { fer: 0, silice: 0 },
-    combat_log: sanitizeForJsonb(combatResult.combatLog) ?? null,
-    round_logs: sanitizeForJsonb(combatResult.roundLogs) ?? null,
+    combat_log: sanitizeForJsonb(combatResult.combatLog) ?? [],
+    round_logs: sanitizeForJsonb(combatResult.roundLogs) ?? [],
   };
+
+  logger.log('[WorldTick][Attack] combat_log entries:', Array.isArray(combatResult.combatLog) ? combatResult.combatLog.length : 'NOT_ARRAY', 'round_logs entries:', Array.isArray(combatResult.roundLogs) ? combatResult.roundLogs.length : 'NOT_ARRAY');
 
   const attackerReportPayload = {
     ...baseReportPayload,
     viewer_role: 'attacker',
   };
 
-  logger.error('[WorldTick][Attack] DEBUG attacker payload keys:', Object.keys(attackerReportPayload).join(','));
-  logger.error('[WorldTick][Attack] DEBUG full attacker payload JSON:', JSON.stringify(attackerReportPayload));
+  const defenderReportPayload = (defenderPlayerId && defenderPlayerId !== attackerPlayerId) ? {
+    ...baseReportPayload,
+    viewer_role: 'defender',
+  } : null;
 
-  try {
-    const { data: atkData, error: attackerReportErr } = await supabase.from('combat_reports').insert(attackerReportPayload).select('id');
-    if (attackerReportErr) {
-      logger.error('[WorldTick][Attack] ATTACKER REPORT INSERT FAILED:', attackerReportErr.message, attackerReportErr.code, attackerReportErr.details, attackerReportErr.hint);
-      logger.error('[WorldTick][Attack] Full error object:', JSON.stringify(attackerReportErr));
-    } else {
-      logger.error('[WorldTick][Attack] ATTACKER REPORT INSERTED OK, id:', atkData?.[0]?.id);
-    }
-  } catch (insertErr) {
-    logger.error('[WorldTick][Attack] ATTACKER REPORT EXCEPTION:', insertErr);
+  const reportsToInsert = [attackerReportPayload];
+  if (defenderReportPayload) {
+    reportsToInsert.push(defenderReportPayload);
   }
 
-  if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
-    try {
-      const defenderReportPayload = {
-        ...baseReportPayload,
-        viewer_role: 'defender',
-      };
-      logger.error('[WorldTick][Attack] DEBUG defender payload viewer_role:', defenderReportPayload.viewer_role);
-      const { data: defData, error: defenderReportErr } = await supabase.from('combat_reports').insert(defenderReportPayload).select('id');
-      if (defenderReportErr) {
-        logger.error('[WorldTick][Attack] DEFENDER REPORT INSERT FAILED:', defenderReportErr.message, defenderReportErr.code, defenderReportErr.details, defenderReportErr.hint);
-        logger.error('[WorldTick][Attack] Full error object:', JSON.stringify(defenderReportErr));
-      } else {
-        logger.error('[WorldTick][Attack] DEFENDER REPORT INSERTED OK, id:', defData?.[0]?.id);
+  logger.log('[WorldTick][Attack] Inserting', reportsToInsert.length, 'combat reports (attacker + defender)');
+
+  try {
+    const { data: insertedData, error: insertErr } = await supabase
+      .from('combat_reports')
+      .insert(reportsToInsert)
+      .select('id, viewer_role');
+
+    if (insertErr) {
+      logger.error('[WorldTick][Attack] BULK REPORT INSERT FAILED:', insertErr.message, insertErr.code, insertErr.details, insertErr.hint);
+      logger.error('[WorldTick][Attack] Full error:', JSON.stringify(insertErr));
+
+      logger.log('[WorldTick][Attack] Falling back to individual inserts...');
+      for (const report of reportsToInsert) {
+        try {
+          const { data: d, error: e } = await supabase.from('combat_reports').insert(report).select('id, viewer_role');
+          if (e) {
+            logger.error('[WorldTick][Attack] INDIVIDUAL INSERT FAILED for', report.viewer_role, ':', e.message, e.code, e.details);
+          } else {
+            logger.log('[WorldTick][Attack] Individual insert OK for', report.viewer_role, 'id:', d?.[0]?.id);
+          }
+        } catch (ex) {
+          logger.error('[WorldTick][Attack] INDIVIDUAL INSERT EXCEPTION for', report.viewer_role, ':', ex);
+        }
       }
-    } catch (insertErr) {
-      logger.error('[WorldTick][Attack] DEFENDER REPORT EXCEPTION:', insertErr);
+    } else {
+      logger.log('[WorldTick][Attack] BULK INSERT OK:', insertedData?.length, 'reports -', insertedData?.map((r: Record<string, unknown>) => `${String(r.viewer_role)}:${String(r.id)}`).join(', '));
     }
+  } catch (insertException) {
+    logger.error('[WorldTick][Attack] REPORT INSERT EXCEPTION:', insertException);
   }
 
   if (_targetPlanetId) {
