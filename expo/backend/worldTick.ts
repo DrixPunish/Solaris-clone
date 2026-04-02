@@ -976,6 +976,14 @@ async function processStationMission(mission: Record<string, unknown>): Promise<
   logger.log('[WorldTick] Station mission completed:', mission.id);
 }
 
+const processingPlanets = new Set<string>();
+
+function getCoordsKey(coords: unknown): string {
+  if (Array.isArray(coords)) return coords.join(',');
+  if (typeof coords === 'string') return coords;
+  return JSON.stringify(coords);
+}
+
 async function processArrivedFleets(): Promise<number> {
   const now = Date.now();
   const { data: arrived, error } = await supabase
@@ -983,11 +991,14 @@ async function processArrivedFleets(): Promise<number> {
     .select('*')
     .eq('mission_phase', 'en_route')
     .eq('processed', false)
-    .lte('arrival_time', now);
+    .lte('arrival_time', now)
+    .order('arrival_time', { ascending: true });
 
   if (error || !arrived?.length) return 0;
 
-  let count = 0;
+  logger.log('[WorldTick] Found', arrived.length, 'arrived missions to process');
+
+  const claimedMissions: Array<Record<string, unknown>> = [];
   for (const mission of arrived) {
     const { data: claimed } = await supabase
       .from('fleet_missions')
@@ -1000,7 +1011,34 @@ async function processArrivedFleets(): Promise<number> {
       logger.log('[WorldTick] Mission already claimed:', mission.id);
       continue;
     }
+    claimedMissions.push(mission);
+  }
 
+  if (!claimedMissions.length) return 0;
+
+  const planetTargetMissions = new Map<string, Array<Record<string, unknown>>>();
+  const nonConflictMissions: Array<Record<string, unknown>> = [];
+
+  for (const mission of claimedMissions) {
+    const missionType = mission.mission_type as string;
+    const targetCoords = mission.target_coords as number[] | null;
+
+    if (['attack', 'espionage', 'transport', 'station', 'recycle'].includes(missionType) && targetCoords) {
+      const key = getCoordsKey(targetCoords);
+      if (!planetTargetMissions.has(key)) {
+        planetTargetMissions.set(key, []);
+      }
+      planetTargetMissions.get(key)!.push(mission);
+    } else {
+      nonConflictMissions.push(mission);
+    }
+  }
+
+  logger.log('[WorldTick] Grouped missions:', planetTargetMissions.size, 'target planets,', nonConflictMissions.length, 'non-conflict missions');
+
+  let count = 0;
+
+  const processMission = async (mission: Record<string, unknown>): Promise<boolean> => {
     try {
       const missionType = mission.mission_type as string;
       if (missionType === 'espionage') {
@@ -1017,15 +1055,70 @@ async function processArrivedFleets(): Promise<number> {
         await processStationMission(mission);
       } else {
         logger.log('[WorldTick] Unknown mission type:', missionType);
+        return false;
       }
-      count++;
+      return true;
     } catch (e) {
-      logger.log('[WorldTick] Error processing mission', mission.id, ':', e);
-      await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', mission.id);
+      logger.log('[WorldTick] Error processing mission', mission.id, '(type:', mission.mission_type, '):', e);
+      try {
+        await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', mission.id);
+      } catch (resetErr) {
+        logger.log('[WorldTick] Error resetting failed mission', mission.id, ':', resetErr);
+      }
+      return false;
     }
+  };
+
+  const processPlanetGroup = async (coordsKey: string, missions: Array<Record<string, unknown>>): Promise<number> => {
+    while (processingPlanets.has(coordsKey)) {
+      logger.log('[WorldTick] Waiting for planet lock:', coordsKey);
+      await new Promise(r => setTimeout(r, 100));
+    }
+    processingPlanets.add(coordsKey);
+
+    let groupCount = 0;
+    try {
+      missions.sort((a, b) => {
+        const typePriority: Record<string, number> = { attack: 0, espionage: 1, recycle: 2, transport: 3, station: 4 };
+        const aPrio = typePriority[a.mission_type as string] ?? 5;
+        const bPrio = typePriority[b.mission_type as string] ?? 5;
+        if (aPrio !== bPrio) return aPrio - bPrio;
+        return ((a.arrival_time as number) ?? 0) - ((b.arrival_time as number) ?? 0);
+      });
+
+      logger.log('[WorldTick] Processing planet group', coordsKey, ':', missions.length, 'missions, types:', missions.map(m => m.mission_type).join(','));
+
+      for (const mission of missions) {
+        const ok = await processMission(mission);
+        if (ok) groupCount++;
+
+        if (missions.length > 1) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
+    } finally {
+      processingPlanets.delete(coordsKey);
+    }
+    return groupCount;
+  };
+
+  const nonConflictResults = await Promise.all(
+    nonConflictMissions.map(m => processMission(m))
+  );
+  count += nonConflictResults.filter(Boolean).length;
+
+  const planetGroups = Array.from(planetTargetMissions.entries());
+  const PARALLEL_PLANET_LIMIT = 3;
+
+  for (let i = 0; i < planetGroups.length; i += PARALLEL_PLANET_LIMIT) {
+    const batch = planetGroups.slice(i, i + PARALLEL_PLANET_LIMIT);
+    const results = await Promise.all(
+      batch.map(([key, missions]) => processPlanetGroup(key, missions))
+    );
+    count += results.reduce((sum, c) => sum + c, 0);
   }
 
-  if (count > 0) logger.log('[WorldTick] Processed', count, 'arrived fleets');
+  if (count > 0) logger.log('[WorldTick] Processed', count, '/', claimedMissions.length, 'arrived fleets');
   return count;
 }
 
