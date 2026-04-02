@@ -593,17 +593,29 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
 
   const insertSingleReport = async (viewerRole: string, attempt: number = 1): Promise<boolean> => {
     const payload = { ...baseReportPayload, viewer_role: viewerRole };
+    const payloadKeys = Object.keys(payload).sort();
+    logger.log(`[WorldTick][Attack] INSERT PAYLOAD KEYS ${viewerRole}:`, JSON.stringify(payloadKeys));
+    logger.log(`[WorldTick][Attack] INSERT PAYLOAD TYPES ${viewerRole}:`, JSON.stringify(
+      Object.fromEntries(payloadKeys.map(k => [k, payload[k as keyof typeof payload] === null ? 'null' : typeof payload[k as keyof typeof payload]]))
+    ));
+    logger.log(`[WorldTick][Attack] INSERT PAYLOAD SIZE ${viewerRole}:`, JSON.stringify(payload).length, 'chars');
+    try {
+      logger.log(`[WorldTick][Attack] INSERT FULL PAYLOAD ${viewerRole}:`, JSON.stringify(payload).substring(0, 2000));
+    } catch (jsonErr) {
+      logger.error(`[WorldTick][Attack] PAYLOAD JSON.stringify FAILED ${viewerRole}:`, jsonErr);
+    }
     try {
       const { data, error } = await supabase
         .from('combat_reports')
         .insert(payload)
-        .select('id, viewer_role');
+        .select('id');
 
       if (error) {
         logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message, error.code, error.details, error.hint);
+        logger.error(`[WorldTick][Attack] FULL ERROR ${viewerRole}:`, JSON.stringify(error));
         if (attempt < 3) {
           logger.log(`[WorldTick][Attack] Retrying ${viewerRole} insert (attempt ${attempt + 1})...`);
-          await new Promise(r => setTimeout(r, 200 * attempt));
+          await new Promise(r => setTimeout(r, 500 * attempt));
           return insertSingleReport(viewerRole, attempt + 1);
         }
         logger.error(`[WorldTick][Attack] GAVE UP inserting ${viewerRole} report after ${attempt} attempts`);
@@ -615,7 +627,7 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     } catch (ex) {
       logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, ex);
       if (attempt < 3) {
-        await new Promise(r => setTimeout(r, 200 * attempt));
+        await new Promise(r => setTimeout(r, 500 * attempt));
         return insertSingleReport(viewerRole, attempt + 1);
       }
       return false;
