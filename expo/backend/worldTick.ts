@@ -11,6 +11,18 @@ import {
 } from '@/utils/gameCalculations';
 import { logger } from '@/utils/logger';
 
+const combatErrorBuffer: Array<{ timestamp: string; viewerRole: string; error: string; code: string; details: string; hint: string; payloadKeys: string[]; payloadSize: number; payloadPreview: string; attempt: number }> = [];
+const MAX_ERROR_BUFFER = 30;
+
+function bufferCombatError(entry: typeof combatErrorBuffer[0]) {
+  combatErrorBuffer.push(entry);
+  if (combatErrorBuffer.length > MAX_ERROR_BUFFER) combatErrorBuffer.shift();
+}
+
+export function getCombatErrorBuffer() {
+  return [...combatErrorBuffer];
+}
+
 interface TimerRow {
   id: string;
   user_id: string;
@@ -57,11 +69,11 @@ async function processExpiredTimers(): Promise<number> {
     return 0;
   }
 
-  logger.log('[WorldTick] Expired query returned', expired?.length ?? 0, 'rows for now =', now);
-
   if (!expired?.length) {
     return 0;
   }
+
+  logger.log('[WorldTick] Expired query returned', expired.length, 'rows for now =', now);
 
   logger.log('[WorldTick] Found', expired.length, 'expired timers to process');
 
@@ -613,6 +625,18 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
       if (error) {
         logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message, error.code, error.details, error.hint);
         logger.error(`[WorldTick][Attack] FULL ERROR ${viewerRole}:`, JSON.stringify(error));
+        bufferCombatError({
+          timestamp: new Date().toISOString(),
+          viewerRole,
+          error: error.message,
+          code: error.code ?? '',
+          details: error.details ?? '',
+          hint: error.hint ?? '',
+          payloadKeys: Object.keys(payload).sort(),
+          payloadSize: JSON.stringify(payload).length,
+          payloadPreview: JSON.stringify(payload).substring(0, 3000),
+          attempt,
+        });
         if (attempt < 3) {
           logger.log(`[WorldTick][Attack] Retrying ${viewerRole} insert (attempt ${attempt + 1})...`);
           await new Promise(r => setTimeout(r, 500 * attempt));
@@ -626,6 +650,18 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
       return true;
     } catch (ex) {
       logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, ex);
+      bufferCombatError({
+        timestamp: new Date().toISOString(),
+        viewerRole,
+        error: String(ex),
+        code: 'EXCEPTION',
+        details: (ex as Error)?.stack ?? '',
+        hint: '',
+        payloadKeys: Object.keys(payload).sort(),
+        payloadSize: JSON.stringify(payload).length,
+        payloadPreview: JSON.stringify(payload).substring(0, 3000),
+        attempt,
+      });
       if (attempt < 3) {
         await new Promise(r => setTimeout(r, 500 * attempt));
         return insertSingleReport(viewerRole, attempt + 1);

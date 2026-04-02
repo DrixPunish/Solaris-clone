@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
-import { runWorldTick, startWorldTickLoop } from "./worldTick";
+import { runWorldTick, startWorldTickLoop, getCombatErrorBuffer } from "./worldTick";
 
 const app = new Hono();
 
@@ -201,6 +201,15 @@ app.get("/debug/combat-report-columns", async (c) => {
       'defender_losses', 'defender_username', 'id', 'loot', 'result',
       'round_logs', 'rounds', 'target_coords', 'viewer_role',
     ],
+  });
+});
+
+app.get("/debug/combat-errors", (c) => {
+  const errors = getCombatErrorBuffer();
+  return c.json({
+    count: errors.length,
+    errors,
+    message: errors.length === 0 ? 'No combat insert errors recorded since last deploy' : `${errors.length} errors captured`,
   });
 });
 
