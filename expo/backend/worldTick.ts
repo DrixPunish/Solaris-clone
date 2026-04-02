@@ -539,103 +539,86 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
   logger.log('[WorldTick][Attack] Defender defense losses:', JSON.stringify(combatResult.defenderDefenseLosses));
   logger.log('[WorldTick][Attack] Loot:', JSON.stringify(combatResult.loot), 'Debris:', JSON.stringify(combatResult.debris));
 
-  const sanitizeForJsonb = (val: unknown): unknown => {
-    if (val === undefined) return null;
-    if (val === null) return null;
-    if (typeof val === 'number') {
-      if (!isFinite(val)) return 0;
-      return val;
+  const deepCleanJsonb = (val: unknown): unknown => {
+    try {
+      return JSON.parse(JSON.stringify(val, (_k, v) => {
+        if (v === undefined) return null;
+        if (typeof v === 'number' && !isFinite(v)) return 0;
+        return v;
+      }));
+    } catch {
+      return null;
     }
-    if (Array.isArray(val)) return val.map(sanitizeForJsonb);
-    if (typeof val === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-        out[k] = sanitizeForJsonb(v);
-      }
-      return out;
-    }
-    return val;
   };
 
   const attackerPlayerId = String(senderId);
   const defenderPlayerId = targetPlayerId ? String(targetPlayerId) : null;
 
-  logger.error('[WorldTick][Attack] DEBUG attackerPlayerId:', attackerPlayerId, 'defenderPlayerId:', defenderPlayerId);
+  logger.log('[WorldTick][Attack] attackerPlayerId:', attackerPlayerId, 'defenderPlayerId:', defenderPlayerId);
 
   const safeCombatLog = Array.isArray(combatResult.combatLog) && combatResult.combatLog.length > 0
-    ? sanitizeForJsonb(combatResult.combatLog)
+    ? deepCleanJsonb(combatResult.combatLog)
     : [{ type: 'error', message: 'Combat log was empty or invalid' }];
   const safeRoundLogs = Array.isArray(combatResult.roundLogs) && combatResult.roundLogs.length > 0
-    ? sanitizeForJsonb(combatResult.roundLogs)
+    ? deepCleanJsonb(combatResult.roundLogs)
     : [];
 
   logger.log('[WorldTick][Attack] combat_log entries:', Array.isArray(combatResult.combatLog) ? combatResult.combatLog.length : 'NOT_ARRAY', 'round_logs entries:', Array.isArray(combatResult.roundLogs) ? combatResult.roundLogs.length : 'NOT_ARRAY');
 
-  const baseReportPayload = {
-    attacker_id: attackerPlayerId,
-    defender_id: defenderPlayerId,
-    attacker_username: (mission.sender_username as string) ?? null,
-    defender_username: (mission.target_username as string) ?? null,
-    attacker_coords: mission.sender_coords ?? null,
-    target_coords: targetCoords,
-    attacker_fleet: sanitizeForJsonb(attackerShips) ?? {},
-    defender_fleet: sanitizeForJsonb(targetState.ships) ?? {},
-    defender_defenses_initial: sanitizeForJsonb(targetState.defenses) ?? {},
-    rounds: combatResult.rounds ?? 0,
-    result: combatResult.result,
-    attacker_losses: sanitizeForJsonb(combatResult.attackerLosses) ?? {},
-    defender_losses: sanitizeForJsonb({ ...combatResult.defenderShipLosses, ...combatResult.defenderDefenseLosses }) ?? {},
-    loot: sanitizeForJsonb(combatResult.loot) ?? { fer: 0, silice: 0, xenogas: 0 },
-    debris: sanitizeForJsonb(combatResult.debris) ?? { fer: 0, silice: 0 },
-    combat_log: safeCombatLog,
-    round_logs: safeRoundLogs,
-  };
-
   const insertReport = async (viewerRole: string): Promise<boolean> => {
     const payload = {
-      attacker_id: baseReportPayload.attacker_id,
-      defender_id: baseReportPayload.defender_id,
-      attacker_username: baseReportPayload.attacker_username,
-      defender_username: baseReportPayload.defender_username,
-      attacker_coords: baseReportPayload.attacker_coords,
-      target_coords: baseReportPayload.target_coords,
-      attacker_fleet: baseReportPayload.attacker_fleet,
-      defender_fleet: baseReportPayload.defender_fleet,
-      defender_defenses_initial: baseReportPayload.defender_defenses_initial,
-      rounds: baseReportPayload.rounds,
-      result: baseReportPayload.result,
-      attacker_losses: baseReportPayload.attacker_losses,
-      defender_losses: baseReportPayload.defender_losses,
-      loot: baseReportPayload.loot,
-      debris: baseReportPayload.debris,
-      combat_log: baseReportPayload.combat_log,
-      round_logs: baseReportPayload.round_logs,
+      attacker_id: attackerPlayerId,
+      defender_id: defenderPlayerId,
+      attacker_username: (mission.sender_username as string) ?? null,
+      defender_username: (mission.target_username as string) ?? null,
+      attacker_coords: deepCleanJsonb(mission.sender_coords) ?? null,
+      target_coords: deepCleanJsonb(targetCoords),
+      attacker_fleet: deepCleanJsonb(attackerShips) ?? {},
+      defender_fleet: deepCleanJsonb(targetState!.ships) ?? {},
+      defender_defenses_initial: deepCleanJsonb(targetState!.defenses) ?? {},
+      rounds: typeof combatResult.rounds === 'number' && isFinite(combatResult.rounds) ? combatResult.rounds : 0,
+      result: String(combatResult.result),
+      attacker_losses: deepCleanJsonb(combatResult.attackerLosses) ?? {},
+      defender_losses: deepCleanJsonb({ ...combatResult.defenderShipLosses, ...combatResult.defenderDefenseLosses }) ?? {},
+      loot: deepCleanJsonb(combatResult.loot) ?? { fer: 0, silice: 0, xenogas: 0 },
+      debris: deepCleanJsonb(combatResult.debris) ?? { fer: 0, silice: 0 },
+      combat_log: safeCombatLog,
+      round_logs: safeRoundLogs,
       viewer_role: viewerRole,
     };
 
-    logger.log(`[WorldTick][Attack] INSERT ${viewerRole} payload keys:`, Object.keys(payload).join(','));
+    const payloadKeys = Object.keys(payload);
+    logger.log(`[WorldTick][Attack] INSERT ${viewerRole} keys=[${payloadKeys.join(',')}] keyCount=${payloadKeys.length}`);
+
+    const hasPlayerIdKey = 'player_id' in payload;
+    if (hasPlayerIdKey) {
+      logger.error(`[WorldTick][Attack] CRITICAL: payload contains player_id! Removing it.`);
+      delete (payload as Record<string, unknown>)['player_id'];
+    }
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('combat_reports')
-          .insert(payload);
+          .insert(payload)
+          .select('id');
 
         if (error) {
-          logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message, error.code, error.details, error.hint);
+          logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}): msg=${error.message} code=${error.code} details=${JSON.stringify(error.details)} hint=${error.hint}`);
+          logger.error(`[WorldTick][Attack] INSERT FAILED ${viewerRole} full error:`, JSON.stringify(error));
           if (attempt < 3) {
-            await new Promise(r => setTimeout(r, 300 * attempt));
+            await new Promise(r => setTimeout(r, 500 * attempt));
             continue;
           }
           return false;
         }
 
-        logger.log(`[WorldTick][Attack] INSERT OK ${viewerRole}`);
+        logger.log(`[WorldTick][Attack] INSERT OK ${viewerRole} id=${data?.[0]?.id ?? 'unknown'}`);
         return true;
       } catch (ex) {
-        logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, ex);
+        logger.error(`[WorldTick][Attack] INSERT EXCEPTION ${viewerRole} (attempt ${attempt}):`, String(ex));
         if (attempt < 3) {
-          await new Promise(r => setTimeout(r, 300 * attempt));
+          await new Promise(r => setTimeout(r, 500 * attempt));
           continue;
         }
         return false;
@@ -644,15 +627,29 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     return false;
   };
 
-  const atkOk = await insertReport('attacker');
-  logger.log('[WorldTick][Attack] Attacker report inserted:', atkOk);
+  let atkOk = false;
+  let defOk = false;
 
-  if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
-    const defOk = await insertReport('defender');
-    logger.log('[WorldTick][Attack] Defender report inserted:', defOk);
-  } else {
-    logger.log('[WorldTick][Attack] No defender report needed (same player or no defender)');
+  try {
+    atkOk = await insertReport('attacker');
+    logger.log('[WorldTick][Attack] Attacker report inserted:', atkOk);
+  } catch (ex) {
+    logger.error('[WorldTick][Attack] Attacker report CRASHED:', String(ex));
   }
+
+  try {
+    if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
+      defOk = await insertReport('defender');
+      logger.log('[WorldTick][Attack] Defender report inserted:', defOk);
+    } else {
+      logger.log('[WorldTick][Attack] No defender report needed (same player or no defender)');
+      defOk = true;
+    }
+  } catch (ex) {
+    logger.error('[WorldTick][Attack] Defender report CRASHED:', String(ex));
+  }
+
+  logger.log(`[WorldTick][Attack] Reports summary: attacker=${atkOk} defender=${defOk}`);
 
   if (_targetPlanetId) {
     const defenseRebuilds = Object.fromEntries(
@@ -983,26 +980,43 @@ async function processArrivedFleets(): Promise<number> {
     .select('*')
     .eq('mission_phase', 'en_route')
     .eq('processed', false)
-    .lte('arrival_time', now);
+    .lte('arrival_time', now)
+    .order('arrival_time', { ascending: true });
 
-  if (error || !arrived?.length) return 0;
+  if (error) {
+    logger.error('[WorldTick] Error querying arrived fleets:', error.message, error.code);
+    return 0;
+  }
+  if (!arrived?.length) return 0;
+
+  logger.log('[WorldTick] Found', arrived.length, 'arrived missions to process:', arrived.map((m: Record<string, unknown>) => `${String(m.id)}(${String(m.mission_type)})`).join(', '));
 
   let count = 0;
-  for (const mission of arrived) {
-    const { data: claimed } = await supabase
+  for (let i = 0; i < arrived.length; i++) {
+    const mission = arrived[i];
+    const missionType = mission.mission_type as string;
+    const missionId = mission.id as string;
+
+    logger.log(`[WorldTick] Processing mission ${i + 1}/${arrived.length}: ${missionId} type=${missionType}`);
+
+    const { data: claimed, error: claimErr } = await supabase
       .from('fleet_missions')
       .update({ processed: true, mission_phase: 'arrived' })
-      .eq('id', mission.id)
+      .eq('id', missionId)
       .eq('processed', false)
-      .select();
+      .select('id');
+
+    if (claimErr) {
+      logger.error('[WorldTick] Claim error for mission', missionId, ':', claimErr.message, claimErr.code);
+      continue;
+    }
 
     if (!claimed?.length) {
-      logger.log('[WorldTick] Mission already claimed:', mission.id);
+      logger.log('[WorldTick] Mission already claimed:', missionId);
       continue;
     }
 
     try {
-      const missionType = mission.mission_type as string;
       if (missionType === 'espionage') {
         await processEspionageMission(mission);
       } else if (missionType === 'attack') {
@@ -1019,13 +1033,19 @@ async function processArrivedFleets(): Promise<number> {
         logger.log('[WorldTick] Unknown mission type:', missionType);
       }
       count++;
+      logger.log(`[WorldTick] Mission ${missionId} (${missionType}) processed OK`);
     } catch (e) {
-      logger.log('[WorldTick] Error processing mission', mission.id, ':', e);
-      await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', mission.id);
+      logger.error('[WorldTick] CRASH processing mission', missionId, 'type:', missionType, 'error:', String(e), 'stack:', (e as Error)?.stack ?? 'no stack');
+      try {
+        await supabase.from('fleet_missions').update({ processed: false, mission_phase: 'en_route' }).eq('id', missionId);
+        logger.log('[WorldTick] Mission', missionId, 'reset to en_route for retry');
+      } catch (resetErr) {
+        logger.error('[WorldTick] Failed to reset mission', missionId, ':', String(resetErr));
+      }
     }
   }
 
-  if (count > 0) logger.log('[WorldTick] Processed', count, 'arrived fleets');
+  if (count > 0) logger.log('[WorldTick] Processed', count, '/', arrived.length, 'arrived fleets');
   return count;
 }
 
