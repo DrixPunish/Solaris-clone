@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS combat_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   attacker_id UUID NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
   defender_id UUID REFERENCES players(user_id) ON DELETE SET NULL,
+  viewer_role TEXT NOT NULL DEFAULT 'attacker' CHECK (viewer_role IN ('attacker', 'defender')),
   attacker_username TEXT,
   defender_username TEXT,
   attacker_coords JSONB,
@@ -30,3 +31,4 @@ CREATE TABLE IF NOT EXISTS combat_reports (
 CREATE INDEX IF NOT EXISTS idx_combat_reports_attacker ON combat_reports(attacker_id);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_defender ON combat_reports(defender_id);
 CREATE INDEX IF NOT EXISTS idx_combat_reports_created ON combat_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_combat_reports_viewer_role ON combat_reports(viewer_role);

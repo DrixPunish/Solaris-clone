@@ -193,11 +193,16 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
       const { data, error } = await supabase
         .from('combat_reports')
         .select('*')
-        .eq('player_id', userId)
+        .or(`attacker_id.eq.${userId},defender_id.eq.${userId}`)
         .order('created_at', { ascending: false })
         .limit(50);
+      const filtered = (data ?? []).filter((r: Record<string, unknown>) => {
+        if (r.viewer_role === 'attacker' && r.attacker_id === userId) return true;
+        if (r.viewer_role === 'defender' && r.defender_id === userId) return true;
+        return false;
+      });
       if (error) return [];
-      return (data ?? []) as CombatReport[];
+      return filtered as CombatReport[];
     },
     enabled: !!userId,
     staleTime: 30000,

@@ -86,11 +86,19 @@ export const worldRouter = createTRPCRouter({
     .input(z.object({ reportId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.userId;
-      const { error } = await supabase
+      const { error: err1 } = await supabase
         .from('combat_reports')
         .delete()
         .eq('id', input.reportId)
-        .eq('player_id', userId);
+        .eq('viewer_role', 'attacker')
+        .eq('attacker_id', userId);
+      const { error: err2 } = await supabase
+        .from('combat_reports')
+        .delete()
+        .eq('id', input.reportId)
+        .eq('viewer_role', 'defender')
+        .eq('defender_id', userId);
+      const error = err1 || err2;
       if (error) {
         logger.error('[tRPC] Error deleting combat report:', error.message);
         return { success: false, error: error.message };
@@ -101,10 +109,17 @@ export const worldRouter = createTRPCRouter({
   deleteAllCombatReports: protectedProcedure
     .mutation(async ({ ctx }) => {
       const userId = ctx.userId;
-      const { error } = await supabase
+      const { error: err1 } = await supabase
         .from('combat_reports')
         .delete()
-        .eq('player_id', userId);
+        .eq('viewer_role', 'attacker')
+        .eq('attacker_id', userId);
+      const { error: err2 } = await supabase
+        .from('combat_reports')
+        .delete()
+        .eq('viewer_role', 'defender')
+        .eq('defender_id', userId);
+      const error = err1 || err2;
       if (error) {
         logger.error('[tRPC] Error deleting all combat reports:', error.message);
         return { success: false, error: error.message };

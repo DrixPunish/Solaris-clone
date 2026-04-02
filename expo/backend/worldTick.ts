@@ -562,8 +562,7 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
 
   logger.error('[WorldTick][Attack] DEBUG attackerPlayerId:', attackerPlayerId, 'defenderPlayerId:', defenderPlayerId);
 
-  const attackerReportPayload = {
-    player_id: attackerPlayerId,
+  const baseReportPayload = {
     attacker_id: attackerPlayerId,
     defender_id: defenderPlayerId,
     attacker_username: (mission.sender_username as string) ?? null,
@@ -583,8 +582,12 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     round_logs: sanitizeForJsonb(combatResult.roundLogs) ?? null,
   };
 
+  const attackerReportPayload = {
+    ...baseReportPayload,
+    viewer_role: 'attacker',
+  };
+
   logger.error('[WorldTick][Attack] DEBUG attacker payload keys:', Object.keys(attackerReportPayload).join(','));
-  logger.error('[WorldTick][Attack] DEBUG attacker payload player_id value:', attackerReportPayload.player_id, 'type:', typeof attackerReportPayload.player_id);
   logger.error('[WorldTick][Attack] DEBUG full attacker payload JSON:', JSON.stringify(attackerReportPayload));
 
   try {
@@ -602,10 +605,10 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
   if (defenderPlayerId && defenderPlayerId !== attackerPlayerId) {
     try {
       const defenderReportPayload = {
-        ...attackerReportPayload,
-        player_id: defenderPlayerId,
+        ...baseReportPayload,
+        viewer_role: 'defender',
       };
-      logger.error('[WorldTick][Attack] DEBUG defender payload player_id:', defenderReportPayload.player_id);
+      logger.error('[WorldTick][Attack] DEBUG defender payload viewer_role:', defenderReportPayload.viewer_role);
       const { data: defData, error: defenderReportErr } = await supabase.from('combat_reports').insert(defenderReportPayload).select('id');
       if (defenderReportErr) {
         logger.error('[WorldTick][Attack] DEFENDER REPORT INSERT FAILED:', defenderReportErr.message, defenderReportErr.code, defenderReportErr.details, defenderReportErr.hint);

@@ -20,7 +20,7 @@ app.use(
 );
 
 app.get("/", (c) => {
-  return c.json({ status: "ok", message: "Solaris Backend API", version: "2.1.0-player-id-fix", deployedAt: "2026-04-01T20:30:00Z" });
+  return c.json({ status: "ok", message: "Solaris Backend API", version: "2.2.0-viewer-role", deployedAt: "2026-04-01T20:30:00Z" });
 });
 
 app.post("/tick", async (c) => {
@@ -38,7 +38,7 @@ app.get("/debug/combat-report-test", async (c) => {
   const testData = {
     attacker_id: 'ca7eb6df-059e-4c10-bb29-3c66a87295df',
     defender_id: '8fb0d35f-d117-4a9c-968b-b8bd23f620c0',
-    player_id: 'ca7eb6df-059e-4c10-bb29-3c66a87295df',
+    viewer_role: 'attacker',
     attacker_username: 'test_attacker',
     defender_username: 'test_defender',
     attacker_coords: [1, 1, 1],
