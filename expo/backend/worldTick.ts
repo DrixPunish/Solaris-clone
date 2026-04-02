@@ -599,40 +599,36 @@ async function processAttackMission(mission: Record<string, unknown>): Promise<v
     reportsToInsert.push(defenderReportPayload);
   }
 
-  logger.log('[WorldTick][Attack] Inserting', reportsToInsert.length, 'combat reports individually with retries');
+  logger.log('[WorldTick][Attack] Inserting', reportsToInsert.length, 'combat reports (attacker + defender)');
 
-  for (const report of reportsToInsert) {
-    let inserted = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const { data: d, error: e } = await supabase
-          .from('combat_reports')
-          .insert(report)
-          .select('id, viewer_role');
+  try {
+    const { data: insertedData, error: insertErr } = await supabase
+      .from('combat_reports')
+      .insert(reportsToInsert)
+      .select('id, viewer_role');
 
-        if (e) {
-          logger.error('[WorldTick][Attack] INSERT FAILED for', report.viewer_role, 'attempt', attempt, ':', e.message, e.code, e.details);
-          if (attempt < 3) {
-            await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+    if (insertErr) {
+      logger.error('[WorldTick][Attack] BULK REPORT INSERT FAILED:', insertErr.message, insertErr.code, insertErr.details, insertErr.hint);
+      logger.error('[WorldTick][Attack] Full error:', JSON.stringify(insertErr));
+
+      logger.log('[WorldTick][Attack] Falling back to individual inserts...');
+      for (const report of reportsToInsert) {
+        try {
+          const { data: d, error: e } = await supabase.from('combat_reports').insert(report).select('id, viewer_role');
+          if (e) {
+            logger.error('[WorldTick][Attack] INDIVIDUAL INSERT FAILED for', report.viewer_role, ':', e.message, e.code, e.details);
+          } else {
+            logger.log('[WorldTick][Attack] Individual insert OK for', report.viewer_role, 'id:', d?.[0]?.id);
           }
-        } else {
-          logger.log('[WorldTick][Attack] Insert OK for', report.viewer_role, 'id:', d?.[0]?.id, 'attempt:', attempt);
-          inserted = true;
-          break;
-        }
-      } catch (ex) {
-        logger.error('[WorldTick][Attack] INSERT EXCEPTION for', report.viewer_role, 'attempt', attempt, ':', ex);
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+        } catch (ex) {
+          logger.error('[WorldTick][Attack] INDIVIDUAL INSERT EXCEPTION for', report.viewer_role, ':', ex);
         }
       }
+    } else {
+      logger.log('[WorldTick][Attack] BULK INSERT OK:', insertedData?.length, 'reports -', insertedData?.map((r: Record<string, unknown>) => `${String(r.viewer_role)}:${String(r.id)}`).join(', '));
     }
-    if (!inserted) {
-      logger.error('[WorldTick][Attack] FAILED ALL 3 ATTEMPTS for', report.viewer_role, 'report. Mission:', mission.id);
-    }
-    if (reportsToInsert.length > 1) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+  } catch (insertException) {
+    logger.error('[WorldTick][Attack] REPORT INSERT EXCEPTION:', insertException);
   }
 
   if (_targetPlanetId) {
@@ -1134,13 +1130,12 @@ export async function runWorldTick(): Promise<{
       logger.log(`[WorldTick] Resuming after ${currentSkipped} skipped ticks`);
     }
 
-    const [timers, queues] = await Promise.all([
+    const [timers, queues, arrivals, returns] = await Promise.all([
       processExpiredTimers().catch(e => { logger.log('[WorldTick] Timer error:', e); return 0; }),
       processExpiredShipyardQueues().catch(e => { logger.log('[WorldTick] Queue error:', e); return 0; }),
+      processArrivedFleets().catch(e => { logger.log('[WorldTick] Fleet arrival error:', e); return 0; }),
+      processReturningFleets().catch(e => { logger.log('[WorldTick] Fleet return error:', e); return 0; }),
     ]);
-
-    const arrivals = await processArrivedFleets().catch(e => { logger.log('[WorldTick] Fleet arrival error:', e); return 0; });
-    const returns = await processReturningFleets().catch(e => { logger.log('[WorldTick] Fleet return error:', e); return 0; });
 
     const resources = await updateAllPlanetResources().catch(e => { logger.log('[WorldTick] Resource error:', e); return 0; });
 
