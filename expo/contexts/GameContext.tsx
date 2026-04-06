@@ -302,8 +302,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
       }
 
       if (nextAppState === 'active') {
-        console.log('[GameContext] App returned to foreground, triggering resync');
-        void resyncFromServerRef.current();
+        console.log('[GameContext] App returned to foreground (no auto-resync)');
       }
     });
     return () => subscription.remove();
