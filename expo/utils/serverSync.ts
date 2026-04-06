@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { GameState, UpgradeTimer } from '@/types/game';
 import { calculateProduction, getResourceStorageCapacity } from './gameCalculations';
-import { getMainPlanetId, loadStateFromTables, saveMaterializedToTables } from './tableSync';
+import { getMainPlanetId, loadStateFromTables } from './tableSync';
 import { processShipyardQueue } from '@/utils/shipyardProcessor';
 import { logger } from '@/utils/logger';
 
@@ -116,13 +116,8 @@ export async function materializeTargetState(targetPlayerId: string, saveToDb: b
   }
 
   const rawState = tablesResult.state;
-  const planetId = tablesResult.planetId;
 
   const materialized = materializeState(rawState);
-
-  if (saveToDb) {
-    await saveMaterializedToTables(planetId, targetPlayerId, materialized);
-  }
 
   return materialized;
 }
