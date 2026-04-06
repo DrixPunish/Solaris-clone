@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { GameState, Colony, ShipyardQueueItem, UpgradeTimer } from '@/types/game';
-import { calculateProduction, getResourceStorageCapacity } from './gameCalculations';
+
 
 export async function getMainPlanetId(userId: string): Promise<string | null> {
   const { data } = await supabase
@@ -152,27 +152,6 @@ export async function loadStateFromTables(targetUserId: string): Promise<{ state
   return { state, planetId };
 }
 
-function recalcPlanetResources(
-  rawRes: { fer: number; silice: number; xenogas: number; energy: number },
-  buildings: Record<string, number>,
-  research: Record<string, number>,
-  ships: Record<string, number>,
-  lastUpdate: number,
-  now: number,
-): { fer: number; silice: number; xenogas: number; energy: number } {
-  const elapsed = Math.max(0, (now - lastUpdate) / 1000);
-  if (elapsed < 2) return rawRes;
-
-  const prod = calculateProduction(buildings, research, ships);
-  const storage = getResourceStorageCapacity(buildings);
-
-  return {
-    fer: rawRes.fer >= storage.fer ? rawRes.fer : Math.min(rawRes.fer + (prod.fer / 3600) * elapsed, storage.fer),
-    silice: rawRes.silice >= storage.silice ? rawRes.silice : Math.min(rawRes.silice + (prod.silice / 3600) * elapsed, storage.silice),
-    xenogas: rawRes.xenogas >= storage.xenogas ? rawRes.xenogas : Math.min(rawRes.xenogas + (prod.xenogas / 3600) * elapsed, storage.xenogas),
-    energy: prod.energy,
-  };
-}
 
 export async function loadFullStateFromTables(userId: string): Promise<GameState | null> {
   console.log('[tableSync] Loading full state (main + colonies) from tables for', userId);
@@ -239,13 +218,6 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
   const mainBuildings = getBuildingsForPlanet(mainPlanetId);
   const mainShips = getShipsForPlanet(mainPlanetId);
   const mainRawRes = getResForPlanet(mainPlanetId);
-  const mainLastUpdate = (mainPlanet.last_update as number) ?? now;
-  const mainFreshRes = recalcPlanetResources(mainRawRes, mainBuildings, research, mainShips, mainLastUpdate, now);
-  const mainElapsed = (now - mainLastUpdate) / 1000;
-
-  if (mainElapsed > 2) {
-    console.log('[tableSync] Client-side recalc for display only (no DB write). Main planet offline for', Math.floor(mainElapsed), 's');
-  }
 
   const colonies: Colony[] = [];
 
@@ -254,13 +226,8 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
     const colBuildings = getBuildingsForPlanet(cpId);
     const colShips = getShipsForPlanet(cpId);
     const colRawRes = getResForPlanet(cpId);
-    const colLastUpdate = (cp.last_update as number) ?? now;
-    const colFreshRes = recalcPlanetResources(colRawRes, colBuildings, research, colShips, colLastUpdate, now);
-    const colElapsed = (now - colLastUpdate) / 1000;
 
-    if (colElapsed > 2) {
-      console.log('[tableSync] Client-side recalc for display only (no DB write). Colony', cpId, 'offline for', Math.floor(colElapsed), 's');
-    }
+
 
     const colProdPct = cp.production_percentages as { ferMine: number; siliceMine: number; xenogasRefinery: number; solarPlant: number; heliosRemorqueur: number } | null;
     colonies.push({
@@ -270,7 +237,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
       buildings: colBuildings,
       ships: colShips,
       defenses: getDefensesForPlanet(cpId),
-      resources: colFreshRes,
+      resources: colRawRes,
       activeTimers: parseTimersForPlanet(allTimers, cpId).filter(t => t.type === 'building'),
       shipyardQueue: parseQueueForPlanet(allQueue, cpId),
       lastUpdate: now,
@@ -286,7 +253,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
     research,
     ships: mainShips,
     defenses: getDefensesForPlanet(mainPlanetId),
-    resources: mainFreshRes,
+    resources: mainRawRes,
     solar: plData?.solar ?? 500,
     lastUpdate: now,
     activeTimers: parseTimersForPlanet(allTimers, mainPlanetId),
@@ -296,7 +263,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
     productionPercentages: mainProdPct ?? undefined,
   };
 
-  console.log('[tableSync] Full state loaded (recalculated). Main resources:', {
+  console.log('[tableSync] Full state loaded (server-authoritative). Main resources:', {
     fer: Math.floor(state.resources.fer),
     silice: Math.floor(state.resources.silice),
     xenogas: Math.floor(state.resources.xenogas),

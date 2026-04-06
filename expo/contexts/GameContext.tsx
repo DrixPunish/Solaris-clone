@@ -71,7 +71,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   stateRef.current = state;
   const lastSavedSnapshotRef = useRef<ServerSnapshot | null>(null);
   const isMergingRef = useRef(false);
-  const [displayTick, setDisplayTick] = useState(0);
+
   const resourceSyncTimeRef = useRef(Date.now());
   const pendingActionsRef = useRef(new Set<string>());
   const [actionError, setActionError] = useState<string | null>(null);
@@ -165,11 +165,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
     }
   }, [stateQuery.data, isLoaded, userId]);
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    const interval = setInterval(() => setDisplayTick(t => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, [isLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -1603,8 +1598,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
   }, []);
 
   const activePlanet = useMemo(() => {
-    void displayTick;
-
     if (!activePlanetId) {
       return {
         id: mainPlanetIdRef.current as string | null,
@@ -1646,7 +1639,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
       activeTimers: colony.activeTimers,
       shipyardQueue: colony.shipyardQueue,
     };
-  }, [displayTick, activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies]);
+  }, [activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies]);
 
   const activeUpgradeBuilding = useCallback((buildingId: string) => {
     solarCooldownsRef.current.set(`building:${buildingId}`, Date.now() + SOLAR_COOLDOWN_MS);
