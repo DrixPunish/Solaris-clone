@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, LayoutChangeEvent, RefreshControl } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import {
   Rocket, Package, Truck, Home, Zap, Crosshair,
@@ -162,7 +162,7 @@ const qStyles = StyleSheet.create({
 });
 
 export default function ShipyardScreen() {
-  const { state, activePlanet, activeBuildShipQueue, activeBuildDefenseQueue, activeRushShipyardWithSolar, activeCancelShipyardQueue, activeGetMaxBuildableQuantity, getSolarCooldownEnd } = useGame();
+  const { state, activePlanet, activeBuildShipQueue, activeBuildDefenseQueue, activeRushShipyardWithSolar, activeCancelShipyardQueue, activeGetMaxBuildableQuantity, getSolarCooldownEnd, refreshResources, isRefreshing } = useGame();
   const { tab, scrollTo, _t } = useLocalSearchParams<{ tab?: string; scrollTo?: string; _t?: string }>();
   const [activeTab, setActiveTab] = useState<TabMode>(tab === 'defenses' ? 'defenses' : 'ships');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -469,7 +469,19 @@ export default function ShipyardScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshResources}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         {!hasShipyard && (
           <View style={styles.warningCard}>
             <Text style={styles.warningText}>

@@ -140,6 +140,7 @@ export default function SendFleetScreen() {
   const activePlanetId = activePlanet.id;
 
   const [serverResources, setServerResources] = useState<{ fer: number; silice: number; xenogas: number } | null>(null);
+  const [isLoadingInitialResources, setIsLoadingInitialResources] = useState(true);
   const [maxLoading, setMaxLoading] = useState<'fer' | 'silice' | 'xenogas' | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [sendCooldown, setSendCooldown] = useState(0);
@@ -166,6 +167,11 @@ export default function SendFleetScreen() {
       return null;
     }
   }, [userId, activePlanetId]);
+
+  useEffect(() => {
+    setIsLoadingInitialResources(true);
+    void fetchServerResources().finally(() => setIsLoadingInitialResources(false));
+  }, [fetchServerResources]);
 
   const availableShips = useMemo(() => {
     return SHIPS.filter(s => (planetShips[s.id] ?? 0) > 0);
@@ -265,17 +271,11 @@ export default function SendFleetScreen() {
   const distance = serverFlightData?.distance ?? 0;
   const fuelCost = serverFlightData?.fuel_cost ?? 0;
   const effectiveResources = useMemo(() => {
-    if (serverResources) {
-      return {
-        fer: Math.floor(serverResources.fer),
-        silice: Math.floor(serverResources.silice),
-        xenogas: Math.floor(serverResources.xenogas),
-      };
-    }
+    const src = serverResources ?? planetResources;
     return {
-      fer: Math.floor(planetResources.fer),
-      silice: Math.floor(planetResources.silice),
-      xenogas: Math.floor(planetResources.xenogas),
+      fer: Math.floor(src.fer),
+      silice: Math.floor(src.silice),
+      xenogas: Math.floor(src.xenogas),
     };
   }, [serverResources, planetResources]);
 
@@ -509,6 +509,12 @@ export default function SendFleetScreen() {
           </View>
 
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {isLoadingInitialResources && (
+              <View style={styles.resourceLoadingBanner}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.resourceLoadingText}>Synchronisation des ressources...</Text>
+              </View>
+            )}
             <View style={styles.sourceCard}>
               <Text style={styles.sourceLabel}>Depuis</Text>
               <Text style={styles.sourceName}>{planetName}</Text>
@@ -1314,5 +1320,22 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontSize: 13,
     fontWeight: '700' as const,
+  },
+  resourceLoadingBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    backgroundColor: Colors.primary + '12',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary + '25',
+  },
+  resourceLoadingText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
 });

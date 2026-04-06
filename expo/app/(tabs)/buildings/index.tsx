@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, ScrollView, LayoutChangeEvent, RefreshControl } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Pickaxe, Gem, Droplets, Sun, Bot, Wrench, FlaskConical, Atom, Warehouse, Database, Container, Cog } from 'lucide-react-native';
 import CollapsibleSection from '@/components/CollapsibleSection';
@@ -31,7 +31,7 @@ const BUILDING_ICONS: Record<string, { icon: React.ComponentType<{ size: number;
 };
 
 export default function BuildingsScreen() {
-  const { state, activePlanet, activeUpgradeBuilding, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd, activeProductionPercentages } = useGame();
+  const { state, activePlanet, activeUpgradeBuilding, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd, activeProductionPercentages, refreshResources, isRefreshing } = useGame();
   const { scrollTo, _t } = useLocalSearchParams<{ scrollTo?: string; _t?: string }>();
   const [infoModal, setInfoModal] = useState<{ id: string; level: number } | null>(null);
   const [prereqModal, setPrereqModal] = useState<string | null>(null);
@@ -242,7 +242,19 @@ export default function BuildingsScreen() {
   return (
     <View style={styles.container}>
       <ResourceBar />
-      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshResources}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         <View onLayout={(e) => handleSectionLayout('resources', e)}>
           <CollapsibleSection title="Ressources" forceOpen={shouldForceOpen(resourceBuildings.map(b => b.id))}>
             {resourceBuildings.map(b => (

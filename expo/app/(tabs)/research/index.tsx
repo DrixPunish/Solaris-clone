@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, LayoutChangeEvent, RefreshControl } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Zap, Target, Sword, Shield, ShieldCheck, Flame, Gauge, Eye, Cpu, Globe, Atom, Navigation, Brain, Orbit } from 'lucide-react-native';
 import CollapsibleSection from '@/components/CollapsibleSection';
@@ -39,7 +39,7 @@ const PROPULSION_RESEARCH_IDS = ['chemicalDrive', 'impulseReactor', 'voidDrive']
 const ADVANCED_RESEARCH_IDS = ['computerTech', 'espionageTech', 'astrophysics', 'subspacialNodes', 'neuralMesh', 'gravitonTech'];
 
 export default function ResearchScreen() {
-  const { state, activePlanet, activeUpgradeResearch, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd } = useGame();
+  const { state, activePlanet, activeUpgradeResearch, activeRushWithSolar, activeCancelUpgrade, getSolarCooldownEnd, refreshResources, isRefreshing } = useGame();
   const { scrollTo, _t } = useLocalSearchParams<{ scrollTo?: string; _t?: string }>();
   const labLevel = activePlanet.buildings.researchLab ?? 0;
   const hasLab = labLevel >= 1;
@@ -172,7 +172,19 @@ export default function ResearchScreen() {
   return (
     <View style={styles.container}>
       <ResourceBar />
-      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshResources}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         {!hasLab && (
           <View style={styles.warningCard}>
             <Text style={styles.warningText}>

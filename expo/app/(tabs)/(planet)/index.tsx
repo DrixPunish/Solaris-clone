@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Wallet, Shield, Rocket, FlaskConical, Building2, Gem, Pencil, X, Check, Mail, ChevronRight, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -23,7 +23,7 @@ import QuantumShieldCard from '@/components/QuantumShieldCard';
 const LAST_USERNAME_CHANGE_KEY = 'solaris_last_username_change';
 
 export default function PlanetScreen() {
-  const { state, activePlanet, activeRenamePlanet, setUsername, userEmail, setActivePlanetId } = useGame();
+  const { state, activePlanet, activeRenamePlanet, setUsername, userEmail, setActivePlanetId, refreshResources, isRefreshing } = useGame();
   const router = useRouter();
   const { user } = useAuth();
   const { signOut } = useAuth();
@@ -160,7 +160,18 @@ export default function PlanetScreen() {
   return (
     <View style={styles.container}>
       <ResourceBar />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshResources}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         {activePlanet.isColony && (
           <TouchableOpacity
             style={styles.colonyBanner}

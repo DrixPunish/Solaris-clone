@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AppState, InteractionManager } from 'react-native';
 import { GameState, Resources, UpgradeTimer, ShipyardQueueItem, Colony } from '@/types/game';
 import { TutorialReward } from '@/constants/tutorial';
-import { calculateProduction, calculateCost, canAfford, calculateSolarCost, getResourceStorageCapacity, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime } from '@/utils/gameCalculations';
+import { calculateProduction, calculateCost, canAfford, calculateSolarCost, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime } from '@/utils/gameCalculations';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES, DEFAULT_STATE } from '@/constants/gameData';
 import { supabase } from '@/utils/supabase';
 import { removeColonyFromPlanetsTable, loadFullStateFromTables, getMainPlanetId } from '@/utils/tableSync';
@@ -386,15 +386,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
   resyncFromServerRef.current = resyncFromServer;
 
 
-  useEffect(() => {
-    if (!isLoaded || !userId) return;
-    const resyncInterval = setInterval(() => {
-      void resyncFromServerRef.current();
-    }, 15000);
-    return () => {
-      clearInterval(resyncInterval);
-    };
-  }, [isLoaded, userId]);
+
 
 
 
@@ -1591,25 +1583,20 @@ export const [GameProvider, useGame] = createContextHook(() => {
     return isLoaded && !state.username;
   }, [isLoaded, state.username]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refreshResources = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await resyncFromServerRef.current();
+      console.log('[GameContext] Manual refresh complete');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
   const activePlanet = useMemo(() => {
     void displayTick;
-    const elapsed = Math.max(0, (Date.now() - resourceSyncTimeRef.current) / 1000);
-
-    const interpolateResources = (
-      resources: { fer: number; silice: number; xenogas: number; energy: number },
-      buildings: Record<string, number>,
-      ships: Record<string, number>,
-      pct?: { ferMine: number; siliceMine: number; xenogasRefinery: number; solarPlant: number; heliosRemorqueur: number },
-    ) => {
-      const prod = calculateProduction(buildings, state.research, ships, pct);
-      const cap = getResourceStorageCapacity(buildings);
-      return {
-        fer: resources.fer >= cap.fer ? resources.fer : Math.min(resources.fer + (prod.fer / 3600) * elapsed, cap.fer),
-        silice: resources.silice >= cap.silice ? resources.silice : Math.min(resources.silice + (prod.silice / 3600) * elapsed, cap.silice),
-        xenogas: resources.xenogas >= cap.xenogas ? resources.xenogas : Math.min(resources.xenogas + (prod.xenogas / 3600) * elapsed, cap.xenogas),
-        energy: prod.energy,
-      };
-    };
 
     if (!activePlanetId) {
       return {
@@ -1620,7 +1607,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
         buildings: state.buildings,
         ships: state.ships,
         defenses: state.defenses,
-        resources: interpolateResources(state.resources, state.buildings, state.ships, state.productionPercentages),
+        resources: { ...state.resources },
         activeTimers: state.activeTimers,
         shipyardQueue: state.shipyardQueue,
       };
@@ -1635,7 +1622,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
         buildings: state.buildings,
         ships: state.ships,
         defenses: state.defenses,
-        resources: interpolateResources(state.resources, state.buildings, state.ships, state.productionPercentages),
+        resources: { ...state.resources },
         activeTimers: state.activeTimers,
         shipyardQueue: state.shipyardQueue,
       };
@@ -1648,11 +1635,11 @@ export const [GameProvider, useGame] = createContextHook(() => {
       buildings: colony.buildings,
       ships: colony.ships,
       defenses: colony.defenses,
-      resources: interpolateResources(colony.resources, colony.buildings, colony.ships, colony.productionPercentages),
+      resources: { ...colony.resources },
       activeTimers: colony.activeTimers,
       shipyardQueue: colony.shipyardQueue,
     };
-  }, [displayTick, activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies, state.research, state.productionPercentages]);
+  }, [displayTick, activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies]);
 
   const activeUpgradeBuilding = useCallback((buildingId: string) => {
     solarCooldownsRef.current.set(`building:${buildingId}`, Date.now() + SOLAR_COOLDOWN_MS);
@@ -1861,6 +1848,8 @@ export const [GameProvider, useGame] = createContextHook(() => {
     setUsername,
     renamePlanet,
     forceResync: resyncFromServer,
+    refreshResources,
+    isRefreshing,
     needsUsername,
     userId,
     userEmail,
@@ -1902,7 +1891,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     state, production, upgradeBuilding, upgradeResearch, buildShipQueue, buildDefenseQueue,
     rushWithSolar, rushShipyardWithSolar, cancelUpgrade, cancelShipyardQueue, getTimerForId,
     isUpgrading, getShipyardQueueItem, getMaxBuildableQuantity, setUsername, renamePlanet,
-    resyncFromServer, needsUsername, userId, userEmail, isLoading,
+    resyncFromServer, refreshResources, isRefreshing, needsUsername, userId, userEmail, isLoading,
     addColony, removeColony, renameColony, upgradeColonyBuilding, buildColonyShipQueue,
     buildColonyDefenseQueue, cancelColonyUpgrade, upgradeColonyResearch, rushColonyWithSolar,
     cancelColonyShipyardQueue, rushColonyShipyardWithSolar, getColonyMaxBuildableQuantity,
