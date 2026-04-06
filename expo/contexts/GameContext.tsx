@@ -8,7 +8,7 @@ import { TutorialReward } from '@/constants/tutorial';
 import { calculateProduction, calculateCost, canAfford, calculateSolarCost, getResourceStorageCapacity, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime } from '@/utils/gameCalculations';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES, DEFAULT_STATE } from '@/constants/gameData';
 import { supabase } from '@/utils/supabase';
-import { removeColonyFromPlanetsTable, loadFullStateFromTables, syncTimersToTable, syncShipyardQueueToTable, getMainPlanetId, syncFullStateToTables } from '@/utils/tableSync';
+import { removeColonyFromPlanetsTable, loadFullStateFromTables, getMainPlanetId } from '@/utils/tableSync';
 import { trpcClient } from '@/lib/trpc';
 import { withRetry } from '@/utils/trpcRetry';
 import { processShipyardQueue } from '@/utils/shipyardProcessor';
@@ -134,12 +134,6 @@ export const [GameProvider, useGame] = createContextHook(() => {
           savedAt: Date.now(),
         };
         await saveStateToSupabase(userId, newState, userEmail);
-        try {
-          await syncFullStateToTables(userId, newState);
-          console.log('[GameContext] New player: all tables initialized (planets, resources, buildings, etc.)');
-        } catch (e) {
-          console.log('[GameContext] Error initializing new player tables:', e);
-        }
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newState));
         return newState;
       }
@@ -361,29 +355,8 @@ export const [GameProvider, useGame] = createContextHook(() => {
         processed.activeTimers = [...processed.activeTimers, ...localOnlyTimers];
       }
 
-      if (completedDuringProcess > 0 && mainPlanetIdRef.current) {
-        console.log('[Resync] Syncing completed timer results back to DB');
-        const planetId = mainPlanetIdRef.current;
-        void (async () => {
-          try {
-            await syncTimersToTable(userId, planetId, processed.activeTimers);
-            const buildingRows = Object.entries(processed.buildings).map(([bid, level]) => ({
-              planet_id: planetId, building_id: bid, level,
-            }));
-            if (buildingRows.length > 0) {
-              await supabase.from('planet_buildings').upsert(buildingRows, { onConflict: 'planet_id,building_id' });
-            }
-            const researchRows = Object.entries(processed.research).map(([rid, level]) => ({
-              user_id: userId, research_id: rid, level,
-            }));
-            if (researchRows.length > 0) {
-              await supabase.from('player_research').upsert(researchRows, { onConflict: 'user_id,research_id' });
-            }
-            console.log('[Resync] Completed timer results synced to DB');
-          } catch (e) {
-            console.log('[Resync] Error syncing completed timer results:', e);
-          }
-        })();
+      if (completedDuringProcess > 0) {
+        console.log('[Resync] Timers completed during processing:', completedDuringProcess, '(server-authoritative, no client write-back)');
       }
 
       lastSavedSnapshotRef.current = {
@@ -436,48 +409,8 @@ export const [GameProvider, useGame] = createContextHook(() => {
       };
       const capturedUserId = userId;
       const capturedEmail = userEmail;
-      const capturedTimers = newState.activeTimers;
-      const capturedQueue = newState.shipyardQueue;
-      const capturedColonies = newState.colonies;
       InteractionManager.runAfterInteractions(() => {
         void saveStateToSupabase(capturedUserId, newState, capturedEmail);
-        void (async () => {
-          try {
-            const planetId = await getMainPlanetId(capturedUserId);
-            if (planetId) {
-              const buildingRows = Object.entries(newState.buildings).map(([bid, level]) => ({
-                planet_id: planetId, building_id: bid, level,
-              }));
-              if (buildingRows.length > 0) {
-                await supabase.from('planet_buildings').upsert(buildingRows, { onConflict: 'planet_id,building_id' });
-              }
-              const researchRows = Object.entries(newState.research).map(([rid, level]) => ({
-                user_id: capturedUserId, research_id: rid, level,
-              }));
-              if (researchRows.length > 0) {
-                await supabase.from('player_research').upsert(researchRows, { onConflict: 'user_id,research_id' });
-              }
-              await syncTimersToTable(capturedUserId, planetId, capturedTimers);
-              await syncShipyardQueueToTable(planetId, capturedQueue);
-            }
-            if (capturedColonies && capturedColonies.length > 0) {
-              for (const colony of capturedColonies) {
-                const colBuildingRows = Object.entries(colony.buildings ?? {}).map(([bid, level]) => ({
-                  planet_id: colony.id, building_id: bid, level,
-                }));
-                if (colBuildingRows.length > 0) {
-                  await supabase.from('planet_buildings').upsert(colBuildingRows, { onConflict: 'planet_id,building_id' });
-                }
-                await syncTimersToTable(capturedUserId, colony.id, colony.activeTimers ?? []);
-                if ((colony.shipyardQueue ?? []).length > 0) {
-                  await syncShipyardQueueToTable(colony.id, colony.shipyardQueue);
-                }
-              }
-            }
-          } catch (e) {
-            console.log('[GameContext] Error in deferred save:', e);
-          }
-        })();
       });
     }
   }, [userId, userEmail]);
