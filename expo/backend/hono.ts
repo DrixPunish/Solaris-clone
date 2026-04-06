@@ -7,7 +7,7 @@ import { createContext } from "./trpc/create-context";
 import { startEventWorkerLoop, getEventWorkerStats } from "./eventWorker";
 
 const app = new Hono();
- 
+  
 app.use("*", cors());
  
 app.use(
