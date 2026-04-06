@@ -26,7 +26,7 @@ app.get("/", (c) => {
 
 app.post("/tick", async (c) => {
   const result = await runWorldTick();
-  return c.json({ success: true, ...result, timestamp: Date.now() });
+  return c.json({ success: true, ...result, mode: 'lightweight', timestamp: Date.now() });
 });
 
 app.get("/tick/status", (c) => {
@@ -122,8 +122,8 @@ app.get("/debug/timers", async (c) => {
   });
 });
 
-startWorldTickLoop(5000);
-console.log("[Backend] Solaris world tick loop started (5s interval)");
+startWorldTickLoop(10000);
+console.log("[Backend] Solaris world tick loop started (10s interval, resources + scores + orphan recovery only)");
 
 startEventWorkerLoop(2000);
 console.log("[Backend] Solaris event worker loop started (2s interval)");
