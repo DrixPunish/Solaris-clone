@@ -1,6 +1,6 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
-import { scheduleShipyardUnitComplete } from '@/backend/eventScheduler';
+import { scheduleShipyardUnitComplete, scheduleScoreRecalc } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleShipyardUnitComplete(event: GameEvent): Promise<void> {
@@ -115,7 +115,7 @@ export async function handleShipyardUnitComplete(event: GameEvent): Promise<void
       );
       logger.log('[EventHandler][ShipyardComplete] Chained next event:', result.eventId, 'pos:', nextPosition, 'execute_at:', nextExecuteAt.toISOString());
     } catch (e) {
-      logger.log('[EventHandler][ShipyardComplete] Error scheduling next event (world tick will catch it):', e instanceof Error ? e.message : String(e));
+      logger.log('[EventHandler][ShipyardComplete] Error scheduling next shipyard event:', e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -148,4 +148,18 @@ export async function handleShipyardUnitComplete(event: GameEvent): Promise<void
   }
 
   logger.log('[EventHandler][ShipyardComplete] Built 1x', item_id, '(' + item_type + ') on planet', planet_id, '| remaining:', remaining);
+
+  const { data: planetOwner } = await supabase
+    .from('planets')
+    .select('user_id')
+    .eq('id', planet_id)
+    .maybeSingle();
+
+  if (planetOwner?.user_id) {
+    try {
+      await scheduleScoreRecalc(planetOwner.user_id as string);
+    } catch (e) {
+      logger.log('[EventHandler][ShipyardComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+    }
+  }
 }

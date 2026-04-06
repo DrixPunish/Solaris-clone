@@ -1,5 +1,6 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
+import { scheduleScoreRecalc } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleFleetReturn(event: GameEvent): Promise<void> {
@@ -129,6 +130,12 @@ export async function handleFleetReturn(event: GameEvent): Promise<void> {
     } else {
       logger.log('[EventHandler][FleetReturn] Cargo deposited: fer=', cargoFer, 'silice=', cargoSilice, 'xenogas=', cargoXenogas);
     }
+  }
+
+  try {
+    await scheduleScoreRecalc(senderId);
+  } catch (e) {
+    logger.log('[EventHandler][FleetReturn] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
   }
 
   logger.log('[EventHandler][FleetReturn] === DONE === mission', mission_id, 'ships and resources restored to planet', senderPlanetId);

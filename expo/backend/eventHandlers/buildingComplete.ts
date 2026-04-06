@@ -1,5 +1,6 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
+import { scheduleScoreRecalc } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleBuildingComplete(event: GameEvent): Promise<void> {
@@ -103,4 +104,19 @@ export async function handleBuildingComplete(event: GameEvent): Promise<void> {
   }
 
   logger.log('[EventHandler][BuildingComplete] Building completed:', building_id, 'level', target_level, 'on planet', planet_id);
+
+  const { data: planetOwner } = await supabase
+    .from('planets')
+    .select('user_id')
+    .eq('id', planet_id)
+    .maybeSingle();
+
+  if (planetOwner?.user_id) {
+    try {
+      await scheduleScoreRecalc(planetOwner.user_id as string);
+      logger.log('[EventHandler][BuildingComplete] Score recalc scheduled for player', planetOwner.user_id);
+    } catch (e) {
+      logger.log('[EventHandler][BuildingComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+    }
+  }
 }

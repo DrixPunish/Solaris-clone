@@ -1,8 +1,8 @@
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "../create-context";
-import { runWorldTick } from "@/backend/worldTick";
 import { supabase } from "@/backend/supabase";
 import { z } from "zod";
 import { logger } from "@/utils/logger";
+import { getEventWorkerStats } from "@/backend/eventWorker";
 
 interface LeaderboardRow {
   player_id: string;
@@ -18,18 +18,12 @@ interface LeaderboardRow {
 }
 
 export const worldRouter = createTRPCRouter({
-  tick: publicProcedure.mutation(async () => {
-    const result = await runWorldTick();
-    return {
-      success: true,
-      ...result,
-      timestamp: Date.now(),
-    };
-  }),
-
   status: publicProcedure.query(() => {
+    const stats = getEventWorkerStats();
     return {
-      running: true,
+      running: stats.isRunning,
+      mode: 'event-only' as const,
+      workerStats: stats,
       timestamp: Date.now(),
     };
   }),

@@ -4,7 +4,6 @@ import { cors } from "hono/cors";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
-import { runWorldTick, startWorldTickLoop } from "./worldTick";
 import { startEventWorkerLoop, getEventWorkerStats } from "./eventWorker";
 
 const app = new Hono();
@@ -21,16 +20,7 @@ app.use(
 );
 
 app.get("/", (c) => {
-  return c.json({ status: "ok", message: "Solaris Backend API", version: "3.0.0-event-driven", deployedAt: "2026-04-06T00:00:00Z" });
-});
-
-app.post("/tick", async (c) => {
-  const result = await runWorldTick();
-  return c.json({ success: true, ...result, mode: 'lightweight', timestamp: Date.now() });
-});
-
-app.get("/tick/status", (c) => {
-  return c.json({ running: true, timestamp: Date.now() });
+  return c.json({ status: "ok", message: "Solaris Backend API", version: "4.0.0-event-only", deployedAt: "2026-04-06T00:00:00Z" });
 });
 
 app.get("/debug/combat-report-test", async (c) => {
@@ -122,10 +112,7 @@ app.get("/debug/timers", async (c) => {
   });
 });
 
-startWorldTickLoop(10000);
-console.log("[Backend] Solaris world tick loop started (10s interval, resources + scores + orphan recovery only)");
-
-startEventWorkerLoop(2000);
-console.log("[Backend] Solaris event worker loop started (2s interval)");
+startEventWorkerLoop(1000);
+console.log("[Backend] Solaris event worker loop started (1s interval, sole runtime engine)");
 
 export default app;

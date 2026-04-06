@@ -5,7 +5,7 @@ import { logger } from '@/utils/logger';
 
 const WORKER_ID = `worker_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const BATCH_SIZE = 10;
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 1000;
 const LOCK_DURATION_SECONDS = 120;
 
 let workerInterval: ReturnType<typeof setInterval> | null = null;

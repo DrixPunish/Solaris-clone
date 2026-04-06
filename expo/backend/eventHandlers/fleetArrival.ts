@@ -1,7 +1,7 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
 import { dispatchMission, type FleetMission } from '@/backend/fleetProcessing';
-import { scheduleFleetReturn } from '@/backend/eventScheduler';
+import { scheduleFleetReturn, scheduleScoreRecalc } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleFleetArrival(event: GameEvent): Promise<void> {
@@ -130,10 +130,19 @@ export async function handleFleetArrival(event: GameEvent): Promise<void> {
       const result = await scheduleFleetReturn(mission_id, senderPlanetId, executeAt);
       logger.log('[EventHandler][FleetArrival] fleet_return event scheduled:', result.eventId, 'execute_at:', executeAt.toISOString());
     } catch (e) {
-      logger.log('[EventHandler][FleetArrival] Non-blocking: failed to schedule fleet_return event (world tick will catch it):', e instanceof Error ? e.message : String(e));
+      logger.log('[EventHandler][FleetArrival] Non-blocking: failed to schedule fleet_return event:', e instanceof Error ? e.message : String(e));
     }
   } else {
     logger.log('[EventHandler][FleetArrival] Mission phase after dispatch:', updatedMission?.mission_phase ?? 'unknown', '- no fleet_return needed');
+  }
+
+  try {
+    await scheduleScoreRecalc(mission.sender_id);
+    if (mission.target_player_id && mission.target_player_id !== mission.sender_id) {
+      await scheduleScoreRecalc(mission.target_player_id as string);
+    }
+  } catch (e) {
+    logger.log('[EventHandler][FleetArrival] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
   }
 
   logger.log('[EventHandler][FleetArrival] === DONE === mission', mission_id);

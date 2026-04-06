@@ -1,5 +1,6 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
+import { scheduleScoreRecalc } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleResearchComplete(event: GameEvent): Promise<void> {
@@ -103,4 +104,11 @@ export async function handleResearchComplete(event: GameEvent): Promise<void> {
   }
 
   logger.log('[EventHandler][ResearchComplete] Research completed:', research_id, 'level', target_level, 'for player', player_id);
+
+  try {
+    await scheduleScoreRecalc(player_id);
+    logger.log('[EventHandler][ResearchComplete] Score recalc scheduled for player', player_id);
+  } catch (e) {
+    logger.log('[EventHandler][ResearchComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+  }
 }
