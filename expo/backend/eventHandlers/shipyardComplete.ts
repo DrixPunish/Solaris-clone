@@ -1,16 +1,17 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
+import { scheduleShipyardUnitComplete } from '@/backend/eventScheduler';
 import type { GameEvent } from './types';
 
 export async function handleShipyardUnitComplete(event: GameEvent): Promise<void> {
-  const { planet_id, item_id, item_type, queue_id: _queue_id } = event.payload as {
+  const { planet_id, item_id, item_type, queue_position } = event.payload as {
     planet_id: string;
     item_id: string;
     item_type: 'ship' | 'defense';
-    queue_id?: string;
+    queue_position?: number;
   };
 
-  logger.log('[EventHandler][ShipyardComplete] Processing event', event.id, 'planet:', planet_id, 'item:', item_id, 'type:', item_type);
+  logger.log('[EventHandler][ShipyardComplete] Processing event', event.id, 'planet:', planet_id, 'item:', item_id, 'type:', item_type, 'pos:', queue_position ?? 0);
 
   const { data: queueRow } = await supabase
     .from('shipyard_queue')
@@ -47,7 +48,21 @@ export async function handleShipyardUnitComplete(event: GameEvent): Promise<void
       .eq('item_id', item_id)
       .eq('item_type', item_type);
 
-    // TODO Phase 2: Schedule next shipyard_unit_complete event with execute_at = nextEndTime
+    const nextPosition = (queue_position ?? 0) + 1;
+    const nextExecuteAt = new Date(nextEndTime);
+
+    try {
+      const result = await scheduleShipyardUnitComplete(
+        planet_id,
+        item_id,
+        item_type,
+        nextPosition,
+        nextExecuteAt,
+      );
+      logger.log('[EventHandler][ShipyardComplete] Chained next event:', result.eventId, 'pos:', nextPosition, 'execute_at:', nextExecuteAt.toISOString());
+    } catch (e) {
+      logger.log('[EventHandler][ShipyardComplete] Error scheduling next event (world tick will catch it):', e instanceof Error ? e.message : String(e));
+    }
   }
 
   if (item_type === 'ship') {
