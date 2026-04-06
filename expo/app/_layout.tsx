@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import MaintenanceScreen from "@/components/MaintenanceScreen";
 import { GameProvider, useGame } from "@/contexts/GameContext";
 import { FleetProvider } from "@/contexts/FleetContext";
 import { AllianceProvider } from "@/contexts/AllianceContext";
@@ -18,6 +19,8 @@ import GameAlertProvider from "@/components/GameAlert";
 void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
+
+const isMaintenanceMode = process.env.EXPO_PUBLIC_MAINTENANCE_MODE === 'true';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -93,6 +96,16 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  if (isMaintenanceMode) {
+    void SplashScreen.hideAsync();
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar style="light" />
+        <MaintenanceScreen />
+      </GestureHandlerRootView>
+    );
+  }
+
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
