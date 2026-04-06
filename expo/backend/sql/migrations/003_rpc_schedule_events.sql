@@ -314,8 +314,6 @@ DECLARE
   v_end_time bigint;
   v_btp double precision;
   v_is_new_queue boolean;
-  v_execute_at timestamptz;
-  v_idempotency_key text;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -462,8 +460,6 @@ DECLARE
   v_end_time bigint;
   v_btp double precision;
   v_is_new_queue boolean;
-  v_execute_at timestamptz;
-  v_idempotency_key text;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -966,12 +962,12 @@ BEGIN
   DELETE FROM shipyard_queue
   WHERE planet_id = p_planet_id AND item_id = p_item_id AND item_type = p_item_type;
 
-  -- Cancel all shipyard events for this item
+  -- Cancel all shipyard events for this item (pending + processing)
   UPDATE events
   SET status = 'cancelled', cancelled_at = NOW(), locked_until = NULL, worker_id = NULL
   WHERE entity_type = 'planet' AND entity_id = p_planet_id
     AND event_type = 'shipyard_unit_complete'
-    AND status IN ('pending')
+    AND status IN ('pending', 'processing')
     AND payload->>'item_id' = p_item_id
     AND payload->>'item_type' = p_item_type;
 

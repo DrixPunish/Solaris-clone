@@ -227,7 +227,6 @@ export const actionsRouter = createTRPCRouter({
             shipId,
             'ship',
             result.queueItem.currentUnitEndTime,
-            result.queueItem.id,
           );
         } catch (e) {
           logger.log("[Actions] Non-blocking: failed to ensure shipyard event:", e instanceof Error ? e.message : String(e));
@@ -302,7 +301,6 @@ export const actionsRouter = createTRPCRouter({
             defenseId,
             'defense',
             result.queueItem.currentUnitEndTime,
-            result.queueItem.id,
           );
         } catch (e) {
           logger.log("[Actions] Non-blocking: failed to ensure defense event:", e instanceof Error ? e.message : String(e));
