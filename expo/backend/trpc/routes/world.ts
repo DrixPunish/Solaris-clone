@@ -197,6 +197,27 @@ export const worldRouter = createTRPCRouter({
         return { success: false as const, error: 'Planet not found or not owned' };
       }
 
+      const { data: matResult, error: matError } = await supabase.rpc('materialize_planet_resources', {
+        p_planet_id: input.planetId,
+        p_user_id: userId,
+      });
+
+      if (matError) {
+        logger.error('[tRPC] materialize_planet_resources error:', matError.message);
+      }
+
+      const matRes = matResult as { success?: boolean; fer?: number; silice?: number; xenogas?: number } | null;
+      if (matRes?.success && matRes.fer !== undefined) {
+        logger.log('[tRPC] getPlanetResources: materialized fresh values for', input.planetId);
+        return {
+          success: true as const,
+          fer: matRes.fer,
+          silice: matRes.silice ?? 0,
+          xenogas: matRes.xenogas ?? 0,
+          energy: 0,
+        };
+      }
+
       const { data, error } = await supabase
         .from('planet_resources')
         .select('fer, silice, xenogas, energy')
@@ -346,6 +367,35 @@ export const worldRouter = createTRPCRouter({
         shield_expires_at: result.shield_expires_at ?? null,
         remaining_solar: result.remaining_solar ?? 0,
       };
+    }),
+
+  materializeAllPlanets: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.userId;
+      const { data: planets } = await supabase
+        .from('planets')
+        .select('id')
+        .eq('user_id', userId);
+
+      if (!planets || planets.length === 0) {
+        return { success: false as const, error: 'No planets found' };
+      }
+
+      const results: Array<{ planetId: string; success: boolean }> = [];
+      for (const p of planets) {
+        const pid = p.id as string;
+        const { error: matErr } = await supabase.rpc('materialize_planet_resources', {
+          p_planet_id: pid,
+          p_user_id: userId,
+        });
+        results.push({ planetId: pid, success: !matErr });
+        if (matErr) {
+          logger.error('[tRPC] materializeAllPlanets error for', pid, ':', matErr.message);
+        }
+      }
+
+      logger.log('[tRPC] materializeAllPlanets done:', results.length, 'planets processed');
+      return { success: true as const, results };
     }),
 
   recalcPlayerScore: protectedProcedure

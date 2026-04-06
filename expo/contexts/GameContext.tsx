@@ -1588,6 +1588,13 @@ export const [GameProvider, useGame] = createContextHook(() => {
   const refreshResources = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      console.log('[GameContext] Manual refresh: materializing all planets server-side first');
+      try {
+        await trpcClient.world.materializeAllPlanets.mutate();
+        console.log('[GameContext] Server materialization complete');
+      } catch (matErr) {
+        console.log('[GameContext] Server materialization failed, continuing with raw values:', matErr);
+      }
       await resyncFromServerRef.current();
       console.log('[GameContext] Manual refresh complete');
     } finally {
