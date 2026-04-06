@@ -7,6 +7,7 @@ import {
   checkPrerequisites,
 } from "@/utils/gameCalculations";
 import { logger } from "@/utils/logger";
+import { ensureEventForShipyardQueue } from "@/backend/eventScheduler";
 
 interface RpcResult {
   success: boolean;
@@ -218,6 +219,21 @@ export const actionsRouter = createTRPCRouter({
       }
 
       logger.log("[Actions] Ships queued (atomic):", shipId, "x", quantity);
+
+      if (result.queueItem) {
+        try {
+          await ensureEventForShipyardQueue(
+            planetId,
+            shipId,
+            'ship',
+            result.queueItem.currentUnitEndTime,
+            result.queueItem.id,
+          );
+        } catch (e) {
+          logger.log("[Actions] Non-blocking: failed to ensure shipyard event:", e instanceof Error ? e.message : String(e));
+        }
+      }
+
       return {
         success: true,
         resources: result.resources,
@@ -278,6 +294,21 @@ export const actionsRouter = createTRPCRouter({
       }
 
       logger.log("[Actions] Defenses queued (atomic):", defenseId, "x", quantity);
+
+      if (result.queueItem) {
+        try {
+          await ensureEventForShipyardQueue(
+            planetId,
+            defenseId,
+            'defense',
+            result.queueItem.currentUnitEndTime,
+            result.queueItem.id,
+          );
+        } catch (e) {
+          logger.log("[Actions] Non-blocking: failed to ensure defense event:", e instanceof Error ? e.message : String(e));
+        }
+      }
+
       return {
         success: true,
         resources: result.resources,

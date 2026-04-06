@@ -11,8 +11,11 @@ export const IdempotencyKeys = {
     return `research:${playerId}:${researchId}`;
   },
 
-  shipyardUnitComplete(planetId: string, itemId: string, queuePosition: number): string {
-    return `shipyard:${planetId}:${itemId}:${queuePosition}`;
+  shipyardUnitComplete(planetId: string, itemId: string, queueId?: string, queuePosition?: number): string {
+    if (queueId) {
+      return `shipyard:${planetId}:${itemId}:${queueId}:${queuePosition ?? 0}`;
+    }
+    return `shipyard:${planetId}:${itemId}:${queuePosition ?? 0}`;
   },
 
   fleetArrival(missionId: string): string {
@@ -98,8 +101,8 @@ export async function scheduleEvent(params: ScheduleParams): Promise<{
   };
 }
 
-export async function cancelEventByKey(idempotencyKey: string): Promise<boolean> {
-  logger.log('[EventScheduler] Cancelling event by key:', idempotencyKey);
+export async function cancelEventByKey(idempotencyKey: string, includeProcessing: boolean = true): Promise<boolean> {
+  logger.log('[EventScheduler] Cancelling event by key:', idempotencyKey, 'includeProcessing:', includeProcessing);
 
   const { data, error } = await supabase.rpc('rpc_cancel_event_by_key', {
     p_idempotency_key: idempotencyKey,
@@ -111,6 +114,32 @@ export async function cancelEventByKey(idempotencyKey: string): Promise<boolean>
   }
 
   const cancelled = data as boolean;
+
+  if (!cancelled && includeProcessing) {
+    const { data: processingEvent } = await supabase
+      .from('events')
+      .select('id, status')
+      .eq('idempotency_key', idempotencyKey)
+      .eq('status', 'processing')
+      .maybeSingle();
+
+    if (processingEvent) {
+      logger.log('[EventScheduler] Event in processing state, marking as cancelled:', processingEvent.id);
+      const { error: updateErr } = await supabase
+        .from('events')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .eq('id', processingEvent.id)
+        .eq('status', 'processing');
+
+      if (updateErr) {
+        logger.log('[EventScheduler] Error force-cancelling processing event:', updateErr.message);
+      } else {
+        logger.log('[EventScheduler] Processing event force-cancelled:', processingEvent.id);
+        return true;
+      }
+    }
+  }
+
   logger.log('[EventScheduler] Cancel result for key:', idempotencyKey, '->', cancelled);
   return cancelled;
 }
@@ -118,9 +147,10 @@ export async function cancelEventByKey(idempotencyKey: string): Promise<boolean>
 export async function cancelEventsForEntity(
   entityType: string,
   entityId: string,
-  eventType?: EventType
+  eventType?: EventType,
+  includeProcessing: boolean = true
 ): Promise<number> {
-  logger.log('[EventScheduler] Cancelling events for entity:', entityType, '/', entityId, eventType ? `type: ${eventType}` : '(all types)');
+  logger.log('[EventScheduler] Cancelling events for entity:', entityType, '/', entityId, eventType ? `type: ${eventType}` : '(all types)', 'includeProcessing:', includeProcessing);
 
   const { data, error } = await supabase.rpc('rpc_cancel_events_for_entity', {
     p_entity_type: entityType,
@@ -133,7 +163,40 @@ export async function cancelEventsForEntity(
     throw new Error(`Failed to cancel entity events: ${error.message}`);
   }
 
-  const count = data as number;
+  let count = data as number;
+
+  if (includeProcessing) {
+    let processingQuery = supabase
+      .from('events')
+      .select('id')
+      .eq('entity_type', entityType)
+      .eq('entity_id', entityId)
+      .eq('status', 'processing');
+
+    if (eventType) {
+      processingQuery = processingQuery.eq('event_type', eventType);
+    }
+
+    const { data: processingEvents } = await processingQuery;
+
+    if (processingEvents && processingEvents.length > 0) {
+      const ids = processingEvents.map(e => e.id as string);
+      logger.log('[EventScheduler] Force-cancelling', ids.length, 'processing events for entity:', entityType, '/', entityId);
+
+      const { error: updateErr } = await supabase
+        .from('events')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .in('id', ids)
+        .eq('status', 'processing');
+
+      if (updateErr) {
+        logger.log('[EventScheduler] Error force-cancelling processing events:', updateErr.message);
+      } else {
+        count += ids.length;
+      }
+    }
+  }
+
   logger.log('[EventScheduler] Cancelled', count, 'events for entity:', entityType, '/', entityId);
   return count;
 }
@@ -221,7 +284,7 @@ export function scheduleShipyardUnitComplete(
       ...(queueId ? { queue_id: queueId } : {}),
     },
     executeAt,
-    idempotencyKey: IdempotencyKeys.shipyardUnitComplete(planetId, itemId, queuePosition),
+    idempotencyKey: IdempotencyKeys.shipyardUnitComplete(planetId, itemId, queueId, queuePosition),
     priority: EventPriority.NORMAL,
   });
 }
@@ -271,4 +334,47 @@ export function scheduleScoreRecalc(
     idempotencyKey: IdempotencyKeys.scoreRecalc(playerId),
     priority: EventPriority.LOW,
   });
+}
+
+export async function ensureEventForShipyardQueue(
+  planetId: string,
+  itemId: string,
+  itemType: 'ship' | 'defense',
+  currentUnitEndTime: number,
+  queueId?: string
+): Promise<boolean> {
+  logger.log('[EventScheduler] Checking event coherence for shipyard queue:', planetId, itemId, itemType);
+
+  const keyPrefix = queueId
+    ? `shipyard:${planetId}:${itemId}:${queueId}`
+    : `shipyard:${planetId}:${itemId}`;
+
+  const { data: activeEvents } = await supabase
+    .from('events')
+    .select('id, status, idempotency_key')
+    .like('idempotency_key', `${keyPrefix}%`)
+    .in('status', ['pending', 'processing']);
+
+  if (activeEvents && activeEvents.length > 0) {
+    logger.log('[EventScheduler] Active event already exists for shipyard queue:', activeEvents[0].id);
+    return false;
+  }
+
+  logger.log('[EventScheduler] No active event found for shipyard queue - scheduling recovery event');
+
+  try {
+    await scheduleShipyardUnitComplete(
+      planetId,
+      itemId,
+      itemType,
+      0,
+      new Date(currentUnitEndTime),
+      queueId,
+    );
+    logger.log('[EventScheduler] Recovery event scheduled for orphaned shipyard queue');
+    return true;
+  } catch (e) {
+    logger.log('[EventScheduler] Error scheduling recovery event:', e instanceof Error ? e.message : String(e));
+    return false;
+  }
 }

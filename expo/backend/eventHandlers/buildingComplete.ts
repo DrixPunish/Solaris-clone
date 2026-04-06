@@ -12,26 +12,81 @@ export async function handleBuildingComplete(event: GameEvent): Promise<void> {
 
   logger.log('[EventHandler][BuildingComplete] Processing event', event.id, 'planet:', planet_id, 'building:', building_id, 'level:', target_level);
 
+  const { data: currentBuilding } = await supabase
+    .from('planet_buildings')
+    .select('level')
+    .eq('planet_id', planet_id)
+    .eq('building_id', building_id)
+    .maybeSingle();
+
+  const currentLevel = currentBuilding?.level ?? 0;
+
+  if (currentLevel >= target_level) {
+    logger.log('[EventHandler][BuildingComplete] Building already at level', currentLevel, '>= target', target_level, '- idempotent skip');
+    if (timer_id) {
+      await supabase.from('active_timers').delete().eq('id', timer_id);
+    }
+    return;
+  }
+
+  if (currentLevel !== target_level - 1) {
+    logger.log('[EventHandler][BuildingComplete] WARNING: current level', currentLevel, 'does not match expected', target_level - 1, '- possible concurrent modification. Proceeding with caution.');
+  }
+
   if (timer_id) {
-    const { data: timerExists } = await supabase
+    const { data: timerRow } = await supabase
       .from('active_timers')
-      .select('id')
+      .select('id, target_id, target_level, timer_type')
       .eq('id', timer_id)
       .maybeSingle();
 
-    if (!timerExists) {
-      logger.log('[EventHandler][BuildingComplete] Timer already processed (idempotent skip):', timer_id);
-      return;
-    }
+    if (!timerRow) {
+      logger.log('[EventHandler][BuildingComplete] Timer not found:', timer_id, '- checking if building already upgraded');
+      if (currentLevel >= target_level) {
+        logger.log('[EventHandler][BuildingComplete] Building already at target level, timer was already processed');
+        return;
+      }
+      logger.log('[EventHandler][BuildingComplete] Timer gone but building not yet upgraded - proceeding (rush or race condition)');
+    } else {
+      if (timerRow.timer_type !== 'building' || timerRow.target_id !== building_id || timerRow.target_level !== target_level) {
+        logger.log('[EventHandler][BuildingComplete] Timer mismatch! Expected building:', building_id, 'lv', target_level, 'Got:', timerRow.timer_type, timerRow.target_id, 'lv', timerRow.target_level, '- aborting');
+        return;
+      }
 
-    const { error: delErr } = await supabase
+      const { error: delErr } = await supabase
+        .from('active_timers')
+        .delete()
+        .eq('id', timer_id);
+
+      if (delErr) {
+        logger.log('[EventHandler][BuildingComplete] Error deleting timer:', delErr.message);
+      }
+    }
+  } else {
+    const { data: matchingTimer } = await supabase
       .from('active_timers')
-      .delete()
-      .eq('id', timer_id);
+      .select('id')
+      .eq('planet_id', planet_id)
+      .eq('target_id', building_id)
+      .eq('timer_type', 'building')
+      .eq('target_level', target_level)
+      .maybeSingle();
 
-    if (delErr) {
-      logger.log('[EventHandler][BuildingComplete] Error deleting timer:', delErr.message);
+    if (matchingTimer) {
+      logger.log('[EventHandler][BuildingComplete] Found matching timer without explicit timer_id, cleaning up:', matchingTimer.id);
+      await supabase.from('active_timers').delete().eq('id', matchingTimer.id);
     }
+  }
+
+  const { data: planetExists } = await supabase
+    .from('planets')
+    .select('id')
+    .eq('id', planet_id)
+    .maybeSingle();
+
+  if (!planetExists) {
+    logger.log('[EventHandler][BuildingComplete] Planet no longer exists:', planet_id, '- aborting');
+    return;
   }
 
   const { error: upsertErr } = await supabase
