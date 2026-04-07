@@ -295,6 +295,26 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
   useEffect(() => {
     if (!isLoaded || !userId) return;
+    const updateLastSeen = async () => {
+      try {
+        await supabase
+          .from('players')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('user_id', userId);
+        console.log('[GameContext] Heartbeat: last_seen updated');
+      } catch (e) {
+        console.log('[GameContext] Heartbeat error:', e);
+      }
+    };
+    void updateLastSeen();
+    const heartbeatInterval = setInterval(() => {
+      void updateLastSeen();
+    }, 120000);
+    return () => clearInterval(heartbeatInterval);
+  }, [isLoaded, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !userId) return;
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         const currentState = stateRef.current;

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Modal, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Globe, User, CircleDot, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, ScanEye, Crosshair, Truck, Sparkles, Recycle, X, Flag, MapPin, Warehouse, Navigation } from 'lucide-react-native';
+import { Globe, User, CircleDot, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, ScanEye, Crosshair, Truck, Sparkles, Recycle, X, Flag, MapPin, Warehouse, Navigation, Zap } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +23,18 @@ interface GalaxyPlayer {
   coordinates: [number, number, number];
   is_colony?: boolean;
   alliance_tag?: string;
+  last_seen?: string;
+}
+
+type ActivityStatus = 'active' | 'semi' | 'inactive';
+
+function getActivityStatus(lastSeen?: string): { status: ActivityStatus; minutes: number } {
+  if (!lastSeen) return { status: 'inactive', minutes: 999 };
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 15) return { status: 'active', minutes };
+  if (minutes < 60) return { status: 'semi', minutes };
+  return { status: 'inactive', minutes };
 }
 
 interface DebrisField {
@@ -97,18 +109,19 @@ export default function GalaxyScreen() {
       }
 
       const userIds = [...new Set((planetsData ?? []).map(p => p.user_id as string))];
-      let playersMap = new Map<string, { username: string; email: string }>();
+      let playersMap = new Map<string, { username: string; email: string; last_seen?: string }>();
 
       if (userIds.length > 0) {
         const { data: playersData } = await supabase
           .from('players')
-          .select('user_id, username, email')
+          .select('user_id, username, email, last_seen')
           .in('user_id', userIds);
 
         for (const p of (playersData ?? [])) {
           playersMap.set(p.user_id as string, {
             username: (p.username as string) ?? '',
             email: (p.email as string) ?? '',
+            last_seen: (p.last_seen as string) ?? undefined,
           });
         }
       }
@@ -152,6 +165,7 @@ export default function GalaxyScreen() {
           coordinates: planet.coordinates as [number, number, number],
           is_colony: !(planet.is_main as boolean),
           alliance_tag: allianceTagMap.get(planet.user_id as string),
+          last_seen: playerInfo?.last_seen,
         };
       });
 
@@ -605,7 +619,7 @@ export default function GalaxyScreen() {
               {isYours ? (
                 <>
                   <User size={12} color={Colors.primary} />
-                  <Text style={styles.yourPlayer}>
+                  <Text style={styles.yourPlayer} numberOfLines={1}>
                     {playerHere?.alliance_tag ? <Text style={styles.allianceTagGold}>[{playerHere.alliance_tag}] </Text> : null}
                     {state.username ?? 'Vous'}
                   </Text>
@@ -613,16 +627,34 @@ export default function GalaxyScreen() {
               ) : myColony ? (
                 <>
                   <User size={12} color={Colors.xenogas} />
-                  <Text style={styles.colonyPlayer}>
+                  <Text style={styles.colonyPlayer} numberOfLines={1}>
                     {playerHere?.alliance_tag ? <Text style={styles.allianceTagCyan}>[{playerHere.alliance_tag}] </Text> : null}
                     {state.username ?? 'Vous'}
                   </Text>
                 </>
               ) : isOccupied && playerHere ? (
-                <Text style={styles.playerText}>
-                  {playerHere.alliance_tag ? <Text style={styles.allianceTagDefault}>[{playerHere.alliance_tag}] </Text> : null}
-                  {playerHere.username || playerHere.email.split('@')[0]}
-                </Text>
+                <>
+                  <Text style={styles.playerText} numberOfLines={1}>
+                    {playerHere.alliance_tag ? <Text style={styles.allianceTagDefault}>[{playerHere.alliance_tag}] </Text> : null}
+                    {playerHere.username || playerHere.email.split('@')[0]}
+                  </Text>
+                  {(() => {
+                    const activity = getActivityStatus(playerHere.last_seen);
+                    if (activity.status === 'active') {
+                      return (
+                        <View style={styles.activityDotActive} />
+                      );
+                    }
+                    if (activity.status === 'semi') {
+                      return (
+                        <View style={styles.activityBadgeSemi}>
+                          <Text style={styles.activityBadgeText}>{activity.minutes}</Text>
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+                </>
               ) : null}
             </View>
 
@@ -762,6 +794,23 @@ export default function GalaxyScreen() {
           <View style={styles.legendRow}>
             <View style={[styles.legendDot, { backgroundColor: Colors.textMuted }]} />
             <Text style={styles.legendText}>Emplacement libre</Text>
+          </View>
+          <View style={styles.legendActivity}>
+            <Text style={styles.legendSubTitle}>Activité</Text>
+            <View style={styles.legendActionRow}>
+              <View style={styles.legendActivityDotGreen} />
+              <Text style={styles.legendText}>Actif ({'<'}15 min)</Text>
+            </View>
+            <View style={styles.legendActionRow}>
+              <View style={styles.legendActivityBadgeOrange}>
+                <Text style={styles.legendActivityBadgeText}>30</Text>
+              </View>
+              <Text style={styles.legendText}>Semi-actif (15-60 min)</Text>
+            </View>
+            <View style={styles.legendActionRow}>
+              <View style={[styles.legendDot, { backgroundColor: Colors.textMuted }]} />
+              <Text style={styles.legendText}>Inactif ({'>'}60 min)</Text>
+            </View>
           </View>
           <View style={styles.legendActions}>
             <View style={styles.legendActionRow}>
@@ -1371,6 +1420,70 @@ const styles = StyleSheet.create({
   allianceTagDefault: {
     color: Colors.xenogas,
     fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  activityDotActive: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+    marginLeft: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.4)',
+  },
+  activityBadgeSemi: {
+    minWidth: 16,
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: 'rgba(229, 152, 46, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 152, 46, 0.4)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginLeft: 4,
+    paddingHorizontal: 2,
+  },
+  activityBadgeText: {
+    color: Colors.warning,
+    fontSize: 8,
+    fontWeight: '700' as const,
+  },
+  legendActivity: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 6,
+    marginBottom: 4,
+  },
+  legendSubTitle: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  legendActivityDotGreen: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  legendActivityBadgeOrange: {
+    minWidth: 18,
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: 'rgba(229, 152, 46, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 152, 46, 0.4)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 2,
+  },
+  legendActivityBadgeText: {
+    color: Colors.warning,
+    fontSize: 8,
     fontWeight: '700' as const,
   },
 });
