@@ -295,16 +295,30 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
   useEffect(() => {
     if (!isLoaded || !userId) return;
+    let lastResyncTime = 0;
+    let previousAppState = AppState.currentState;
+    const MIN_RESYNC_INTERVAL_MS = 120000;
+
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
+        previousAppState = nextAppState;
         const currentState = stateRef.current;
         void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(currentState));
+        return;
       }
 
-      if (nextAppState === 'active') {
+      if (nextAppState === 'active' && previousAppState !== 'active') {
+        const now = Date.now();
+        if (now - lastResyncTime < MIN_RESYNC_INTERVAL_MS) {
+          console.log('[GameContext] Foreground resync throttled (last was', Math.round((now - lastResyncTime) / 1000), 's ago)');
+          previousAppState = nextAppState;
+          return;
+        }
+        lastResyncTime = now;
         console.log('[GameContext] App returned to foreground, triggering resync');
         void resyncFromServerRef.current();
       }
+      previousAppState = nextAppState;
     });
     return () => subscription.remove();
   }, [isLoaded, userId]);
