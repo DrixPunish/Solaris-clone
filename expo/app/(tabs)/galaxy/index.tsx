@@ -22,6 +22,7 @@ interface GalaxyPlayer {
   planet_name: string;
   coordinates: [number, number, number];
   is_colony?: boolean;
+  alliance_tag?: string;
 }
 
 interface DebrisField {
@@ -112,6 +113,35 @@ export default function GalaxyScreen() {
         }
       }
 
+      let allianceTagMap = new Map<string, string>();
+      if (userIds.length > 0) {
+        const { data: memberData } = await supabase
+          .from('alliance_members')
+          .select('user_id, alliance_id')
+          .in('user_id', userIds);
+
+        const allianceIds = [...new Set((memberData ?? []).map(m => m.alliance_id as string))];
+
+        if (allianceIds.length > 0) {
+          const { data: allianceData } = await supabase
+            .from('alliances')
+            .select('id, tag')
+            .in('id', allianceIds);
+
+          const tagById = new Map<string, string>();
+          for (const a of (allianceData ?? [])) {
+            tagById.set(a.id as string, a.tag as string);
+          }
+
+          for (const m of (memberData ?? [])) {
+            const tag = tagById.get(m.alliance_id as string);
+            if (tag) {
+              allianceTagMap.set(m.user_id as string, tag);
+            }
+          }
+        }
+      }
+
       const results: GalaxyPlayer[] = (planetsData ?? []).map(planet => {
         const playerInfo = playersMap.get(planet.user_id as string);
         return {
@@ -121,6 +151,7 @@ export default function GalaxyScreen() {
           planet_name: (planet.planet_name as string) ?? 'Inconnue',
           coordinates: planet.coordinates as [number, number, number],
           is_colony: !(planet.is_main as boolean),
+          alliance_tag: allianceTagMap.get(planet.user_id as string),
         };
       });
 
@@ -574,15 +605,22 @@ export default function GalaxyScreen() {
               {isYours ? (
                 <>
                   <User size={12} color={Colors.primary} />
-                  <Text style={styles.yourPlayer}>{state.username ?? 'Vous'}</Text>
+                  <Text style={styles.yourPlayer}>
+                    {playerHere?.alliance_tag ? <Text style={styles.allianceTagGold}>[{playerHere.alliance_tag}] </Text> : null}
+                    {state.username ?? 'Vous'}
+                  </Text>
                 </>
               ) : myColony ? (
                 <>
                   <User size={12} color={Colors.xenogas} />
-                  <Text style={styles.colonyPlayer}>{state.username ?? 'Vous'}</Text>
+                  <Text style={styles.colonyPlayer}>
+                    {playerHere?.alliance_tag ? <Text style={styles.allianceTagCyan}>[{playerHere.alliance_tag}] </Text> : null}
+                    {state.username ?? 'Vous'}
+                  </Text>
                 </>
               ) : isOccupied && playerHere ? (
                 <Text style={styles.playerText}>
+                  {playerHere.alliance_tag ? <Text style={styles.allianceTagDefault}>[{playerHere.alliance_tag}] </Text> : null}
                   {playerHere.username || playerHere.email.split('@')[0]}
                 </Text>
               ) : null}
@@ -1319,5 +1357,20 @@ const styles = StyleSheet.create({
     color: Colors.xenogas,
     fontSize: 10,
     fontWeight: '600' as const,
+  },
+  allianceTagGold: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  allianceTagCyan: {
+    color: Colors.xenogas,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  allianceTagDefault: {
+    color: Colors.xenogas,
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
 });

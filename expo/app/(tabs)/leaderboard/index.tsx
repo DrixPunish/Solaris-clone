@@ -11,14 +11,25 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Stack } from 'expo-router';
-import { Trophy, Shield, Rocket, FlaskConical, Hammer, ChevronDown } from 'lucide-react-native';
+import { Trophy, Shield, Rocket, FlaskConical, Hammer, ChevronDown, Users } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import Colors from '@/constants/colors';
 import { useGame } from '@/contexts/GameContext';
 import { formatNumber } from '@/utils/gameCalculations';
 import { trpc } from '@/lib/trpc';
+import { supabase } from '@/utils/supabase';
 
 type ScoreCategory = 'total' | 'building' | 'research' | 'fleet' | 'defense';
+type LeaderboardMode = 'players' | 'alliances';
+
+interface AllianceScore {
+  id: string;
+  name: string;
+  tag: string;
+  member_count: number;
+  total_points: number;
+}
 
 interface ServerPlayerScore {
   player_id: string;
@@ -60,9 +71,64 @@ function getMedalColor(rank: number): string | null {
 export default function LeaderboardScreen() {
   const { userId } = useGame();
   const insets = useSafeAreaInsets();
+  const [mode, setMode] = useState<LeaderboardMode>('players');
   const [category, setCategory] = useState<ScoreCategory>('total');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const pickerAnim = useRef(new Animated.Value(0)).current;
+
+  const allianceLeaderboardQuery = useQuery({
+    queryKey: ['alliance_leaderboard'],
+    queryFn: async () => {
+      console.log('[Leaderboard] Fetching alliance leaderboard');
+      const { data: alliances, error } = await supabase
+        .from('alliances')
+        .select('id, name, tag, alliance_members(user_id)');
+
+      if (error || !alliances) {
+        console.log('[Leaderboard] Alliance fetch error:', error?.message);
+        return [];
+      }
+
+      const allUserIds: string[] = [];
+      for (const a of alliances) {
+        for (const m of (a.alliance_members as { user_id: string }[])) {
+          allUserIds.push(m.user_id);
+        }
+      }
+
+      if (allUserIds.length === 0) return [];
+
+      const { data: scores } = await supabase
+        .from('player_scores')
+        .select('player_id, total_points')
+        .in('player_id', allUserIds);
+
+      const scoreMap = new Map<string, number>();
+      for (const s of (scores ?? []) as { player_id: string; total_points: number }[]) {
+        scoreMap.set(s.player_id, s.total_points ?? 0);
+      }
+
+      const results: AllianceScore[] = alliances.map(a => {
+        const members = a.alliance_members as { user_id: string }[];
+        const totalPoints = members.reduce((sum, m) => sum + (scoreMap.get(m.user_id) ?? 0), 0);
+        return {
+          id: a.id as string,
+          name: a.name as string,
+          tag: a.tag as string,
+          member_count: members.length,
+          total_points: totalPoints,
+        };
+      }).sort((a, b) => b.total_points - a.total_points);
+
+      console.log('[Leaderboard] Alliance leaderboard:', results.length, 'alliances');
+      return results;
+    },
+    enabled: mode === 'alliances',
+    staleTime: 30000,
+    refetchInterval: mode === 'alliances' ? 30000 : false,
+  });
+
+  const allianceScores = useMemo(() => allianceLeaderboardQuery.data ?? [], [allianceLeaderboardQuery.data]);
 
   const leaderboardQuery = trpc.world.getLeaderboard.useQuery(
     { limit: 100 },
@@ -158,11 +224,69 @@ export default function LeaderboardScreen() {
 
   const keyExtractor = useCallback((item: ServerPlayerScore) => item.player_id, []);
 
+  const renderAllianceItem = useCallback(({ item, index }: { item: AllianceScore; index: number }) => {
+    const rank = index + 1;
+    const medal = getMedalColor(rank);
+
+    return (
+      <View style={styles.row} testID={`alliance-row-${rank}`}>
+        <View style={styles.rankContainer}>
+          {medal ? (
+            <View style={[styles.medalCircle, { backgroundColor: medal }]}>
+              <Text style={styles.medalText}>{rank}</Text>
+            </View>
+          ) : (
+            <Text style={styles.rankText}>{rank}</Text>
+          )}
+        </View>
+        <View style={styles.playerInfo}>
+          <View style={styles.allianceNameRow}>
+            <Text style={styles.allianceTag}>[{item.tag}]</Text>
+            <Text style={styles.playerName} numberOfLines={1}>{item.name}</Text>
+          </View>
+          <View style={styles.allianceMemberCount}>
+            <Users size={10} color={Colors.textMuted} />
+            <Text style={styles.allianceMemberCountText}>{item.member_count} membre{item.member_count !== 1 ? 's' : ''}</Text>
+          </View>
+        </View>
+        <View style={styles.pointsContainer}>
+          <Text style={styles.pointsText}>
+            {formatNumber(item.total_points)}
+          </Text>
+          <Text style={styles.pointsLabel}>pts</Text>
+        </View>
+      </View>
+    );
+  }, []);
+
+  const allianceKeyExtractor = useCallback((item: AllianceScore) => item.id, []);
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: 'Classement' }} />
       <View style={[styles.notchSpacer, { height: insets.top }]} />
 
+      <View style={styles.modeToggleRow}>
+        <TouchableOpacity
+          style={[styles.modeToggleBtn, mode === 'players' && styles.modeToggleBtnActive]}
+          onPress={() => setMode('players')}
+          activeOpacity={0.7}
+        >
+          <Trophy size={14} color={mode === 'players' ? Colors.energy : Colors.textMuted} />
+          <Text style={[styles.modeToggleText, mode === 'players' && styles.modeToggleTextActive]}>Joueurs</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeToggleBtn, mode === 'alliances' && styles.modeToggleBtnActive]}
+          onPress={() => setMode('alliances')}
+          activeOpacity={0.7}
+        >
+          <Shield size={14} color={mode === 'alliances' ? Colors.xenogas : Colors.textMuted} />
+          <Text style={[styles.modeToggleText, mode === 'alliances' && styles.modeToggleTextActive]}>Alliances</Text>
+        </TouchableOpacity>
+      </View>
+
+      {mode === 'players' ? (
+      <View style={{ flex: 1 }}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.categorySelector}
@@ -271,6 +395,47 @@ export default function LeaderboardScreen() {
             />
           }
         />
+      )}
+      </View>
+      ) : (
+      <View style={{ flex: 1 }}>
+        {allianceLeaderboardQuery.isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.xenogas} />
+            <Text style={styles.loadingText}>Chargement du classement alliances...</Text>
+          </View>
+        ) : allianceLeaderboardQuery.isError ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>Erreur de chargement</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => allianceLeaderboardQuery.refetch()}
+            >
+              <Text style={styles.retryText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
+        ) : allianceScores.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Shield size={48} color={Colors.textMuted} />
+            <Text style={styles.emptyText}>Aucune alliance pour le moment</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={allianceScores}
+            renderItem={renderAllianceItem}
+            keyExtractor={allianceKeyExtractor}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={allianceLeaderboardQuery.isFetching && !allianceLeaderboardQuery.isLoading}
+                onRefresh={() => allianceLeaderboardQuery.refetch()}
+                tintColor={Colors.xenogas}
+              />
+            }
+          />
+        )}
+      </View>
       )}
     </View>
   );
@@ -507,6 +672,59 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
+    color: Colors.textMuted,
+  },
+  modeToggleRow: {
+    flexDirection: 'row',
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modeToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  modeToggleBtnActive: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.primaryDim,
+  },
+  modeToggleText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.textMuted,
+  },
+  modeToggleTextActive: {
+    color: Colors.text,
+  },
+  allianceNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  allianceTag: {
+    color: Colors.xenogas,
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  allianceMemberCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  allianceMemberCountText: {
+    fontSize: 11,
     color: Colors.textMuted,
   },
 });

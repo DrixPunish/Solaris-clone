@@ -8,6 +8,7 @@ import {
   MessageCircle, Settings, Plus, Check, User, Globe,
   Search, FileText, ChevronRight, Inbox, Eye,
 } from 'lucide-react-native';
+import { useQuery as useRQQuery } from '@tanstack/react-query';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import * as Haptics from 'expo-haptics';
@@ -18,7 +19,7 @@ import { showGameAlert } from '@/components/GameAlert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 
-type SubTab = 'members' | 'chat' | 'applications' | 'settings';
+type SubTab = 'members' | 'chat' | 'applications' | 'settings' | 'browse';
 type NoAllianceTab = 'discover' | 'search' | 'invitations' | 'my_apps';
 
 function getRoleBadge(role: string) {
@@ -181,12 +182,12 @@ function NoAllianceView() {
               />
               <Text style={styles.charCount}>{createName.length}/30</Text>
 
-              <Text style={styles.inputLabel}>Tag (2-5 caractères)</Text>
+              <Text style={styles.inputLabel}>Tag (2-3 caractères)</Text>
               <TextInput
                 style={styles.modalInput}
                 value={createTag}
                 onChangeText={(t) => setCreateTag(t.toUpperCase())}
-                maxLength={5}
+                maxLength={3}
                 autoCapitalize="characters"
                 placeholder="ex: CONQ"
                 placeholderTextColor={Colors.textMuted}
@@ -616,6 +617,7 @@ function AllianceView() {
       base.push({ id: 'applications', label: 'Candidatures', Icon: FileText, badge: appCount });
     }
     base.push({ id: 'settings', label: 'Gestion', Icon: Settings, badge: 0 });
+    base.push({ id: 'browse', label: 'Alliances', Icon: Globe, badge: 0 });
     return base;
   }, [showAppsTab, appCount, unreadChat]);
 
@@ -664,6 +666,7 @@ function AllianceView() {
       {activeTab === 'chat' && <ChatTab />}
       {activeTab === 'applications' && <ApplicationsManagementTab />}
       {activeTab === 'settings' && <SettingsTab />}
+      {activeTab === 'browse' && <BrowseAlliancesTab />}
     </View>
   );
 }
@@ -1207,6 +1210,203 @@ function ChatTab() {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+function BrowseAlliancesTab() {
+  const alliance = useAlliance();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAlliance, setSelectedAlliance] = useState<AllianceSummary | null>(null);
+  const [selectedMembers, setSelectedMembers] = useState<AllianceMember[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+
+  const allAlliancesQuery = useRQQuery({
+    queryKey: ['browse_all_alliances'],
+    queryFn: async () => {
+      console.log('[Alliance Browse] Loading all alliances');
+      const { data, error } = await supabase
+        .from('alliances')
+        .select('*, alliance_members(count)')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) {
+        console.log('[Alliance Browse] Error:', error.message);
+        return [];
+      }
+      return (data ?? []).map((a: Record<string, unknown>) => ({
+        ...a,
+        member_count: Array.isArray(a.alliance_members) && a.alliance_members.length > 0
+          ? (a.alliance_members[0] as { count: number }).count
+          : 0,
+      })) as AllianceSummary[];
+    },
+    staleTime: 30000,
+  });
+
+  const allAlliances = useMemo(() => allAlliancesQuery.data ?? [], [allAlliancesQuery.data]);
+
+  const filtered = useMemo(() => {
+    const base = allAlliances.filter(a => a.id !== alliance.myAlliance?.id);
+    if (!searchQuery.trim()) return base;
+    const q = searchQuery.toLowerCase();
+    return base.filter(a => a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q));
+  }, [allAlliances, searchQuery, alliance.myAlliance?.id]);
+
+  const viewMembers = useCallback(async (a: AllianceSummary) => {
+    setSelectedAlliance(a);
+    setIsLoadingMembers(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const { data } = await supabase
+        .from('alliance_members')
+        .select('*')
+        .eq('alliance_id', a.id)
+        .order('role', { ascending: true })
+        .order('joined_at', { ascending: true });
+      setSelectedMembers((data ?? []) as AllianceMember[]);
+    } catch (err) {
+      console.log('[Alliance Browse] Members error:', err);
+      setSelectedMembers([]);
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setSelectedAlliance(null);
+    setSelectedMembers([]);
+  }, []);
+
+  return (
+    <>
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputWrap}>
+          <Search size={16} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Rechercher une alliance..."
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            selectionColor={Colors.primary}
+          />
+        </View>
+      </View>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={allAlliancesQuery.isFetching && !allAlliancesQuery.isLoading}
+            onRefresh={() => allAlliancesQuery.refetch()}
+            tintColor={Colors.primary}
+          />
+        }
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.allianceListCard}
+            onPress={() => viewMembers(item)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.allianceListCardTop}>
+              <View style={styles.allianceListTagWrap}>
+                <Text style={styles.allianceListTag}>[{item.tag}]</Text>
+              </View>
+              <View style={styles.allianceListCardInfo}>
+                <Text style={styles.allianceListName} numberOfLines={1}>{item.name}</Text>
+                <View style={styles.allianceListMeta}>
+                  <Users size={11} color={Colors.textMuted} />
+                  <Text style={styles.allianceListMetaText}>{item.member_count} membre{item.member_count !== 1 ? 's' : ''}</Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={Colors.textMuted} />
+            </View>
+            {item.description ? (
+              <Text style={styles.allianceListDesc} numberOfLines={2}>{item.description}</Text>
+            ) : null}
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          allAlliancesQuery.isLoading ? (
+            <View style={styles.tabCentered}>
+              <ActivityIndicator size="small" color={Colors.xenogas} />
+              <Text style={styles.loadingText}>Chargement...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Globe size={36} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>Aucune autre alliance</Text>
+              <Text style={styles.emptySubtitle}>Vous êtes la seule alliance !</Text>
+            </View>
+          )
+        }
+      />
+
+      <Modal visible={!!selectedAlliance} transparent animationType="fade" onRequestClose={closeModal}>
+        <Pressable style={styles.modalOverlay} onPress={closeModal}>
+          <Pressable style={[styles.modalContent, styles.browseModalContent]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle} numberOfLines={1}>
+                  [{selectedAlliance?.tag}] {selectedAlliance?.name}
+                </Text>
+              </View>
+              <Pressable onPress={closeModal} hitSlop={8}>
+                <X size={20} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+
+            {selectedAlliance?.description ? (
+              <Text style={styles.browseAllianceDesc}>{selectedAlliance.description}</Text>
+            ) : null}
+
+            <View style={styles.browseAllianceStats}>
+              <Users size={14} color={Colors.textMuted} />
+              <Text style={styles.browseAllianceStatsText}>
+                {selectedAlliance?.member_count} membre{(selectedAlliance?.member_count ?? 0) !== 1 ? 's' : ''}
+              </Text>
+            </View>
+
+            <Text style={styles.browseMembersTitle}>Membres</Text>
+
+            {isLoadingMembers ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' as const }}>
+                <ActivityIndicator size="small" color={Colors.xenogas} />
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                {selectedMembers.map((member) => {
+                  const badge = getRoleBadge(member.role);
+                  const BadgeIcon = badge.icon;
+                  return (
+                    <View key={member.id} style={styles.memberRow}>
+                      <View style={[styles.memberBadge, { backgroundColor: badge.color + '15', borderWidth: 1, borderColor: badge.color + '30' }]}>
+                        <BadgeIcon size={16} color={badge.color} />
+                      </View>
+                      <View style={styles.memberInfo}>
+                        <Text style={styles.memberName}>{member.username}</Text>
+                        <View style={[styles.roleBanner, { backgroundColor: badge.color + '12', borderColor: badge.color + '25' }]}>
+                          <BadgeIcon size={10} color={badge.color} />
+                          <Text style={[styles.roleBannerText, { color: badge.color }]}>{badge.label}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+                {selectedMembers.length === 0 && !isLoadingMembers && (
+                  <Text style={styles.browseNoMembers}>Aucun membre trouvé</Text>
+                )}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -2327,5 +2527,44 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 2,
     lineHeight: 15,
+  },
+  browseModalContent: {
+    maxHeight: '80%' as unknown as number,
+  },
+  browseAllianceDesc: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  browseAllianceStats: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginBottom: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.card,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  browseAllianceStatsText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
+  browseMembersTitle: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  browseNoMembers: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center' as const,
+    paddingVertical: 20,
   },
 });
