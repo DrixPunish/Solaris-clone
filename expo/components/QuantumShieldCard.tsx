@@ -116,6 +116,10 @@ export default function QuantumShieldCard() {
           <Clock size={14} color={Colors.textMuted} />
           <Text style={qStyles.ruleText}>Cooldown de 24h après expiration</Text>
         </View>
+        <View style={qStyles.ruleRow}>
+          <AlertTriangle size={14} color={Colors.danger} />
+          <Text style={qStyles.ruleText}>Activer le bouclier après une attaque en cours ne protège pas de celle-ci</Text>
+        </View>
       </View>
 
       {isActive && (

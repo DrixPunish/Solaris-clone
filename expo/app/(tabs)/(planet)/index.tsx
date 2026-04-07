@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,13 +21,14 @@ import { TutorialReopenButton } from '@/components/TutorialWidget';
 import QuantumShieldCard from '@/components/QuantumShieldCard';
 
 const LAST_USERNAME_CHANGE_KEY = 'solaris_last_username_change';
+const LAST_REPORTS_VISIT_KEY = 'solaris_last_reports_visit';
 
 export default function PlanetScreen() {
   const { state, activePlanet, activeRenamePlanet, setUsername, userEmail, setActivePlanetId, refreshResources, isRefreshing } = useGame();
   const router = useRouter();
   const { user } = useAuth();
   const { signOut } = useAuth();
-  const { activeMissions } = useFleet();
+  const { activeMissions, espionageReports, combatReports, transportReports } = useFleet();
   const { userId } = useGame();
   const fleetCount = activeMissions.filter(m => {
     if (m.sender_id === userId) return true;
@@ -51,6 +52,28 @@ export default function PlanetScreen() {
     refetchInterval: 15000,
   });
   const unreadCount = unreadQuery.data ?? 0;
+
+  const [lastReportsVisit, setLastReportsVisit] = useState<number>(0);
+
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_REPORTS_VISIT_KEY).then(raw => {
+      if (raw) setLastReportsVisit(parseInt(raw, 10) || 0);
+    });
+  }, []);
+
+  const unreadReportsCount = useMemo(() => {
+    if (lastReportsVisit === 0) return espionageReports.length + combatReports.length + transportReports.length;
+    const countNew = (items: { created_at: string }[]) =>
+      items.filter(r => new Date(r.created_at).getTime() > lastReportsVisit).length;
+    return countNew(espionageReports) + countNew(combatReports) + countNew(transportReports);
+  }, [espionageReports, combatReports, transportReports, lastReportsVisit]);
+
+  const handleOpenReports = useCallback(() => {
+    const now = Date.now();
+    setLastReportsVisit(now);
+    AsyncStorage.setItem(LAST_REPORTS_VISIT_KEY, String(now));
+    router.push('/reports');
+  }, [router]);
 
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [newPlanetName, setNewPlanetName] = useState('');
@@ -265,15 +288,22 @@ export default function PlanetScreen() {
 
         <TouchableOpacity
           style={styles.reportsCard}
-          onPress={() => router.push('/reports')}
+          onPress={handleOpenReports}
           activeOpacity={0.7}
         >
           <View style={styles.reportsIconWrap}>
             <FileText size={20} color={Colors.silice} />
+            {unreadReportsCount > 0 && (
+              <View style={styles.reportsBadge}>
+                <Text style={styles.reportsBadgeText}>{unreadReportsCount > 99 ? '99+' : unreadReportsCount}</Text>
+              </View>
+            )}
           </View>
           <View style={styles.messagesTextWrap}>
             <Text style={styles.messagesTitle}>Rapports</Text>
-            <Text style={styles.messagesDesc}>Espionnage, Combat & Transport</Text>
+            <Text style={styles.messagesDesc}>
+              {unreadReportsCount > 0 ? `${unreadReportsCount} non lu${unreadReportsCount > 1 ? 's' : ''}` : 'Espionnage, Combat & Transport'}
+            </Text>
           </View>
           <ChevronRight size={18} color={Colors.textMuted} />
         </TouchableOpacity>
@@ -846,6 +876,24 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.silice + '12',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  reportsBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  reportsBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700' as const,
+    lineHeight: 12,
   },
   modalOverlay: {
     flex: 1,
