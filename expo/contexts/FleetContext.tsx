@@ -81,16 +81,20 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
 
   const activeMissions = useMemo(() => missionsQuery.data ?? [], [missionsQuery.data]);
 
+  const activePlanetRef = useRef(gamActivePlanet);
+  activePlanetRef.current = gamActivePlanet;
+
   const sendFleetMutation = useMutation({
     mutationFn: async (params: FleetDispatchParams) => {
       if (!userId) throw new Error('Not authenticated');
-      const planetId = activePlanet.id;
+      const currentPlanet = activePlanetRef.current;
+      const planetId = currentPlanet.id;
       if (!planetId) throw new Error('Planet ID not available');
 
-      console.log('[FleetContext] Sending fleet', params.missionType, 'to', params.targetCoords);
+      console.log('[FleetContext] Sending fleet', params.missionType, 'to', params.targetCoords, 'from planet', planetId);
 
-      const senderCoords = activePlanet.coordinates;
-      const senderPlanet = activePlanet.planetName;
+      const senderCoords = currentPlanet.coordinates;
+      const senderPlanet = currentPlanet.planetName;
 
       const result = await trpcClient.actions.sendFleet.mutate({
         planetId,
