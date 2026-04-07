@@ -98,6 +98,7 @@ export const [AllianceProvider, useAlliance] = createContextHook(() => {
     },
     enabled: !!allianceId,
     staleTime: 5000,
+    refetchInterval: 8000,
   });
 
   const invitationsQuery = useQuery({

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
-import { Mail, Rocket, X, Hammer, AlertTriangle } from 'lucide-react-native';
+import { Mail, Rocket, X, Hammer, AlertTriangle, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -10,10 +10,11 @@ import { useGame } from '@/contexts/GameContext';
 import { BUILDINGS, RESEARCH } from '@/constants/gameData';
 import { UpgradeTimer } from '@/types/game';
 import Colors from '@/constants/colors';
+import { useAlliance } from '@/contexts/AllianceContext';
 
 interface ToastItem {
   id: string;
-  type: 'message' | 'fleet' | 'construction' | 'error';
+  type: 'message' | 'fleet' | 'construction' | 'error' | 'alliance';
   title: string;
   body: string;
 }
@@ -21,6 +22,7 @@ interface ToastItem {
 export default function NotificationToast() {
   const { user, isAuthenticated } = useAuth();
   const { state, actionError, clearActionError } = useGame();
+  const { unreadMessageCount: allianceUnreadCount } = useAlliance();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -28,6 +30,7 @@ export default function NotificationToast() {
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const lastUnreadCountRef = useRef<number | null>(null);
   const lastIncomingFleetCountRef = useRef<number | null>(null);
+  const lastAllianceUnreadRef = useRef<number | null>(null);
   const prevTimersRef = useRef<UpgradeTimer[]>([]);
   const isFirstTimerRender = useRef(true);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,6 +113,24 @@ export default function NotificationToast() {
   }, [unreadQuery.data, showToast]);
 
   useEffect(() => {
+    const count = allianceUnreadCount;
+    if (lastAllianceUnreadRef.current === null) {
+      lastAllianceUnreadRef.current = count;
+      return;
+    }
+    if (count > lastAllianceUnreadRef.current) {
+      const diff = count - lastAllianceUnreadRef.current;
+      showToast({
+        id: `alliance-msg-${Date.now()}`,
+        type: 'alliance',
+        title: 'Message d\'alliance',
+        body: `${diff} nouveau${diff > 1 ? 'x' : ''} message${diff > 1 ? 's' : ''} dans le chat alliance`,
+      });
+    }
+    lastAllianceUnreadRef.current = count;
+  }, [allianceUnreadCount, showToast]);
+
+  useEffect(() => {
     const count = incomingFleetQuery.data ?? 0;
     if (lastIncomingFleetCountRef.current === null) {
       lastIncomingFleetCountRef.current = count;
@@ -180,6 +201,8 @@ export default function NotificationToast() {
       router.push('/messages');
     } else if (current.type === 'fleet') {
       router.push('/fleet-overview');
+    } else if (current.type === 'alliance') {
+      router.push('/(tabs)/alliance');
     }
   }, [toasts, router, dismissToast]);
 
@@ -193,6 +216,7 @@ export default function NotificationToast() {
       case 'fleet': return styles.toastFleet;
       case 'construction': return styles.toastConstruction;
       case 'error': return styles.toastError;
+      case 'alliance': return styles.toastAlliance;
       default: return styles.toastMessage;
     }
   };
@@ -203,6 +227,7 @@ export default function NotificationToast() {
       case 'fleet': return styles.iconFleet;
       case 'construction': return styles.iconConstruction;
       case 'error': return styles.iconError;
+      case 'alliance': return styles.iconAlliance;
       default: return styles.iconMessage;
     }
   };
@@ -213,6 +238,7 @@ export default function NotificationToast() {
       case 'fleet': return <Rocket size={16} color={Colors.danger} />;
       case 'construction': return <Hammer size={16} color={Colors.success} />;
       case 'error': return <AlertTriangle size={16} color="#FF6B35" />;
+      case 'alliance': return <Shield size={16} color="#4FC3F7" />;
       default: return <Mail size={16} color={Colors.primary} />;
     }
   };
@@ -288,6 +314,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FF6B35' + '30',
   },
+  toastAlliance: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: '#4FC3F7' + '30',
+  },
   iconWrap: {
     width: 32,
     height: 32,
@@ -306,6 +337,9 @@ const styles = StyleSheet.create({
   },
   iconError: {
     backgroundColor: '#FF6B35' + '15',
+  },
+  iconAlliance: {
+    backgroundColor: '#4FC3F7' + '15',
   },
   textWrap: {
     flex: 1,
