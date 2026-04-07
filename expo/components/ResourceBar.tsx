@@ -148,7 +148,7 @@ export default function ResourceBar() {
 
   const shieldQuery = trpc.world.getQuantumShieldStatus.useQuery(
     undefined,
-    { enabled: !!userId, refetchInterval: 60000, staleTime: 30000 },
+    { enabled: !!userId, refetchInterval: 45000, staleTime: 30000 },
   );
   const shieldActive = shieldQuery.data?.shield_active === true && (shieldQuery.data?.remaining_seconds ?? 0) > 0;
   const shieldRemaining = shieldQuery.data?.remaining_seconds ?? 0;
