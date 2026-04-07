@@ -373,6 +373,13 @@ export default function SendFleetScreen() {
         showGameAlert('Pas de Barge Coloniale', 'Vous devez posséder au moins une Barge Coloniale pour lancer une mission de colonisation.');
         return;
       }
+      const astroLevel = state.research.astrophysics ?? 0;
+      const maxColonies = Math.floor((astroLevel + 1) / 2);
+      const currentColonies = (state.colonies ?? []).length;
+      if (currentColonies >= maxColonies) {
+        showGameAlert('Colonies maximum', `Vous avez atteint la limite de ${maxColonies} colonie(s). Augmentez votre niveau de Xéno-Cartographie pour débloquer plus d'emplacements.`);
+        return;
+      }
     }
 
     if (showResourceInputs) {
@@ -490,7 +497,7 @@ export default function SendFleetScreen() {
       console.log('[SendFleet] Error sending fleet:', msg, e);
       showGameAlert('Erreur d\'envoi', `${msg}\n\nVos vaisseaux n'ont pas été retirés. Vous pouvez réessayer.`);
     }
-  }, [hasShips, isConfirming, sendCooldown, fleetForCalc, targetCoords, params, missionType, transportResources, sendFleet, travelTime, router, serverFlightData, isLoadingFlight, insufficientFuel, totalXenogasNeeded, fuelCost, cargoXenogas, availableXenogas, showResourceInputs, speedPercent, fleetLimitReached, fleetLimit, startCooldown, fetchServerResources, cargoCapacity]);
+  }, [hasShips, isConfirming, sendCooldown, fleetForCalc, targetCoords, params, missionType, transportResources, sendFleet, travelTime, router, serverFlightData, isLoadingFlight, insufficientFuel, totalXenogasNeeded, fuelCost, cargoXenogas, availableXenogas, showResourceInputs, speedPercent, fleetLimitReached, fleetLimit, startCooldown, fetchServerResources, cargoCapacity, state.colonies, state.research.astrophysics]);
 
   return (
     <View style={styles.container}>

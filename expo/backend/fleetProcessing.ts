@@ -546,7 +546,7 @@ export async function processColonizeMission(mission: FleetMission): Promise<voi
 
   const senderResearch = await loadResearchFromDB(senderId);
   const astroLevel = senderResearch.astrophysics ?? 0;
-  const maxColonies = 1 + Math.floor(astroLevel / 2);
+  const maxColonies = Math.floor((astroLevel + 1) / 2);
   const currentColonies = playerColonies?.length ?? 0;
 
   if (currentColonies >= maxColonies) {
