@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Wallet, Shield, Rocket, FlaskConical, Building2, Gem, Pencil, X, Check, Mail, ChevronRight, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin } from 'lucide-react-native';
+import { Wallet, Shield, Rocket, FlaskConical, Building2, Gem, Pencil, X, Check, Mail, ChevronRight, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin, Bell, BellOff, Swords, Hammer } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { showGameAlert } from '@/components/GameAlert';
 import { TutorialReopenButton } from '@/components/TutorialWidget';
 import QuantumShieldCard from '@/components/QuantumShieldCard';
+import { useNotificationSettings } from '@/contexts/NotificationSettingsContext';
 
 const LAST_USERNAME_CHANGE_KEY = 'solaris_last_username_change';
 const LAST_REPORTS_VISIT_KEY = 'solaris_last_reports_visit';
@@ -81,6 +82,8 @@ export default function PlanetScreen() {
   const [newUsername, setNewUsername] = useState(state.username ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const { settings: notifSettings, updateSetting } = useNotificationSettings();
 
   const openRenameModal = useCallback(() => {
     setNewPlanetName(activePlanet.planetName);
@@ -485,6 +488,60 @@ export default function PlanetScreen() {
         </View>
 
         <Text style={styles.usernameHint}>Le pseudo peut être changé une fois par jour.</Text>
+
+        <TouchableOpacity
+          style={styles.notifSettingsBtn}
+          onPress={() => setShowNotifSettings(!showNotifSettings)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.notifSettingsBtnLeft}>
+            <View style={[styles.settingsIconWrap, { backgroundColor: Colors.warning + '12' }]}>
+              <Bell size={18} color={Colors.warning} />
+            </View>
+            <Text style={styles.notifSettingsBtnLabel}>Notifications</Text>
+          </View>
+          <ChevronRight size={16} color={Colors.textMuted} style={showNotifSettings ? { transform: [{ rotate: '90deg' }] } : undefined} />
+        </TouchableOpacity>
+
+        {showNotifSettings && (
+          <View style={styles.notifCard}>
+            <TouchableOpacity
+              style={styles.notifRow}
+              onPress={() => updateSetting('buildPopups', !notifSettings.buildPopups)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.buildPopups ? Colors.success + '15' : Colors.textMuted + '10' }]}>
+                <Hammer size={15} color={notifSettings.buildPopups ? Colors.success : Colors.textMuted} />
+              </View>
+              <View style={styles.notifTextWrap}>
+                <Text style={styles.notifTitle}>Pop-ups de fin de construction</Text>
+                <Text style={styles.notifDesc}>Bâtiments, recherches, vaisseaux, défenses</Text>
+              </View>
+              <View style={[styles.notifToggle, notifSettings.buildPopups ? styles.notifToggleOn : styles.notifToggleOff]}>
+                <View style={[styles.notifToggleThumb, notifSettings.buildPopups ? styles.notifThumbOn : styles.notifThumbOff]} />
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.notifDivider} />
+
+            <TouchableOpacity
+              style={styles.notifRow}
+              onPress={() => updateSetting('attackBanner', !notifSettings.attackBanner)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.attackBanner ? Colors.danger + '15' : Colors.textMuted + '10' }]}>
+                <Swords size={15} color={notifSettings.attackBanner ? Colors.danger : Colors.textMuted} />
+              </View>
+              <View style={styles.notifTextWrap}>
+                <Text style={styles.notifTitle}>Bandeau d{"'"}attaque</Text>
+                <Text style={styles.notifDesc}>Alerte sous la barre de ressources</Text>
+              </View>
+              <View style={[styles.notifToggle, notifSettings.attackBanner ? styles.notifToggleOn : styles.notifToggleOff]}>
+                <View style={[styles.notifToggleThumb, notifSettings.attackBanner ? styles.notifThumbOn : styles.notifThumbOff]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <TouchableOpacity
           style={styles.friendsCard}
@@ -1153,5 +1210,92 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 14,
     fontWeight: '600' as const,
+  },
+  notifSettingsBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  notifSettingsBtnLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+  },
+  notifSettingsBtnLabel: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  notifCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden' as const,
+    marginBottom: 12,
+  },
+  notifRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  notifIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  notifTextWrap: {
+    flex: 1,
+  },
+  notifTitle: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  notifDesc: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  notifDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginLeft: 58,
+  },
+  notifToggle: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 2,
+  },
+  notifToggleOn: {
+    backgroundColor: Colors.success + '40',
+  },
+  notifToggleOff: {
+    backgroundColor: Colors.textMuted + '25',
+  },
+  notifToggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  notifThumbOn: {
+    backgroundColor: Colors.success,
+    alignSelf: 'flex-end' as const,
+  },
+  notifThumbOff: {
+    backgroundColor: Colors.textMuted,
+    alignSelf: 'flex-start' as const,
   },
 });

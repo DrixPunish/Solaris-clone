@@ -2,9 +2,10 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { View, Text, StyleSheet, Platform, Pressable, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ShieldCheck } from 'lucide-react-native';
+import { ShieldCheck, Swords, MapPin } from 'lucide-react-native';
 import { useGame } from '@/contexts/GameContext';
 import { useFleet } from '@/contexts/FleetContext';
+import { useNotificationSettings } from '@/contexts/NotificationSettingsContext';
 import { trpc } from '@/lib/trpc';
 import { formatNumber, calculateEnergyProduced, calculateEnergyConsumption, getResourceStorageCapacity } from '@/utils/gameCalculations';
 import Colors from '@/constants/colors';
@@ -59,20 +60,38 @@ const ResourceItem = React.memo(function ResourceItem({ label, color, value, rat
   );
 });
 
-function IncomingAttackBanner({ missions }: { missions: { arrival_time: number; sender_username: string | null }[] }) {
-  const flashAnim = useRef(new Animated.Value(1)).current;
+interface GlobalAttack {
+  arrival_time: number;
+  sender_username: string | null;
+  target_coords: [number, number, number];
+  target_planet: string | null;
+}
+
+function formatCoords(c: [number, number, number]): string {
+  return `[${c[0]}:${c[1]}:${c[2]}]`;
+}
+
+function IncomingAttackBanner({ missions }: { missions: GlobalAttack[] }) {
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const scanAnim = useRef(new Animated.Value(0)).current;
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    const anim = Animated.loop(
+    const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(flashAnim, { toValue: 0.3, duration: 600, useNativeDriver: true }),
-        Animated.timing(flashAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
       ])
     );
-    anim.start();
-    return () => anim.stop();
-  }, [flashAnim]);
+    pulse.start();
+
+    const scan = Animated.loop(
+      Animated.timing(scanAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+    );
+    scan.start();
+
+    return () => { pulse.stop(); scan.stop(); };
+  }, [pulseAnim, scanAnim]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -89,18 +108,59 @@ function IncomingAttackBanner({ missions }: { missions: { arrival_time: number; 
     ? `${hours}h ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`
     : `${mins}m ${String(secs).padStart(2, '0')}s`;
 
+  const borderOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.9],
+  });
+
+  const scanTranslate = scanAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-200, 400],
+  });
+
+  const planetLabel = nearest.target_planet
+    ? nearest.target_planet
+    : formatCoords(nearest.target_coords);
+
   return (
-    <Animated.View style={[attackStyles.banner, { opacity: flashAnim }]}>
-      <Text style={attackStyles.icon}>🚨</Text>
-      <View style={attackStyles.textWrap}>
-        <Text style={attackStyles.title}>
-          ATTAQUE{missions.length > 1 ? ` (${missions.length})` : ''}
-        </Text>
-        <Text style={attackStyles.countdown}>
-          {nearest.sender_username ? `${nearest.sender_username} — ` : ''}{timeStr}
-        </Text>
-      </View>
-    </Animated.View>
+    <View style={attackStyles.outerWrap}>
+      <Animated.View style={[attackStyles.borderGlow, { opacity: borderOpacity }]} />
+      <LinearGradient
+        colors={['#1A0A00', '#2A0C08', '#1A0A00']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={attackStyles.banner}
+      >
+        <Animated.View
+          style={[
+            attackStyles.scanLine,
+            { transform: [{ translateX: scanTranslate }] },
+          ]}
+        />
+        <View style={attackStyles.iconWrap}>
+          <Swords size={14} color="#D4A847" />
+        </View>
+        <View style={attackStyles.textWrap}>
+          <View style={attackStyles.titleRow}>
+            <Text style={attackStyles.title}>
+              ALERTE MENACE{missions.length > 1 ? ` \u00D7${missions.length}` : ''}
+            </Text>
+          </View>
+          <View style={attackStyles.detailRow}>
+            <MapPin size={9} color="#C9872A" />
+            <Text style={attackStyles.planetText}>{planetLabel}</Text>
+            <Text style={attackStyles.separator}>{'\u2022'}</Text>
+            {nearest.sender_username && (
+              <>
+                <Text style={attackStyles.senderText}>{nearest.sender_username}</Text>
+                <Text style={attackStyles.separator}>{'\u2022'}</Text>
+              </>
+            )}
+            <Text style={attackStyles.countdown}>{timeStr}</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
   );
 }
 
@@ -153,21 +213,39 @@ export default function ResourceBar() {
   const shieldActive = shieldQuery.data?.shield_active === true && (shieldQuery.data?.remaining_seconds ?? 0) > 0;
   const shieldRemaining = shieldQuery.data?.remaining_seconds ?? 0;
 
-  const incomingAttacks = useMemo(() => {
-    const coords = activePlanet.coordinates;
-    if (!coords || !userId) return [];
+  const { settings: notifSettings } = useNotificationSettings();
+
+  const allPlayerCoords = useMemo(() => {
+    const coordsList: [number, number, number][] = [];
+    if (state.coordinates) coordsList.push(state.coordinates);
+    for (const colony of (state.colonies ?? [])) {
+      if (colony.coordinates) coordsList.push(colony.coordinates);
+    }
+    return coordsList;
+  }, [state.coordinates, state.colonies]);
+
+  const incomingAttacks = useMemo((): GlobalAttack[] => {
+    if (!userId) return [];
     return activeMissions
       .filter(m =>
         m.mission_type === 'attack' &&
         m.mission_phase === 'en_route' &&
         m.sender_id !== userId &&
         m.target_coords &&
-        m.target_coords[0] === coords[0] &&
-        m.target_coords[1] === coords[1] &&
-        m.target_coords[2] === coords[2]
+        allPlayerCoords.some(c =>
+          c[0] === m.target_coords[0] &&
+          c[1] === m.target_coords[1] &&
+          c[2] === m.target_coords[2]
+        )
       )
+      .map(m => ({
+        arrival_time: m.arrival_time,
+        sender_username: m.sender_username ?? m.sender_id,
+        target_coords: m.target_coords,
+        target_planet: m.target_planet,
+      }))
       .sort((a, b) => a.arrival_time - b.arrival_time);
-  }, [activeMissions, activePlanet.coordinates, userId]);
+  }, [activeMissions, allPlayerCoords, userId]);
 
   const energyProduced = calculateEnergyProduced(activePlanet.buildings, state.research, activePlanet.ships, activeProductionPercentages);
   const energyConsumed = calculateEnergyConsumption(activePlanet.buildings, activeProductionPercentages);
@@ -208,7 +286,7 @@ export default function ResourceBar() {
       {shieldActive && (
         <ShieldBanner remaining={shieldRemaining} />
       )}
-      {incomingAttacks.length > 0 && (
+      {incomingAttacks.length > 0 && notifSettings.attackBanner && (
         <IncomingAttackBanner missions={incomingAttacks} />
       )}
       <ProductionModal visible={modalVisible} onClose={closeModal} />
@@ -243,34 +321,86 @@ const shieldStyles = StyleSheet.create({
 });
 
 const attackStyles = StyleSheet.create({
+  outerWrap: {
+    position: 'relative' as const,
+    overflow: 'hidden' as const,
+  },
+  borderGlow: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: '#D4A847',
+  },
   banner: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    backgroundColor: '#7F1D1D',
     paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#991B1B',
+    borderBottomColor: 'rgba(139, 37, 37, 0.5)',
+    overflow: 'hidden' as const,
   },
-  icon: {
-    fontSize: 16,
+  scanLine: {
+    position: 'absolute' as const,
+    top: 0,
+    bottom: 0,
+    width: 60,
+    opacity: 0.06,
+    backgroundColor: '#D4A847',
+  },
+  iconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: 'rgba(212, 168, 71, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(212, 168, 71, 0.25)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   textWrap: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
   title: {
-    color: '#FCA5A5',
-    fontSize: 11,
+    color: '#D4A847',
+    fontSize: 10,
     fontWeight: '800' as const,
-    letterSpacing: 1.5,
+    letterSpacing: 1.8,
     textTransform: 'uppercase' as const,
   },
-  countdown: {
-    color: '#FECACA',
-    fontSize: 12,
+  detailRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    marginTop: 2,
+  },
+  planetText: {
+    color: '#E8C47A',
+    fontSize: 11,
     fontWeight: '600' as const,
-    marginTop: 1,
+  },
+  separator: {
+    color: '#5C3A1A',
+    fontSize: 8,
+  },
+  senderText: {
+    color: '#C9872A',
+    fontSize: 11,
+    fontWeight: '500' as const,
+  },
+  countdown: {
+    color: '#C23B3B',
+    fontSize: 11,
+    fontWeight: '700' as const,
+    fontVariant: ['tabular-nums'] as const,
   },
 });
 

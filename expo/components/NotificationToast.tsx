@@ -11,6 +11,7 @@ import { BUILDINGS, RESEARCH } from '@/constants/gameData';
 import { UpgradeTimer } from '@/types/game';
 import Colors from '@/constants/colors';
 import { useAlliance } from '@/contexts/AllianceContext';
+import { useNotificationSettings } from '@/contexts/NotificationSettingsContext';
 
 interface ToastItem {
   id: string;
@@ -23,6 +24,7 @@ export default function NotificationToast() {
   const { user, isAuthenticated } = useAuth();
   const { state, actionError, clearActionError } = useGame();
   const { unreadMessageCount: allianceUnreadCount } = useAlliance();
+  const { settings: notifSettings } = useNotificationSettings();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -170,28 +172,30 @@ export default function NotificationToast() {
     const currentIds = new Set(state.activeTimers.map(t => `${t.type}_${t.id}`));
     const now = Date.now();
 
-    for (const prevTimer of prevTimersRef.current) {
-      const key = `${prevTimer.type}_${prevTimer.id}`;
-      if (!currentIds.has(key) && prevTimer.endTime <= now + 2000) {
-        const itemName = prevTimer.type === 'building'
-          ? BUILDINGS.find(b => b.id === prevTimer.id)?.name
-          : RESEARCH.find(r => r.id === prevTimer.id)?.name;
+    if (notifSettings.buildPopups) {
+      for (const prevTimer of prevTimersRef.current) {
+        const key = `${prevTimer.type}_${prevTimer.id}`;
+        if (!currentIds.has(key) && prevTimer.endTime <= now + 2000) {
+          const itemName = prevTimer.type === 'building'
+            ? BUILDINGS.find(b => b.id === prevTimer.id)?.name
+            : RESEARCH.find(r => r.id === prevTimer.id)?.name;
 
-        if (itemName) {
-          const label = prevTimer.type === 'building' ? 'Construction' : 'Recherche';
-          showToast({
-            id: `build-${prevTimer.id}-${Date.now()}`,
-            type: 'construction',
-            title: `${label} terminée`,
-            body: `${itemName} niveau ${prevTimer.targetLevel}`,
-          });
-          console.log('[NotificationToast] Construction completed:', itemName, 'level', prevTimer.targetLevel);
+          if (itemName) {
+            const label = prevTimer.type === 'building' ? 'Construction' : 'Recherche';
+            showToast({
+              id: `build-${prevTimer.id}-${Date.now()}`,
+              type: 'construction',
+              title: `${label} terminée`,
+              body: `${itemName} niveau ${prevTimer.targetLevel}`,
+            });
+            console.log('[NotificationToast] Construction completed:', itemName, 'level', prevTimer.targetLevel);
+          }
         }
       }
     }
 
     prevTimersRef.current = [...state.activeTimers];
-  }, [state.activeTimers, showToast]);
+  }, [state.activeTimers, showToast, notifSettings.buildPopups]);
 
   const handlePress = useCallback(() => {
     dismissToast();

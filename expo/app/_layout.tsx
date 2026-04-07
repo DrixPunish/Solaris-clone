@@ -15,6 +15,7 @@ import TutorialWidget from "@/components/TutorialWidget";
 import Colors from "@/constants/colors";
 import NotificationToast from "@/components/NotificationToast";
 import GameAlertProvider from "@/components/GameAlert";
+import { NotificationSettingsProvider } from "@/contexts/NotificationSettingsContext";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -114,6 +115,7 @@ export default function RootLayout() {
           <GameProvider>
             <FleetProvider>
               <AllianceProvider>
+                <NotificationSettingsProvider>
                 <TutorialProvider>
                   <StatusBar style="light" />
                   <GameAlertProvider>
@@ -124,6 +126,7 @@ export default function RootLayout() {
                     </AuthGate>
                   </GameAlertProvider>
                 </TutorialProvider>
+                </NotificationSettingsProvider>
               </AllianceProvider>
             </FleetProvider>
           </GameProvider>
