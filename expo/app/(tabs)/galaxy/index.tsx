@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Modal, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Modal, Animated, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Globe, User, CircleDot, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, ScanEye, Crosshair, Truck, Sparkles, Recycle, X, Flag, MapPin, Warehouse, Navigation, Zap } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { usePlanetSpritesForSystem } from '@/hooks/usePlanetSprites';
 import ResourceBar from '@/components/ResourceBar';
 import StarField from '@/components/StarField';
 import Colors from '@/constants/colors';
@@ -174,6 +175,9 @@ export default function GalaxyScreen() {
     },
     refetchInterval: 30000,
   });
+
+  const spritesQuery = usePlanetSpritesForSystem(viewGalaxy, viewSystem);
+  const spritesMap = spritesQuery.data ?? new Map<number, string>();
 
   const debrisQuery = useQuery({
     queryKey: ['debris_fields', viewGalaxy, viewSystem],
@@ -582,28 +586,38 @@ export default function GalaxyScreen() {
             </View>
 
             <View style={[styles.planetCol, styles.planetCell]}>
-              {isYours ? (
-                <>
-                  <Globe size={14} color={Colors.primary} />
-                  <Text style={styles.yourPlanet}>{state.planetName}</Text>
-                </>
-              ) : myColony ? (
-                <>
-                  <MapPin size={14} color={Colors.xenogas} />
-                  <Text style={styles.colonyPlanet}>{myColony.planetName}</Text>
-                </>
-              ) : isOccupied && playerHere ? (
-                <>
-                  {isOtherPlayerColony ? (
-                    <MapPin size={14} color={Colors.accent} />
-                  ) : (
-                    <CircleDot size={14} color={Colors.accent} />
-                  )}
-                  <Text style={styles.occupiedPlanet}>{playerHere.planet_name}</Text>
-                </>
-              ) : (
-                <Text style={styles.emptyText}>—</Text>
-              )}
+              {(() => {
+                const spriteUrl = spritesMap.get(pos);
+                const spriteEl = spriteUrl ? (
+                  <Image source={{ uri: spriteUrl }} style={styles.spriteThumb} resizeMode="cover" />
+                ) : null;
+
+                if (isYours) {
+                  return (
+                    <>
+                      {spriteEl || <Globe size={14} color={Colors.primary} />}
+                      <Text style={styles.yourPlanet}>{state.planetName}</Text>
+                    </>
+                  );
+                }
+                if (myColony) {
+                  return (
+                    <>
+                      {spriteEl || <MapPin size={14} color={Colors.xenogas} />}
+                      <Text style={styles.colonyPlanet}>{myColony.planetName}</Text>
+                    </>
+                  );
+                }
+                if (isOccupied && playerHere) {
+                  return (
+                    <>
+                      {spriteEl || (isOtherPlayerColony ? <MapPin size={14} color={Colors.accent} /> : <CircleDot size={14} color={Colors.accent} />)}
+                      <Text style={styles.occupiedPlanet}>{playerHere.planet_name}</Text>
+                    </>
+                  );
+                }
+                return <Text style={styles.emptyText}>—</Text>;
+              })()}
               {debris && (
                 <TouchableOpacity
                   onPress={() => openDebrisModal(pos, debris)}
@@ -1138,6 +1152,13 @@ const styles = StyleSheet.create({
   emptyText: {
     color: Colors.textMuted,
     fontSize: 13,
+  },
+  spriteThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 168, 71, 0.3)',
   },
   debrisIcon: {
     width: 20,

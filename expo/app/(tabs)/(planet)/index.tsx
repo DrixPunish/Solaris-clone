@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Wallet, Shield, Rocket, FlaskConical, Building2, Gem, Pencil, X, Check, Mail, ChevronRight, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin, Bell, BellOff, Swords, Hammer } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -12,6 +12,7 @@ import { useFleet } from '@/contexts/FleetContext';
 import { formatNumber } from '@/utils/gameCalculations';
 import ResourceBar from '@/components/ResourceBar';
 import PlanetVisual from '@/components/PlanetVisual';
+import { usePlanetSprite } from '@/hooks/usePlanetSprites';
 import StarField from '@/components/StarField';
 import Colors from '@/constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +32,9 @@ export default function PlanetScreen() {
   const { signOut } = useAuth();
   const { activeMissions, espionageReports, combatReports, transportReports } = useFleet();
   const { userId } = useGame();
+  const spriteQuery = usePlanetSprite(activePlanet.coordinates);
+  const activePlanetSprite = spriteQuery.data ?? null;
+
   const fleetCount = activeMissions.filter(m => {
     if (m.sender_id === userId) return true;
     if (m.target_player_id === userId && m.mission_phase === 'en_route') return true;
@@ -215,7 +219,15 @@ export default function PlanetScreen() {
         <View style={styles.planetSection}>
           <StarField starCount={35} height={200} />
           <View style={styles.planetGlowOuter}>
-            <PlanetVisual size={130} />
+            {activePlanetSprite ? (
+              <Image
+                source={{ uri: activePlanetSprite }}
+                style={styles.planetSpriteImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <PlanetVisual size={130} />
+            )}
           </View>
           <Pressable onPress={openRenameModal} style={styles.planetNameRow}>
             <Text style={styles.planetName}>{activePlanet.planetName}</Text>
@@ -632,6 +644,13 @@ const styles = StyleSheet.create({
   planetGlowOuter: {
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  planetSpriteImage: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 2,
+    borderColor: 'rgba(212, 168, 71, 0.25)',
   },
   planetNameRow: {
     flexDirection: 'row',
