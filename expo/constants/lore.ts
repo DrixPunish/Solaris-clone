@@ -14,7 +14,7 @@ export const BUILDING_LORE: Record<string, string> = {
 };
 
 export const RESEARCH_LORE: Record<string, string> = {
-  quantumFlux: "La maîtrise du flux quantique permet de canaliser l'énergie du vide lui-même. Chaque avancée optimise le rendement de vos centrales et mines.",
+  quantumFlux: "La maîtrise du flux quantique permet de canaliser l'énergie du vide lui-même. Chaque avancée optimise le rendement de vos centrales.",
   particleBeam: "Concentrer des particules subatomiques en un faisceau destructeur : c'est l'essence même de cette technologie offensive fondamentale.",
   ionicStream: "Les flux ioniques perturbent les systèmes électroniques ennemis tout en renforçant vos propres boucliers énergétiques.",
   plasmaOverdrive: "La surchauffe plasmatique permet d'extraire davantage de ressources de chaque filon, et débloque les armes les plus destructrices. Chaque niveau augmente la production de Ferro (+1%), Silice (+0.66%) et Xenogas (+0.33%).",

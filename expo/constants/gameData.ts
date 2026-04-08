@@ -160,7 +160,7 @@ export const RESEARCH: ResearchDef[] = [
   {
     id: 'quantumFlux',
     name: 'Flux Quantique',
-    description: 'Optimise l\'énergie, augmente l\'efficacité des centrales et mines.',
+    description: 'Optimise l\'énergie, augmente l\'efficacité des centrales.',
     baseCost: { silice: 800, xenogas: 400 },
     costFactor: 2,
     baseTime: 120,
