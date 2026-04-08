@@ -242,7 +242,7 @@ export const RESEARCH: ResearchDef[] = [
     id: 'chemicalDrive',
     name: 'Propulsion Chimique',
     description: 'Propulsion basique pour petits vaisseaux (scouts, cargos légers).',
-    baseCost: { fer: 400, silice: 600 },
+    baseCost: { fer: 400, xenogas: 600 },
     costFactor: 2,
     baseTime: 180,
     timeFactor: 2,
