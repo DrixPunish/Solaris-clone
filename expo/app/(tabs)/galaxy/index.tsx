@@ -48,7 +48,7 @@ const MAX_GALAXIES = 1;
 const MAX_SYSTEMS = 100;
 
 export default function GalaxyScreen() {
-  const { state, activePlanetId } = useGame();
+  const { state, activePlanetId, activePlanet } = useGame();
   const { user } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams<{ g?: string; ss?: string }>();
@@ -448,7 +448,7 @@ export default function GalaxyScreen() {
   }, [viewGalaxy, viewSystem, router, user?.id, state.username]);
 
   const handleRecycle = useCallback((pos: number) => {
-    const mantaCount = state.ships.mantaRecup ?? 0;
+    const mantaCount = activePlanet.ships.mantaRecup ?? 0;
     if (mantaCount <= 0) {
       closeDebrisModal();
       setTimeout(() => {
