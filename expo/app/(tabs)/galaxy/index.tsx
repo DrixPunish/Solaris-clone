@@ -471,7 +471,7 @@ export default function GalaxyScreen() {
         },
       });
     }, 200);
-  }, [state.ships, viewGalaxy, viewSystem, router, closeDebrisModal]);
+  }, [activePlanet.ships, viewGalaxy, viewSystem, router, closeDebrisModal]);
 
   return (
     <View style={styles.container}>
