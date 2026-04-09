@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Rocket, Crosshair, Truck, ScanEye, Minus, Plus, ArrowRight, Clock, Package, Recycle, Globe, Warehouse, Fuel, Gauge, AlertTriangle, Cpu, Navigation } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -68,11 +69,14 @@ export default function SendFleetScreen() {
     },
   );
 
+  const queryClient = useQueryClient();
+
   const bashingQuery = trpc.world.getBashingStatus.useQuery(
     { targetCoords: targetCoords as number[], targetPlayerId: params.targetPlayerId ?? '' },
     {
       enabled: !!userId && !!params.targetPlayerId && !isOwnPlanet && !isEmptyPosition,
-      staleTime: 15000,
+      staleTime: 5000,
+      refetchOnMount: 'always',
     },
   );
 
@@ -484,6 +488,8 @@ export default function SendFleetScreen() {
       cooldownRef.current = false;
 
       console.log('[SendFleet] Fleet sent successfully');
+      void queryClient.invalidateQueries({ queryKey: [['world', 'getBashingStatus']] });
+      void bashingQuery.refetch();
 
       setTimeout(() => {
         router.back();

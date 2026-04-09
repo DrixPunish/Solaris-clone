@@ -122,6 +122,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     onSuccess: () => {
       console.log('[FleetContext] Fleet send success — forcing resync from server');
       void queryClient.invalidateQueries({ queryKey: ['fleet_missions'] });
+      void queryClient.invalidateQueries({ queryKey: [['world', 'getBashingStatus']] });
       void forceResync();
     },
     onError: (error) => {
