@@ -106,18 +106,29 @@ export const [GameProvider, useGame] = createContextHook(() => {
       console.log('[GameContext] Loading game state...');
 
       if (userId) {
-        const supabaseState = await loadStateFromSupabase(userId);
-        if (supabaseState) {
-          console.log('[GameContext] Using Supabase state');
-          const withProgress = processCompletedTimersAndQueue(supabaseState);
-          lastSavedSnapshotRef.current = {
-            resources: { fer: withProgress.resources.fer, silice: withProgress.resources.silice, xenogas: withProgress.resources.xenogas },
-            ships: { ...withProgress.ships },
-            defenses: { ...withProgress.defenses },
-            savedAt: Date.now(),
-          };
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(withProgress));
-          return withProgress;
+        try {
+          const supabaseState = await loadStateFromSupabase(userId);
+          if (supabaseState) {
+            console.log('[GameContext] Using Supabase state');
+            const withProgress = processCompletedTimersAndQueue(supabaseState);
+            lastSavedSnapshotRef.current = {
+              resources: { fer: withProgress.resources.fer, silice: withProgress.resources.silice, xenogas: withProgress.resources.xenogas },
+              ships: { ...withProgress.ships },
+              defenses: { ...withProgress.defenses },
+              savedAt: Date.now(),
+            };
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(withProgress)).catch(() => {});
+            return withProgress;
+          }
+        } catch (loadErr) {
+          console.warn('[GameContext] Error loading from Supabase, trying local cache:', loadErr);
+          const stored = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored) as GameState;
+              return processCompletedTimersAndQueue(parsed);
+            } catch (_) { /* ignore */ }
+          }
         }
 
         console.log('[GameContext] New player - creating initial state');
@@ -133,15 +144,19 @@ export const [GameProvider, useGame] = createContextHook(() => {
           defenses: { ...newState.defenses },
           savedAt: Date.now(),
         };
-        await saveStateToSupabase(userId, newState, userEmail);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newState));
+        await saveStateToSupabase(userId, newState, userEmail).catch(e => console.warn('[GameContext] Failed to save initial state:', e));
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newState)).catch(() => {});
         return newState;
       }
 
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const stored = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
       if (stored) {
-        const parsed = JSON.parse(stored) as GameState;
-        return processCompletedTimersAndQueue(parsed);
+        try {
+          const parsed = JSON.parse(stored) as GameState;
+          return processCompletedTimersAndQueue(parsed);
+        } catch (parseErr) {
+          console.warn('[GameContext] Failed to parse stored state, using defaults:', parseErr);
+        }
       }
 
       console.log('[GameContext] No saved state, using defaults');
@@ -169,21 +184,22 @@ export const [GameProvider, useGame] = createContextHook(() => {
   useEffect(() => {
     if (!isLoaded) return;
     const interval = setInterval(() => {
+      try {
       setState(prev => {
         const now = Date.now();
         let changed = false;
         let buildings = prev.buildings;
         let research = prev.research;
-        let activeTimers = prev.activeTimers;
+        let activeTimers = prev.activeTimers ?? [];
         let ships = prev.ships;
         let defenses = prev.defenses;
-        let shipyardQueue = prev.shipyardQueue;
+        let shipyardQueue = prev.shipyardQueue ?? [];
 
-        const hasExpired = prev.activeTimers.some(t => now >= t.endTime);
+        const hasExpired = activeTimers.some(t => now >= t.endTime);
         if (hasExpired) {
           changed = true;
-          const completed = prev.activeTimers.filter(t => now >= t.endTime);
-          activeTimers = prev.activeTimers.filter(t => now < t.endTime);
+          const completed = activeTimers.filter(t => now >= t.endTime);
+          activeTimers = activeTimers.filter(t => now < t.endTime);
           buildings = { ...prev.buildings };
           research = { ...prev.research };
           for (const timer of completed) {
@@ -197,14 +213,14 @@ export const [GameProvider, useGame] = createContextHook(() => {
           }
         }
 
-        if ((prev.shipyardQueue ?? []).length > 0) {
-          const result = processShipyardQueue(prev.shipyardQueue, prev.ships, prev.defenses, now);
+        if (shipyardQueue.length > 0) {
+          const result = processShipyardQueue(shipyardQueue, prev.ships, prev.defenses, now);
           if (result.changed) {
             changed = true;
             ships = result.ships;
             defenses = result.defenses;
           }
-          if (result.queue.length !== prev.shipyardQueue.length) changed = true;
+          if (result.queue.length !== shipyardQueue.length) changed = true;
           shipyardQueue = result.queue;
         }
 
@@ -212,16 +228,17 @@ export const [GameProvider, useGame] = createContextHook(() => {
         if ((prev.colonies ?? []).length > 0) {
           let coloniesChanged = false;
           const updatedColonies = (prev.colonies ?? []).map(colony => {
+            try {
             let colChanged = false;
-            let colActiveTimers = colony.activeTimers;
+            let colActiveTimers = colony.activeTimers ?? [];
             let colBuildings = colony.buildings;
 
-            if (colony.activeTimers.length > 0) {
-              const hasColExpired = colony.activeTimers.some(t => now >= t.endTime);
+            if (colActiveTimers.length > 0) {
+              const hasColExpired = colActiveTimers.some(t => now >= t.endTime);
               if (hasColExpired) {
                 colChanged = true;
-                const colCompleted = colony.activeTimers.filter(t => now >= t.endTime);
-                colActiveTimers = colony.activeTimers.filter(t => now < t.endTime);
+                const colCompleted = colActiveTimers.filter(t => now >= t.endTime);
+                colActiveTimers = colActiveTimers.filter(t => now < t.endTime);
                 colBuildings = { ...colony.buildings };
                 for (const timer of colCompleted) {
                   if (timer.type === 'building') {
@@ -236,15 +253,15 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
             let colShips = colony.ships;
             let colDefenses = colony.defenses;
-            let colQueue = colony.shipyardQueue;
-            if ((colony.shipyardQueue ?? []).length > 0) {
-              const colShipyard = processShipyardQueue(colony.shipyardQueue ?? [], colony.ships, colony.defenses, now);
+            let colQueue = colony.shipyardQueue ?? [];
+            if (colQueue.length > 0) {
+              const colShipyard = processShipyardQueue(colQueue, colony.ships, colony.defenses, now);
               if (colShipyard.changed) {
                 colChanged = true;
                 colShips = colShipyard.ships;
                 colDefenses = colShipyard.defenses;
               }
-              if (colShipyard.queue.length !== (colony.shipyardQueue ?? []).length) colChanged = true;
+              if (colShipyard.queue.length !== colQueue.length) colChanged = true;
               colQueue = colShipyard.queue;
             }
 
@@ -260,6 +277,10 @@ export const [GameProvider, useGame] = createContextHook(() => {
               };
             }
             return colony;
+            } catch (colErr) {
+              console.warn('[GameContext] Error processing colony timer:', colErr);
+              return colony;
+            }
           });
           if (coloniesChanged) {
             changed = true;
@@ -280,6 +301,9 @@ export const [GameProvider, useGame] = createContextHook(() => {
           colonies,
         };
       });
+      } catch (tickErr) {
+        console.warn('[GameContext] Error in timer tick:', tickErr);
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, [isLoaded]);

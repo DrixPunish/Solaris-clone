@@ -85,6 +85,7 @@ function parseCoords(raw: unknown): [number, number, number] {
 export async function loadStateFromTables(targetUserId: string): Promise<{ state: GameState; planetId: string } | null> {
   console.log('[tableSync] Loading state from tables for', targetUserId);
 
+  try {
   const { data: planet } = await supabase
     .from('planets')
     .select('id, planet_name, coordinates, last_update')
@@ -150,12 +151,17 @@ export async function loadStateFromTables(targetUserId: string): Promise<{ state
   });
 
   return { state, planetId };
+  } catch (err) {
+    console.error('[tableSync] loadStateFromTables crashed:', err);
+    return null;
+  }
 }
 
 
 export async function loadFullStateFromTables(userId: string): Promise<GameState | null> {
   console.log('[tableSync] Loading full state (main + colonies) from tables for', userId);
 
+  try {
   const { data: allPlanets } = await supabase
     .from('planets')
     .select('id, planet_name, coordinates, is_main, last_update, production_percentages')
@@ -270,6 +276,10 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
   }, 'Colonies:', colonies.length);
 
   return state;
+  } catch (err) {
+    console.error('[tableSync] loadFullStateFromTables crashed:', err);
+    return null;
+  }
 }
 
 export async function removeColonyFromPlanetsTable(

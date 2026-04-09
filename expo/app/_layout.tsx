@@ -16,10 +16,28 @@ import Colors from "@/constants/colors";
 import NotificationToast from "@/components/NotificationToast";
 import GameAlertProvider from "@/components/GameAlert";
 import { NotificationSettingsProvider } from "@/contexts/NotificationSettingsContext";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 void SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (failureCount >= 2) return false;
+        const msg = (error as Error)?.message?.toLowerCase() ?? '';
+        if (msg.includes('network') || msg.includes('fetch') || msg.includes('load failed')) {
+          return true;
+        }
+        return false;
+      },
+      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
+    },
+    mutations: {
+      retry: false,
+    },
+  },
+});
 
 const isMaintenanceMode = process.env.EXPO_PUBLIC_MAINTENANCE_MODE === 'true';
 
@@ -108,6 +126,7 @@ export default function RootLayout() {
   }
 
   return (
+    <ErrorBoundary>
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView>
@@ -134,5 +153,6 @@ export default function RootLayout() {
       </GestureHandlerRootView>
       </QueryClientProvider>
     </trpc.Provider>
+    </ErrorBoundary>
   );
 }
