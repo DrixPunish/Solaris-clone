@@ -110,7 +110,7 @@ export default function SendFleetScreen() {
       case 'point_gap':
         return `\u2696\uFE0F \u00c9cart: ${Math.floor(defenderPts)}/${Math.floor(attackerPts)} pts (${Math.round(defenderPts / Math.max(attackerPts, 1) * 100)}%)`;
       case 'bashing':
-        return `\u2694\uFE0F Bashing: ${bashingCount}/${bashingLimit} attaques sur cette cible (24h). Revenez plus tard.`;
+        return `Bashing: ${bashingCount}/${bashingLimit} attaques sur cette cible (24h). Revenez plus tard.`;
       default:
         return '';
     }
@@ -615,7 +615,7 @@ export default function SendFleetScreen() {
             {!isOwnPlanet && !isEmptyPosition && bashingBlocked && (
               <View style={styles.bashingBanner}>
                 <Text style={styles.bashingText}>
-                  \u2694\uFE0F Bashing: {bashingCount}/{bashingLimit} attaques sur cette cible dans les 24 derni\u00e8res heures.
+                  Bashing: {bashingCount}/{bashingLimit} attaques sur cette cible dans les 24 dernières heures.
                 </Text>
               </View>
             )}
@@ -623,7 +623,7 @@ export default function SendFleetScreen() {
             {!isOwnPlanet && !isEmptyPosition && !bashingBlocked && bashingCount > 0 && missionType === 'attack' && (
               <View style={styles.bashingWarningBanner}>
                 <Text style={styles.bashingWarningText}>
-                  \u2694\uFE0F Attaques sur cette cible: {bashingCount}/{bashingLimit} (24h)
+                  Attaques sur cette cible: {bashingCount}/{bashingLimit} (24h)
                 </Text>
               </View>
             )}
