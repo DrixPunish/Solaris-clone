@@ -151,7 +151,7 @@ export interface FleetComposition {
   [shipId: string]: number;
 }
 
-export type AttackBlockReason = 'noob_shield_attacker' | 'noob_shield_defender' | 'point_gap' | 'quantum_shield_defender';
+export type AttackBlockReason = 'noob_shield_attacker' | 'noob_shield_defender' | 'point_gap' | 'quantum_shield_defender' | 'bashing';
 
 export interface AttackStatus {
   can_attack: boolean;

@@ -316,6 +316,9 @@ DECLARE
   v_is_station boolean;
   v_mission_id uuid;
   v_cargo jsonb;
+  v_target_planet_id uuid;
+  v_bashing_count integer;
+  v_bashing_limit integer := 6;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -380,6 +383,37 @@ BEGIN
         'Ecart trop grand: le defenseur (' || FLOOR(v_defender_pts) || ' pts) a moins de 50% de vos points (' || FLOOR(v_attacker_pts) || ' pts)');
     END IF;
   END IF;
+
+  -- ============ BASHING PROTECTION ============
+  IF p_mission_type = 'attack' AND p_user_id IS NOT NULL AND p_target_player_id IS NOT NULL THEN
+    SELECT id INTO v_target_planet_id
+    FROM planets
+    WHERE coordinates = p_target_coords
+      AND user_id = p_target_player_id
+    LIMIT 1;
+
+    IF v_target_planet_id IS NOT NULL THEN
+      PERFORM pg_advisory_xact_lock(
+        hashtext(p_user_id::text || ':bashing:' || v_target_planet_id::text)
+      );
+
+      SELECT COUNT(*)::integer INTO v_bashing_count
+      FROM bashing_log
+      WHERE attacker_id = p_user_id
+        AND target_planet_id = v_target_planet_id
+        AND counted = true
+        AND launched_at > now() - interval '24 hours';
+
+      IF v_bashing_count >= v_bashing_limit THEN
+        RETURN json_build_object(
+          'success', false,
+          'error', 'Bashing: 6 attaques deja realisees sur cette cible au cours des 24 dernieres heures.',
+          'error_code', 'BASHING_LIMIT'
+        );
+      END IF;
+    END IF;
+  END IF;
+  -- ============ END BASHING PROTECTION ============
 
   -- Calculate flight time
   IF p_sender_coords IS NOT NULL AND p_target_coords IS NOT NULL AND p_user_id IS NOT NULL THEN
@@ -477,6 +511,12 @@ BEGIN
     'en_route', false, 'en_route', CEIL(v_fuel_cost)
   )
   RETURNING id INTO v_mission_id;
+
+  -- Log bashing entry (same transaction = atomic)
+  IF p_mission_type = 'attack' AND v_target_planet_id IS NOT NULL AND p_target_player_id IS NOT NULL THEN
+    INSERT INTO bashing_log (attacker_id, defender_id, target_planet_id, target_type, fleet_mission_id, mission_type, counted, launched_at)
+    VALUES (p_user_id, p_target_player_id, v_target_planet_id, 'planet', v_mission_id, 'attack', true, now());
+  END IF;
 
   RETURN json_build_object(
     'success', true,

@@ -68,6 +68,18 @@ export default function SendFleetScreen() {
     },
   );
 
+  const bashingQuery = trpc.world.getBashingStatus.useQuery(
+    { targetCoords: targetCoords as number[], targetPlayerId: params.targetPlayerId ?? '' },
+    {
+      enabled: !!userId && !!params.targetPlayerId && !isOwnPlanet && !isEmptyPosition,
+      staleTime: 15000,
+    },
+  );
+
+  const bashingBlocked = bashingQuery.data?.blocked ?? false;
+  const bashingCount = bashingQuery.data?.attacks_24h ?? 0;
+  const bashingLimit = bashingQuery.data?.limit ?? 6;
+
   const canAttack = attackStatusQuery.data?.can_attack ?? false;
   const attackBlockReason = (attackStatusQuery.data?.reason ?? null) as AttackBlockReason | null;
   const attackerPts = attackStatusQuery.data?.attacker_pts ?? 0;
@@ -93,6 +105,8 @@ export default function SendFleetScreen() {
         return `\u{1F6E1}\uFE0F D\u00e9fenseur prot\u00e9g\u00e9 (${Math.floor(defenderPts)} pts < 100)`;
       case 'point_gap':
         return `\u2696\uFE0F \u00c9cart: ${Math.floor(defenderPts)}/${Math.floor(attackerPts)} pts (${Math.round(defenderPts / Math.max(attackerPts, 1) * 100)}%)`;
+      case 'bashing':
+        return `\u2694\uFE0F Bashing: ${bashingCount}/${bashingLimit} attaques sur cette cible (24h). Revenez plus tard.`;
       default:
         return '';
     }
@@ -106,11 +120,11 @@ export default function SendFleetScreen() {
       return ALL_MISSION_TYPES.filter(mt => ['colonize', 'recycle'].includes(mt.id));
     }
     const base = ['transport', 'espionage', 'recycle'];
-    if (canAttack || attackStatusQuery.isLoading) {
+    if ((canAttack || attackStatusQuery.isLoading) && !bashingBlocked) {
       base.unshift('attack');
     }
     return ALL_MISSION_TYPES.filter(mt => base.includes(mt.id));
-  }, [isOwnPlanet, isEmptyPosition, canAttack, attackStatusQuery.isLoading]);
+  }, [isOwnPlanet, isEmptyPosition, canAttack, attackStatusQuery.isLoading, bashingBlocked]);
 
   const getDefaultMission = useCallback((): MissionType => {
     const requested = params.defaultMission as MissionType | undefined;
@@ -588,6 +602,22 @@ export default function SendFleetScreen() {
               <View style={styles.protectionBanner}>
                 <Text style={styles.protectionText}>
                   {getAttackBlockMessage(attackBlockReason)}
+                </Text>
+              </View>
+            )}
+
+            {!isOwnPlanet && !isEmptyPosition && bashingBlocked && (
+              <View style={styles.bashingBanner}>
+                <Text style={styles.bashingText}>
+                  \u2694\uFE0F Bashing: {bashingCount}/{bashingLimit} attaques sur cette cible dans les 24 derni\u00e8res heures.
+                </Text>
+              </View>
+            )}
+
+            {!isOwnPlanet && !isEmptyPosition && !bashingBlocked && bashingCount > 0 && missionType === 'attack' && (
+              <View style={styles.bashingWarningBanner}>
+                <Text style={styles.bashingWarningText}>
+                  \u2694\uFE0F Attaques sur cette cible: {bashingCount}/{bashingLimit} (24h)
                 </Text>
               </View>
             )}
@@ -1249,6 +1279,36 @@ const styles = StyleSheet.create({
     color: Colors.warning,
     fontSize: 12,
     fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  bashingBanner: {
+    backgroundColor: Colors.danger + '15',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.danger + '30',
+    marginBottom: 12,
+  },
+  bashingText: {
+    color: Colors.danger,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  bashingWarningBanner: {
+    backgroundColor: Colors.warning + '10',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.warning + '25',
+    marginBottom: 12,
+  },
+  bashingWarningText: {
+    color: Colors.warning,
+    fontSize: 12,
+    fontWeight: '500' as const,
     textAlign: 'center' as const,
   },
   fleetStatusBar: {

@@ -308,6 +308,44 @@ export const worldRouter = createTRPCRouter({
       return { can_attack: true, reason: null, attacker_pts, defender_pts };
     }),
 
+  getBashingStatus: protectedProcedure
+    .input(z.object({
+      targetCoords: z.array(z.number()),
+      targetPlayerId: z.string(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const attackerId = ctx.userId;
+      const { targetCoords, targetPlayerId } = input;
+
+      const { data: targetPlanet } = await supabase
+        .from('planets')
+        .select('id')
+        .eq('user_id', targetPlayerId)
+        .contains('coordinates', targetCoords)
+        .maybeSingle();
+
+      if (!targetPlanet) {
+        return { attacks_24h: 0, limit: 6, blocked: false };
+      }
+
+      const { data: count, error } = await supabase.rpc('get_bashing_count', {
+        p_attacker_id: attackerId,
+        p_target_planet_id: (targetPlanet as { id: string }).id,
+      });
+
+      if (error) {
+        logger.error('[tRPC] Error fetching bashing count:', error.message);
+        return { attacks_24h: 0, limit: 6, blocked: false };
+      }
+
+      const attacks = (count as number) ?? 0;
+      return {
+        attacks_24h: attacks,
+        limit: 6,
+        blocked: attacks >= 6,
+      };
+    }),
+
   getQuantumShieldStatus: protectedProcedure
     .query(async ({ ctx }) => {
       const userId = ctx.userId;
