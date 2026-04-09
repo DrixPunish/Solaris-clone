@@ -138,12 +138,25 @@ export default function BuildingsScreen() {
       const extraEnergy = nextLevelEnergy - currentLevelEnergy;
 
       const nextProdText = getBuildingProductionAtLevel(building.id, level + 1, activePlanet.buildings, state.research, activePlanet.ships, activeProductionPercentages);
-      if (building.id === 'ferMine' && nextProdText) {
-        nextProd.push({ label: 'Fer', value: `+${nextProdText} Fer`, positive: true });
-      } else if (building.id === 'siliceMine' && nextProdText) {
-        nextProd.push({ label: 'Silice', value: `+${nextProdText} Silice`, positive: true });
-      } else if (building.id === 'xenogasRefinery' && nextProdText) {
-        nextProd.push({ label: 'Xenogas', value: `+${nextProdText} Xenogas`, positive: true });
+      const currentProdText = getBuildingProductionAtLevel(building.id, level, activePlanet.buildings, state.research, activePlanet.ships, activeProductionPercentages);
+      if (building.id === 'ferMine' && nextProdText && currentProdText) {
+        const nextVal = parseInt(nextProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const currentVal = parseInt(currentProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const delta = nextVal - currentVal;
+        nextProd.push({ label: 'Fer', value: `+${formatNumber(delta)}/h Fer`, positive: true });
+      } else if (building.id === 'siliceMine' && nextProdText && currentProdText) {
+        const nextVal = parseInt(nextProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const currentVal = parseInt(currentProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const delta = nextVal - currentVal;
+        nextProd.push({ label: 'Silice', value: `+${formatNumber(delta)}/h Silice`, positive: true });
+      } else if (building.id === 'xenogasRefinery' && nextProdText && currentProdText) {
+        const nextVal = parseInt(nextProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const currentVal = parseInt(currentProdText.replace(/[^0-9]/g, ''), 10) || 0;
+        const delta = nextVal - currentVal;
+        nextProd.push({ label: 'Xenogas', value: `+${formatNumber(delta)}/h Xenogas`, positive: true });
+      } else if ((building.id === 'ferMine' || building.id === 'siliceMine' || building.id === 'xenogasRefinery') && nextProdText && !currentProdText) {
+        const resLabel = building.id === 'ferMine' ? 'Fer' : building.id === 'siliceMine' ? 'Silice' : 'Xenogas';
+        nextProd.push({ label: resLabel, value: `+${nextProdText} ${resLabel}`, positive: true });
       }
 
       if (extraEnergy > 0) {

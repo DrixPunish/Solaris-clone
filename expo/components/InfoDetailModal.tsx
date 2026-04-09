@@ -4,7 +4,7 @@ import { X, BookOpen, BarChart3, Coins, Zap, Clock, TrendingUp, CheckCircle, XCi
 import Colors from '@/constants/colors';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from '@/constants/gameData';
 import { BUILDING_LORE, RESEARCH_LORE, SHIP_LORE, DEFENSE_LORE } from '@/constants/lore';
-import { calculateCost, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime, formatNumber, formatTime, formatSpeed, getBoostedShipStats, getBoostedDefenseStats, getCombatBoosts, getCargoBoost, getBuildingProductionAtLevel, getPlasmaProductionBonus, getNeuralMeshLabBonus } from '@/utils/gameCalculations';
+import { calculateCost, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime, formatNumber, formatTime, formatSpeed, getBoostedShipStats, getBoostedDefenseStats, getCombatBoosts, getCargoBoost, getBuildingProductionAtLevel, getPlasmaProductionBonus, getNeuralMeshLabBonus, getMineEnergyConsumption, getSolarPlantProduction } from '@/utils/gameCalculations';
 import { getShipDriveType, getShipSpeed, RAPIDFIRE_TABLE } from '@/utils/fleetCalculations';
 import { getPrereqLabel } from '@/utils/prereqLabels';
 import { Prerequisite, Colony } from '@/types/game';
@@ -61,7 +61,7 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
 
   const costTable = useMemo(() => {
     if (!data) return [];
-    const rows: { level: number; fer: number; silice: number; xenogas: number; time: number; bonus: string }[] = [];
+    const rows: { level: number; fer: number; silice: number; xenogas: number; time: number; bonus: string; energy: string }[] = [];
 
     if (itemType === 'building' || itemType === 'research') {
       const def = data as { baseCost: any; costFactor: number; baseTime: number; timeFactor: number };
@@ -98,7 +98,18 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
           else if (itemId === 'astrophysics') bonus = `${Math.floor((lvl + 2) / 2)} colonies`;
           else if (itemId === 'neuralMesh') bonus = `+${lvl + 1} labo(s)`;
         }
-        rows.push({ level: lvl + 1, fer: cost.fer, silice: cost.silice, xenogas: cost.xenogas, time, bonus });
+        let energy = '';
+        if (itemType === 'building') {
+          const energyAtLevel = getMineEnergyConsumption(itemId, lvl + 1);
+          if (energyAtLevel > 0) {
+            energy = `-${formatNumber(energyAtLevel)}`;
+          } else if (itemId === 'solarPlant') {
+            const quantumFluxLevel = research.quantumFlux ?? 0;
+            const solarProd = getSolarPlantProduction(lvl + 1, quantumFluxLevel);
+            energy = `+${formatNumber(solarProd)}`;
+          }
+        }
+        rows.push({ level: lvl + 1, fer: cost.fer, silice: cost.silice, xenogas: cost.xenogas, time, bonus, energy });
       }
     }
     return rows;
@@ -321,6 +332,9 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
                       <Text style={[infoStyles.tableCell, infoStyles.tableCellHeader, { width: 70 }]}>Xenogas</Text>
                       <Text style={[infoStyles.tableCell, infoStyles.tableCellHeader, { width: 65 }]}>Temps</Text>
                       <Text style={[infoStyles.tableCell, infoStyles.tableCellHeader, { width: 80 }]}>Bonus</Text>
+                      {itemType === 'building' && costTable.some(r => r.energy !== '') && (
+                        <Text style={[infoStyles.tableCell, infoStyles.tableCellHeader, { width: 65 }]}>Énergie</Text>
+                      )}
                     </View>
                     {costTable.map((row, i) => {
                       const isCurrentLevel = row.level === currentLevel;
@@ -332,6 +346,9 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
                           <Text style={[infoStyles.tableCell, { width: 70 }]}>{row.xenogas > 0 ? formatNumber(row.xenogas) : '-'}</Text>
                           <Text style={[infoStyles.tableCell, { width: 65 }]}>{formatTime(row.time)}</Text>
                           <Text style={[infoStyles.tableCell, { width: 80, color: Colors.success, fontSize: 9 }]}>{row.bonus || '-'}</Text>
+                          {itemType === 'building' && costTable.some(r => r.energy !== '') && (
+                            <Text style={[infoStyles.tableCell, { width: 65, color: row.energy.startsWith('+') ? Colors.success : row.energy.startsWith('-') ? Colors.danger : Colors.textSecondary, fontSize: 9 }]}>{row.energy || '-'}</Text>
+                          )}
                         </View>
                       );
                     })}
