@@ -321,7 +321,9 @@ export const worldRouter = createTRPCRouter({
         .from('planets')
         .select('id')
         .eq('user_id', targetPlayerId)
-        .contains('coordinates', targetCoords)
+        .filter('coordinates->>0', 'eq', String(targetCoords[0]))
+        .filter('coordinates->>1', 'eq', String(targetCoords[1]))
+        .filter('coordinates->>2', 'eq', String(targetCoords[2]))
         .maybeSingle();
 
       if (!targetPlanet) {
