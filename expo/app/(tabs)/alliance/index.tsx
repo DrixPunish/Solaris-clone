@@ -1348,8 +1348,9 @@ function BrowseAlliancesTab() {
       />
 
       <Modal visible={!!selectedAlliance} transparent animationType="fade" onRequestClose={closeModal}>
-        <Pressable style={styles.modalOverlay} onPress={closeModal}>
-          <Pressable style={[styles.modalContent, styles.browseModalContent]} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalOverlayDismiss} onPress={closeModal} />
+          <View style={[styles.modalContent, styles.browseModalContent]}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle} numberOfLines={1}>
@@ -1379,12 +1380,18 @@ function BrowseAlliancesTab() {
                 <ActivityIndicator size="small" color={Colors.xenogas} />
               </View>
             ) : (
-              <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={true} nestedScrollEnabled={true} bounces={true}>
-                {selectedMembers.map((member) => {
+              <FlatList
+                data={selectedMembers}
+                keyExtractor={(item) => item.id}
+                style={styles.browseMembersList}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+                bounces={true}
+                renderItem={({ item: member }) => {
                   const badge = getRoleBadge(member.role);
                   const BadgeIcon = badge.icon;
                   return (
-                    <View key={member.id} style={styles.memberRow}>
+                    <View style={styles.memberRow}>
                       <View style={[styles.memberBadge, { backgroundColor: badge.color + '15', borderWidth: 1, borderColor: badge.color + '30' }]}>
                         <BadgeIcon size={16} color={badge.color} />
                       </View>
@@ -1397,14 +1404,15 @@ function BrowseAlliancesTab() {
                       </View>
                     </View>
                   );
-                })}
-                {selectedMembers.length === 0 && !isLoadingMembers && (
+                }}
+                ListEmptyComponent={
                   <Text style={styles.browseNoMembers}>Aucun membre trouvé</Text>
-                )}
-              </ScrollView>
+                }
+              />
             )}
-          </Pressable>
-        </Pressable>
+          </View>
+          <Pressable style={styles.modalOverlayDismiss} onPress={closeModal} />
+        </View>
       </Modal>
     </>
   );
@@ -2566,5 +2574,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center' as const,
     paddingVertical: 20,
+  },
+  browseMembersList: {
+    maxHeight: 300,
+  },
+  modalOverlayDismiss: {
+    flex: 1,
+    width: '100%' as unknown as number,
   },
 });
