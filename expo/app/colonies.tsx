@@ -90,6 +90,26 @@ export default function ColoniesScreen() {
                 )}
               </View>
               <ClickableCoords coords={state.coordinates} style={styles.coordsText} />
+              <View style={styles.colonyStatsRow}>
+                <Text style={styles.colonyStat}>
+                  <Text style={{ color: Colors.fer }}>{formatNumber(Math.floor(state.resources.fer))}</Text>
+                  {' / '}
+                  <Text style={{ color: Colors.silice }}>{formatNumber(Math.floor(state.resources.silice))}</Text>
+                  {' / '}
+                  <Text style={{ color: Colors.xenogas }}>{formatNumber(Math.floor(state.resources.xenogas))}</Text>
+                </Text>
+              </View>
+              <View style={styles.colonyMiniStats}>
+                <Text style={styles.miniStat}>{Object.values(state.buildings).reduce((s, l) => s + l, 0)} bâtiments</Text>
+                <Text style={styles.miniDot}>·</Text>
+                <Text style={styles.miniStat}>{Object.values(state.ships).reduce((s, c) => s + c, 0)} vaisseaux</Text>
+                {state.activeTimers.length > 0 && (
+                  <>
+                    <Text style={styles.miniDot}>·</Text>
+                    <Text style={[styles.miniStat, { color: Colors.primary }]}>{state.activeTimers.length} en cours</Text>
+                  </>
+                )}
+              </View>
             </View>
             <ChevronRight size={16} color={Colors.textMuted} />
           </TouchableOpacity>
