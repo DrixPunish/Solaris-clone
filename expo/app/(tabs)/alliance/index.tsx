@@ -1379,7 +1379,7 @@ function BrowseAlliancesTab() {
                 <ActivityIndicator size="small" color={Colors.xenogas} />
               </View>
             ) : (
-              <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={true} nestedScrollEnabled={true} bounces={true}>
                 {selectedMembers.map((member) => {
                   const badge = getRoleBadge(member.role);
                   const BadgeIcon = badge.icon;
