@@ -734,8 +734,14 @@ export default function SendFleetScreen() {
                           }
                           const serverVal = Math.floor(freshRes[res]);
                           const otherTot = (['fer', 'silice', 'xenogas'] as const).filter(r => r !== res).reduce((sum, r) => sum + transportResources[r], 0);
-                          const maxSafe = Math.max(0, Math.min(serverVal, cargoCapacity - otherTot));
-                          console.log('[SendFleet] MAX', res, ': server=', serverVal, 'otherCargo=', otherTot, 'maxSafe=', maxSafe);
+                          const remainingCargo = cargoCapacity - otherTot;
+                          let maxSafe: number;
+                          if (res === 'xenogas' && serverVal <= remainingCargo && fuelCost > 0) {
+                            maxSafe = Math.max(0, serverVal - fuelCost);
+                          } else {
+                            maxSafe = Math.max(0, Math.min(serverVal, remainingCargo));
+                          }
+                          console.log('[SendFleet] MAX', res, ': server=', serverVal, 'otherCargo=', otherTot, 'remainingCargo=', remainingCargo, 'fuel=', fuelCost, 'maxSafe=', maxSafe);
                           setTransportResources(prev => ({ ...prev, [res]: maxSafe }));
                           setMaxLoading(null);
                         }}
