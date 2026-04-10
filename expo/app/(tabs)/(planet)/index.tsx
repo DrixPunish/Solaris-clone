@@ -321,19 +321,7 @@ export default function PlanetScreen() {
           />
         }
       >
-        {activePlanet.isColony && (
-          <TouchableOpacity
-            style={styles.colonyBanner}
-            onPress={() => setActivePlanetId(null)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.colonyBannerLeft}>
-              <MapPin size={14} color={Colors.xenogas} />
-              <Text style={styles.colonyBannerText}>Colonie active : <Text style={styles.colonyBannerName}>{activePlanet.planetName}</Text></Text>
-            </View>
-            <Text style={styles.colonyBannerAction}>Retour principale</Text>
-          </TouchableOpacity>
-        )}
+
 
         <View style={styles.orbitalSection}>
           <StarField starCount={45} height={320} />
@@ -341,6 +329,15 @@ export default function PlanetScreen() {
           <View style={orbitalStyles.topRow}>
             <OrbitalStat icon={Building2} value={totalBuildings} label="Bâtiments" color={Colors.primary} />
             <OrbitalStat icon={FlaskConical} value={totalResearch} label="Recherche" color={Colors.silice} />
+          </View>
+
+          <View style={orbitalStyles.planetInfo}>
+            <Pressable onPress={openRenameModal} style={orbitalStyles.nameRow}>
+              <Text style={orbitalStyles.planetName}>{activePlanet.planetName}</Text>
+              <View style={orbitalStyles.editIcon}>
+                <Pencil size={10} color={Colors.textMuted} />
+              </View>
+            </Pressable>
           </View>
 
           <View style={orbitalStyles.centerRow}>
@@ -356,7 +353,6 @@ export default function PlanetScreen() {
             <OrbitalStat icon={Rocket} value={totalShips} label="Flotte" color={Colors.accent} />
 
             <View style={orbitalStyles.planetCenter}>
-              <View style={orbitalStyles.planetGlow} />
               {activePlanetSprite ? (
                 <Image
                   source={{ uri: activePlanetSprite }}
@@ -364,7 +360,7 @@ export default function PlanetScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <PlanetVisual size={150} />
+                <PlanetVisual size={190} />
               )}
             </View>
 
@@ -380,19 +376,12 @@ export default function PlanetScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={orbitalStyles.coordsRow}>
+            <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
+          </View>
+
           <View style={orbitalStyles.bottomRow}>
             <OrbitalStat icon={Scan} value={planetSize} label="Taille" color={Colors.textSecondary} />
-
-            <View style={orbitalStyles.planetInfo}>
-              <Pressable onPress={openRenameModal} style={orbitalStyles.nameRow}>
-                <Text style={orbitalStyles.planetName}>{activePlanet.planetName}</Text>
-                <View style={orbitalStyles.editIcon}>
-                  <Pencil size={10} color={Colors.textMuted} />
-                </View>
-              </Pressable>
-              <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
-            </View>
-
             <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Température" color={Colors.textSecondary} />
           </View>
 
@@ -436,7 +425,7 @@ export default function PlanetScreen() {
               icon={Globe}
               label="Colonies"
               onPress={() => router.push('/colonies')}
-              badge={(state.colonies?.length ?? 0) > 0 ? state.colonies?.length : undefined}
+
               color={Colors.xenogas}
             />
           </View>
@@ -716,23 +705,20 @@ const orbitalStyles = StyleSheet.create({
     justifyContent: 'center' as const,
     marginHorizontal: 4,
   },
-  planetGlow: {
-    position: 'absolute' as const,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(212, 168, 71, 0.06)',
-  },
   planetImage: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
     borderWidth: 2,
     borderColor: 'rgba(212, 168, 71, 0.25)',
   },
   planetInfo: {
     alignItems: 'center' as const,
-    flex: 1,
+    marginBottom: 4,
+  },
+  coordsRow: {
+    alignItems: 'center' as const,
+    marginTop: 10,
   },
   nameRow: {
     flexDirection: 'row' as const,
@@ -802,19 +788,19 @@ const actionStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.card,
     borderRadius: 14,
-    paddingVertical: 18,
+    paddingVertical: 14,
     paddingHorizontal: 12,
     alignItems: 'center' as const,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   iconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   label: {
     color: Colors.text,
@@ -846,7 +832,7 @@ const actionStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.card,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 9,
     paddingHorizontal: 12,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -855,9 +841,9 @@ const actionStyles = StyleSheet.create({
     borderColor: Colors.border,
   },
   smallIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
