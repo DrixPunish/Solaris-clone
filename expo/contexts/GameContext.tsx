@@ -25,8 +25,8 @@ interface ServerSnapshot {
 }
 
 function generateCoordinates(): [number, number, number] {
-  const galaxy = 1;
-  const system = Math.floor(Math.random() * 100) + 1;
+  const galaxy = Math.floor(Math.random() * 5) + 1;
+  const system = Math.floor(Math.random() * 20) + 1;
   const position = Math.floor(Math.random() * 15) + 1;
   return [galaxy, system, position];
 }

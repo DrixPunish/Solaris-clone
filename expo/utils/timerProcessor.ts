@@ -2,8 +2,8 @@ import { GameState, UpgradeTimer } from '@/types/game';
 import { processShipyardQueue } from '@/utils/shipyardProcessor';
 
 function clampCoordinates(coords: [number, number, number]): [number, number, number] {
-  const galaxy = Math.min(Math.max(coords[0], 1), 1);
-  const system = Math.min(Math.max(coords[1], 1), 100);
+  const galaxy = Math.min(Math.max(coords[0], 1), 5);
+  const system = Math.min(Math.max(coords[1], 1), 20);
   const position = Math.min(Math.max(coords[2], 1), 15);
   return [galaxy, system, position];
 }

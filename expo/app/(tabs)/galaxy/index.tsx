@@ -45,8 +45,8 @@ interface DebrisField {
   silice: number;
 }
 
-const MAX_GALAXIES = 1;
-const MAX_SYSTEMS = 100;
+const MAX_GALAXIES = 5;
+const MAX_SYSTEMS = 20;
 
 export default function GalaxyScreen() {
   const { state, activePlanetId, activePlanet } = useGame();

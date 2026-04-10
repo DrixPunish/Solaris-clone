@@ -647,7 +647,7 @@ export const DEFENSES: DefenseDef[] = [
 
 export const DEFAULT_STATE: GameState = {
   planetName: 'Homeworld',
-  coordinates: [1, 42, 5],
+  coordinates: [1, 10, 5],
   buildings: {},
   research: {},
   ships: {},
