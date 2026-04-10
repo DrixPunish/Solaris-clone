@@ -262,10 +262,13 @@ export function checkPrerequisites(
 }
 
 export function formatNumber(n: number): string {
-  if (n >= 1000000000) return (n / 1000000000).toFixed(1) + 'B';
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  const floored = Math.floor(n);
-  return floored.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 100000000) return sign + (abs / 1000000).toFixed(0) + 'M';
+  if (abs >= 10000000) return sign + (abs / 1000000).toFixed(1) + 'M';
+  if (abs >= 1000000) return sign + (abs / 1000000).toFixed(2) + 'M';
+  if (abs >= 100000) return sign + (abs / 1000).toFixed(1) + 'k';
+  return sign + Math.floor(abs).toString();
 }
 
 export function formatSpeed(n: number): string {
