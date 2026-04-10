@@ -3,7 +3,7 @@ import { trpc, trpcClient } from "@/lib/trpc";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import MaintenanceScreen from "@/components/MaintenanceScreen";
@@ -17,6 +17,9 @@ import NotificationToast from "@/components/NotificationToast";
 import GameAlertProvider from "@/components/GameAlert";
 import { NotificationSettingsProvider } from "@/contexts/NotificationSettingsContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { supabase } from "@/utils/supabase";
+import { ActivityIndicator, View } from "react-native";
+import Colors from "@/constants/colors";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -114,13 +117,108 @@ function RootLayoutNav() {
   );
 }
 
+function MaintenanceGate({ children }: { children: React.ReactNode }) {
+  const [checkingBypass, setCheckingBypass] = useState(true);
+  const [isBypassed, setIsBypassed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkBypass() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+          console.log('[MaintenanceGate] No session, showing maintenance');
+          if (!cancelled) {
+            setIsBypassed(false);
+            setCheckingBypass(false);
+          }
+          return;
+        }
+
+        console.log('[MaintenanceGate] Checking bypass for user:', session.user.id);
+        const { data, error } = await supabase
+          .from('maintenance_bypass')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('[MaintenanceGate] Bypass check error:', error.message);
+        }
+
+        if (!cancelled) {
+          const bypassed = !!data;
+          console.log('[MaintenanceGate] Bypass result:', bypassed);
+          setIsBypassed(bypassed);
+          setCheckingBypass(false);
+        }
+      } catch (err) {
+        console.warn('[MaintenanceGate] Unexpected error:', err);
+        if (!cancelled) {
+          setIsBypassed(false);
+          setCheckingBypass(false);
+        }
+      }
+    }
+
+    checkBypass();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!checkingBypass && !isBypassed) {
+      void SplashScreen.hideAsync();
+    }
+  }, [checkingBypass, isBypassed]);
+
+  if (checkingBypass) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  if (!isBypassed) {
+    return <MaintenanceScreen />;
+  }
+
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   if (isMaintenanceMode) {
-    void SplashScreen.hideAsync();
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar style="light" />
-        <MaintenanceScreen />
+        <MaintenanceGate>
+          <ErrorBoundary>
+            <trpc.Provider client={trpcClient} queryClient={queryClient}>
+              <QueryClientProvider client={queryClient}>
+                <AuthProvider>
+                  <GameProvider>
+                    <FleetProvider>
+                      <AllianceProvider>
+                        <NotificationSettingsProvider>
+                          <TutorialProvider>
+                            <GameAlertProvider>
+                              <AuthGate>
+                                <RootLayoutNav />
+                                <TutorialWidget />
+                                <NotificationToast />
+                              </AuthGate>
+                            </GameAlertProvider>
+                          </TutorialProvider>
+                        </NotificationSettingsProvider>
+                      </AllianceProvider>
+                    </FleetProvider>
+                  </GameProvider>
+                </AuthProvider>
+              </QueryClientProvider>
+            </trpc.Provider>
+          </ErrorBoundary>
+        </MaintenanceGate>
       </GestureHandlerRootView>
     );
   }
