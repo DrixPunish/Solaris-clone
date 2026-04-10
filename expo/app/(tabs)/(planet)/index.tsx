@@ -339,7 +339,7 @@ export default function PlanetScreen() {
           <StarField starCount={45} height={320} />
 
           <View style={orbitalStyles.topRow}>
-            <OrbitalStat icon={Building2} value={totalBuildings} label="B\u00e2timents" color={Colors.primary} />
+            <OrbitalStat icon={Building2} value={totalBuildings} label="Bâtiments" color={Colors.primary} />
             <OrbitalStat icon={FlaskConical} value={totalResearch} label="Recherche" color={Colors.silice} />
           </View>
 
@@ -368,7 +368,7 @@ export default function PlanetScreen() {
               )}
             </View>
 
-            <OrbitalStat icon={Shield} value={totalDefenses} label="D\u00e9fense" color={Colors.success} />
+            <OrbitalStat icon={Shield} value={totalDefenses} label="Défense" color={Colors.success} />
 
             <TouchableOpacity
               onPress={goToNextPlanet}
@@ -393,7 +393,7 @@ export default function PlanetScreen() {
               <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
             </View>
 
-            <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Temp\u00e9rature" color={Colors.textSecondary} />
+            <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Température" color={Colors.textSecondary} />
           </View>
 
           {activeTimerCount > 0 && (
@@ -460,7 +460,7 @@ export default function PlanetScreen() {
           <View style={actionStyles.row}>
             <SmallActionButton
               icon={Settings}
-              label="Param\u00e8tres"
+              label="Paramètres"
               onPress={() => setShowSettings(!showSettings)}
             />
             <SmallActionButton
