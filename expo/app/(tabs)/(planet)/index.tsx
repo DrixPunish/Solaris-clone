@@ -321,21 +321,26 @@ export default function PlanetScreen() {
           />
         }
       >
+        {activePlanet.isColony && (
+          <TouchableOpacity
+            style={styles.colonyBanner}
+            onPress={() => setActivePlanetId(null)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.colonyBannerLeft}>
+              <MapPin size={14} color={Colors.xenogas} />
+              <Text style={styles.colonyBannerText}>Colonie active : <Text style={styles.colonyBannerName}>{activePlanet.planetName}</Text></Text>
+            </View>
+            <Text style={styles.colonyBannerAction}>Retour principale</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.orbitalSection}>
           <StarField starCount={45} height={320} />
 
           <View style={orbitalStyles.topRow}>
             <OrbitalStat icon={Building2} value={totalBuildings} label="Bâtiments" color={Colors.primary} />
             <OrbitalStat icon={FlaskConical} value={totalResearch} label="Recherche" color={Colors.silice} />
-          </View>
-
-          <View style={orbitalStyles.planetInfo}>
-            <Pressable onPress={openRenameModal} style={orbitalStyles.nameRow}>
-              <Text style={orbitalStyles.planetName}>{activePlanet.planetName}</Text>
-              <View style={orbitalStyles.editIcon}>
-                <Pencil size={10} color={Colors.textMuted} />
-              </View>
-            </Pressable>
           </View>
 
           <View style={orbitalStyles.centerRow}>
@@ -359,7 +364,7 @@ export default function PlanetScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <PlanetVisual size={190} />
+                <PlanetVisual size={150} />
               )}
             </View>
 
@@ -375,12 +380,19 @@ export default function PlanetScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={orbitalStyles.coordsRow}>
-            <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
-          </View>
-
           <View style={orbitalStyles.bottomRow}>
             <OrbitalStat icon={Scan} value={planetSize} label="Taille" color={Colors.textSecondary} />
+
+            <View style={orbitalStyles.planetInfo}>
+              <Pressable onPress={openRenameModal} style={orbitalStyles.nameRow}>
+                <Text style={orbitalStyles.planetName}>{activePlanet.planetName}</Text>
+                <View style={orbitalStyles.editIcon}>
+                  <Pencil size={10} color={Colors.textMuted} />
+                </View>
+              </Pressable>
+              <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
+            </View>
+
             <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Température" color={Colors.textSecondary} />
           </View>
 
@@ -394,9 +406,7 @@ export default function PlanetScreen() {
           )}
         </View>
 
-        <View style={styles.shieldWrap}>
-          <QuantumShieldCard />
-        </View>
+        <QuantumShieldCard />
 
         <View style={actionStyles.grid}>
           <View style={actionStyles.row}>
@@ -426,7 +436,7 @@ export default function PlanetScreen() {
               icon={Globe}
               label="Colonies"
               onPress={() => router.push('/colonies')}
-
+              badge={(state.colonies?.length ?? 0) > 0 ? state.colonies?.length : undefined}
               color={Colors.xenogas}
             />
           </View>
@@ -689,10 +699,10 @@ const orbitalStyles = StyleSheet.create({
   },
   bottomRow: {
     flexDirection: 'row' as const,
-    justifyContent: 'space-evenly' as const,
+    justifyContent: 'space-between' as const,
     alignItems: 'flex-start' as const,
     paddingHorizontal: 16,
-    marginTop: 4,
+    marginTop: -4,
     zIndex: 2,
   },
   arrowBtn: {
@@ -708,28 +718,21 @@ const orbitalStyles = StyleSheet.create({
   },
   planetGlow: {
     position: 'absolute' as const,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     backgroundColor: 'rgba(212, 168, 71, 0.06)',
   },
   planetImage: {
-    width: 190,
-    height: 190,
-    borderRadius: 95,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
     borderWidth: 2,
     borderColor: 'rgba(212, 168, 71, 0.25)',
   },
   planetInfo: {
     alignItems: 'center' as const,
-    marginBottom: -4,
-    zIndex: 2,
-  },
-  coordsRow: {
-    alignItems: 'center' as const,
-    marginTop: -2,
-    marginBottom: 4,
-    zIndex: 2,
+    flex: 1,
   },
   nameRow: {
     flexDirection: 'row' as const,
@@ -790,7 +793,6 @@ const actionStyles = StyleSheet.create({
     gap: 10,
     marginTop: 16,
     marginBottom: 16,
-    paddingHorizontal: '10%' as unknown as number,
   },
   row: {
     flexDirection: 'row' as const,
@@ -877,9 +879,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
   },
-  shieldWrap: {
-    paddingHorizontal: '10%' as unknown as number,
-  },
   orbitalSection: {
     paddingVertical: 12,
     marginBottom: 12,
@@ -908,7 +907,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600' as const,
   },
-
+  colonyBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    backgroundColor: Colors.xenogas + '12',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.xenogas + '30',
+  },
+  colonyBannerLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    flex: 1,
+  },
+  colonyBannerText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500' as const,
+  },
+  colonyBannerName: {
+    color: Colors.xenogas,
+    fontWeight: '700' as const,
+  },
+  colonyBannerAction: {
+    color: Colors.primary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
