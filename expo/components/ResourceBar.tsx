@@ -278,9 +278,23 @@ export default function ResourceBar() {
           <View style={styles.divider} />
           <ResourceItem label="Xenogas" color={Colors.xenogas} value={activePlanet.resources.xenogas} rate={activeProduction.xenogas} storagePercent={storagePct.xenogas} storageCap={storageCap.xenogas} />
           <View style={styles.divider} />
-          <ResourceItem label="Énergie" color={energyColor} value={energyBalance} />
-          <View style={styles.divider} />
-          <ResourceItem label="Solar" color={Colors.solar} value={state.solar} />
+          <View style={styles.stackedSection}>
+            <View style={styles.stackedItem}>
+              <View style={[styles.dot, { backgroundColor: Colors.solar }]} />
+              <View style={styles.itemContent}>
+                <Text style={styles.label}>Solar</Text>
+                <Text style={[styles.value, { color: Colors.text }]}>{formatNumber(state.solar)}</Text>
+              </View>
+            </View>
+            <View style={styles.stackedDivider} />
+            <View style={styles.stackedItem}>
+              <View style={[styles.dot, { backgroundColor: energyColor }]} />
+              <View style={styles.itemContent}>
+                <Text style={styles.label}>{"\u00C9nergie"}</Text>
+                <Text style={[styles.value, { color: energyColor }]}>{formatNumber(energyBalance)}</Text>
+              </View>
+            </View>
+          </View>
         </LinearGradient>
       </Pressable>
       {shieldActive && (
@@ -469,5 +483,21 @@ const styles = StyleSheet.create({
   },
   rate: {
     fontSize: 9,
+  },
+  stackedSection: {
+    flex: 1.2,
+    paddingHorizontal: 4,
+  },
+  stackedItem: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 4,
+  },
+  stackedDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.border,
+    marginVertical: 3,
+    marginHorizontal: 4,
   },
 });

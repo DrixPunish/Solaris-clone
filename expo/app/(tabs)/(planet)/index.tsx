@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Wallet, Shield, Rocket, FlaskConical, Building2, Gem, Pencil, X, Check, Mail, ChevronRight, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin, Bell, BellOff, Swords, Hammer } from 'lucide-react-native';
+import { Wallet, Shield, Rocket, FlaskConical, Building2, Pencil, X, Check, Mail, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin, Bell, BellOff, Swords, Hammer, ChevronLeft, ChevronRight, Thermometer, Scan, Globe, MessageSquare } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,8 +25,86 @@ import { useNotificationSettings } from '@/contexts/NotificationSettingsContext'
 const LAST_USERNAME_CHANGE_KEY = 'solaris_last_username_change';
 const LAST_REPORTS_VISIT_KEY = 'solaris_last_reports_visit';
 
+interface OrbitalStatProps {
+  icon: React.ElementType;
+  value: string | number;
+  label: string;
+  color: string;
+  size?: number;
+}
+
+const OrbitalStat = React.memo(function OrbitalStat({ icon: Icon, value, label, color, size = 16 }: OrbitalStatProps) {
+  return (
+    <View style={orbitalStyles.stat}>
+      <View style={[orbitalStyles.statIconWrap, { backgroundColor: color + '15' }]}>
+        <Icon size={size} color={color} />
+      </View>
+      <Text style={orbitalStyles.statValue}>{value}</Text>
+      <Text style={orbitalStyles.statLabel}>{label}</Text>
+    </View>
+  );
+});
+
+interface ActionButtonProps {
+  icon: React.ElementType;
+  label: string;
+  onPress: () => void;
+  badge?: number;
+  color?: string;
+  accentBorder?: string;
+}
+
+const ActionButton = React.memo(function ActionButton({ icon: Icon, label, onPress, badge, color = Colors.textSecondary, accentBorder }: ActionButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[
+        actionStyles.button,
+        accentBorder ? { borderColor: accentBorder } : undefined,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {badge !== undefined && badge > 0 && (
+        <View style={actionStyles.badge}>
+          <Text style={actionStyles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      )}
+      <View style={[actionStyles.iconWrap, { backgroundColor: color + '12' }]}>
+        <Icon size={24} color={color} />
+      </View>
+      <Text style={[actionStyles.label, accentBorder ? { color: accentBorder } : undefined]}>{label}</Text>
+    </TouchableOpacity>
+  );
+});
+
+interface SmallActionButtonProps {
+  icon: React.ElementType;
+  label: string;
+  onPress: () => void;
+  color?: string;
+  accentBorder?: string;
+}
+
+const SmallActionButton = React.memo(function SmallActionButton({ icon: Icon, label, onPress, color = Colors.textMuted, accentBorder }: SmallActionButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[
+        actionStyles.smallButton,
+        accentBorder ? { borderColor: accentBorder } : undefined,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[actionStyles.smallIconWrap, { backgroundColor: color + '12' }]}>
+        <Icon size={18} color={color} />
+      </View>
+      <Text style={[actionStyles.smallLabel, accentBorder ? { color: accentBorder } : undefined]}>{label}</Text>
+    </TouchableOpacity>
+  );
+});
+
 export default function PlanetScreen() {
-  const { state, activePlanet, activeRenamePlanet, setUsername, userEmail, setActivePlanetId, refreshResources, isRefreshing } = useGame();
+  const { state, activePlanet, activeRenamePlanet, setUsername, userEmail, setActivePlanetId, refreshResources, isRefreshing, activePlanetId } = useGame();
   const router = useRouter();
   const { user } = useAuth();
   const { signOut } = useAuth();
@@ -185,7 +263,48 @@ export default function PlanetScreen() {
     [activePlanet.ships],
   );
 
+  const totalDefenses = useMemo(
+    () => Object.values(activePlanet.defenses).reduce((sum, count) => sum + count, 0),
+    [activePlanet.defenses],
+  );
+
+  const planetSize = useMemo(
+    () => Object.keys(activePlanet.buildings).filter(k => (activePlanet.buildings[k] ?? 0) > 0).length * 12 + 100,
+    [activePlanet.buildings],
+  );
+
+  const planetTemperature = useMemo(() => {
+    const pos = activePlanet.coordinates[2];
+    return Math.round(75 - (pos * 5));
+  }, [activePlanet.coordinates]);
+
   const activeTimerCount = activePlanet.activeTimers.length;
+
+  const planetIds = useMemo(() => {
+    const ids: (string | null)[] = [null];
+    for (const colony of (state.colonies ?? [])) {
+      ids.push(colony.id);
+    }
+    return ids;
+  }, [state.colonies]);
+
+  const currentPlanetIndex = useMemo(() => {
+    return planetIds.indexOf(activePlanetId);
+  }, [planetIds, activePlanetId]);
+
+  const goToPrevPlanet = useCallback(() => {
+    if (planetIds.length <= 1) return;
+    const prevIndex = (currentPlanetIndex - 1 + planetIds.length) % planetIds.length;
+    setActivePlanetId(planetIds[prevIndex] ?? null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [planetIds, currentPlanetIndex, setActivePlanetId]);
+
+  const goToNextPlanet = useCallback(() => {
+    if (planetIds.length <= 1) return;
+    const nextIndex = (currentPlanetIndex + 1) % planetIds.length;
+    setActivePlanetId(planetIds[nextIndex] ?? null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [planetIds, currentPlanetIndex, setActivePlanetId]);
 
   return (
     <View style={styles.container}>
@@ -212,30 +331,71 @@ export default function PlanetScreen() {
               <MapPin size={14} color={Colors.xenogas} />
               <Text style={styles.colonyBannerText}>Colonie active : <Text style={styles.colonyBannerName}>{activePlanet.planetName}</Text></Text>
             </View>
-            <Text style={styles.colonyBannerAction}>Retour planète principale</Text>
+            <Text style={styles.colonyBannerAction}>Retour principale</Text>
           </TouchableOpacity>
         )}
 
-        <View style={styles.planetSection}>
-          <StarField starCount={35} height={200} />
-          <View style={styles.planetGlowOuter}>
-            {activePlanetSprite ? (
-              <Image
-                source={{ uri: activePlanetSprite }}
-                style={styles.planetSpriteImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <PlanetVisual size={130} />
-            )}
+        <View style={styles.orbitalSection}>
+          <StarField starCount={45} height={320} />
+
+          <View style={orbitalStyles.topRow}>
+            <OrbitalStat icon={Building2} value={totalBuildings} label="B\u00e2timents" color={Colors.primary} />
+            <OrbitalStat icon={FlaskConical} value={totalResearch} label="Recherche" color={Colors.silice} />
           </View>
-          <Pressable onPress={openRenameModal} style={styles.planetNameRow}>
-            <Text style={styles.planetName}>{activePlanet.planetName}</Text>
-            <View style={styles.editIconCircle}>
-              <Pencil size={11} color={Colors.textMuted} />
+
+          <View style={orbitalStyles.centerRow}>
+            <TouchableOpacity
+              onPress={goToPrevPlanet}
+              style={orbitalStyles.arrowBtn}
+              activeOpacity={0.5}
+              disabled={planetIds.length <= 1}
+            >
+              <ChevronLeft size={24} color={planetIds.length > 1 ? Colors.textSecondary : Colors.border} />
+            </TouchableOpacity>
+
+            <OrbitalStat icon={Rocket} value={totalShips} label="Flotte" color={Colors.accent} />
+
+            <View style={orbitalStyles.planetCenter}>
+              <View style={orbitalStyles.planetGlow} />
+              {activePlanetSprite ? (
+                <Image
+                  source={{ uri: activePlanetSprite }}
+                  style={orbitalStyles.planetImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <PlanetVisual size={150} />
+              )}
             </View>
-          </Pressable>
-          <ClickableCoords coords={activePlanet.coordinates} style={styles.coordinates} center />
+
+            <OrbitalStat icon={Shield} value={totalDefenses} label="D\u00e9fense" color={Colors.success} />
+
+            <TouchableOpacity
+              onPress={goToNextPlanet}
+              style={orbitalStyles.arrowBtn}
+              activeOpacity={0.5}
+              disabled={planetIds.length <= 1}
+            >
+              <ChevronRight size={24} color={planetIds.length > 1 ? Colors.textSecondary : Colors.border} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={orbitalStyles.bottomRow}>
+            <OrbitalStat icon={Scan} value={planetSize} label="Taille" color={Colors.textSecondary} />
+
+            <View style={orbitalStyles.planetInfo}>
+              <Pressable onPress={openRenameModal} style={orbitalStyles.nameRow}>
+                <Text style={orbitalStyles.planetName}>{activePlanet.planetName}</Text>
+                <View style={orbitalStyles.editIcon}>
+                  <Pencil size={10} color={Colors.textMuted} />
+                </View>
+              </Pressable>
+              <ClickableCoords coords={activePlanet.coordinates} style={orbitalStyles.coords} center />
+            </View>
+
+            <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Temp\u00e9rature" color={Colors.textSecondary} />
+          </View>
+
           {activeTimerCount > 0 && (
             <View style={styles.timerBadge}>
               <View style={styles.timerDot} />
@@ -246,339 +406,234 @@ export default function PlanetScreen() {
           )}
         </View>
 
-        <View style={styles.solarCard}>
-          <View style={styles.solarRow}>
-            <Gem size={18} color={Colors.solar} />
-            <Text style={styles.solarLabel}>Solar</Text>
-            <Text style={styles.solarValue}>{formatNumber(state.solar)}</Text>
-          </View>
-          <Text style={styles.solarDesc}>Token crypto du jeu - Échangeable on-chain</Text>
-        </View>
-
-        <Text style={styles.sectionTitle}>Vue d{"'"}ensemble</Text>
-        <View style={styles.grid}>
-          <View style={styles.overviewCard}>
-            <Building2 size={18} color={Colors.primary} />
-            <Text style={styles.overviewValue}>{totalBuildings}</Text>
-            <Text style={styles.overviewLabel}>Bâtiments</Text>
-          </View>
-          <View style={styles.overviewCard}>
-            <FlaskConical size={18} color={Colors.silice} />
-            <Text style={styles.overviewValue}>{totalResearch}</Text>
-            <Text style={styles.overviewLabel}>Recherche</Text>
-          </View>
-          <View style={styles.overviewCard}>
-            <Rocket size={18} color={Colors.accent} />
-            <Text style={styles.overviewValue}>{totalShips}</Text>
-            <Text style={styles.overviewLabel}>Flotte</Text>
-          </View>
-          <View style={styles.overviewCard}>
-            <Shield size={18} color={Colors.success} />
-            <Text style={styles.overviewValue}>{Object.values(activePlanet.defenses).reduce((sum, count) => sum + count, 0)}</Text>
-            <Text style={styles.overviewLabel}>Défense</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.fleetCard}
-          onPress={() => router.push('/fleet-overview')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.fleetIconWrap}>
-            <Navigation size={20} color={Colors.accent} />
-            {fleetCount > 0 && (
-              <View style={styles.fleetBadge}>
-                <Text style={styles.fleetBadgeText}>{fleetCount}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.messagesTextWrap}>
-            <Text style={styles.messagesTitle}>Mouvements de Flotte</Text>
-            <Text style={styles.messagesDesc}>
-              {fleetCount > 0 ? `${fleetCount} flotte${fleetCount > 1 ? 's' : ''} en mouvement` : 'Aucune flotte en mouvement'}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.reportsCard}
-          onPress={handleOpenReports}
-          activeOpacity={0.7}
-        >
-          <View style={styles.reportsIconWrap}>
-            <FileText size={20} color={Colors.silice} />
-            {unreadReportsCount > 0 && (
-              <View style={styles.reportsBadge}>
-                <Text style={styles.reportsBadgeText}>{unreadReportsCount > 99 ? '99+' : unreadReportsCount}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.messagesTextWrap}>
-            <Text style={styles.messagesTitle}>Rapports</Text>
-            <Text style={styles.messagesDesc}>
-              {unreadReportsCount > 0 ? `${unreadReportsCount} non lu${unreadReportsCount > 1 ? 's' : ''}` : 'Espionnage, Combat & Transport'}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
-
         <QuantumShieldCard />
 
-        <View style={styles.web3Card}>
-          <LinearGradient
-            colors={['rgba(212, 168, 71, 0.06)', 'rgba(139, 37, 37, 0.06)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.web3Gradient}
-          >
-            <View style={styles.web3Header}>
-              <Wallet size={22} color={Colors.primary} />
-              <View style={styles.web3TextWrap}>
-                <Text style={styles.web3Title}>Intégration Web3</Text>
-                <Text style={styles.web3Sub}>
-                  Connectez votre wallet pour échanger des ressources on-chain, minter des NFTs de planètes et rejoindre la galaxie décentralisée.
-                </Text>
-              </View>
-            </View>
-            <Pressable style={styles.web3Button}>
-              <Text style={styles.web3ButtonText}>Connecter le Wallet</Text>
-            </Pressable>
-          </LinearGradient>
+        <View style={actionStyles.grid}>
+          <View style={actionStyles.row}>
+            <ActionButton
+              icon={Navigation}
+              label="Mouvement de Flotte"
+              onPress={() => router.push('/fleet-overview')}
+              badge={fleetCount}
+              color={Colors.accent}
+            />
+            <ActionButton
+              icon={FileText}
+              label="Rapports"
+              onPress={handleOpenReports}
+              badge={unreadReportsCount}
+              color={Colors.silice}
+            />
+          </View>
+          <View style={actionStyles.row}>
+            <ActionButton
+              icon={BarChart3}
+              label="Statistiques"
+              onPress={() => router.push('/statistics')}
+              color={Colors.energy}
+            />
+            <ActionButton
+              icon={Globe}
+              label="Colonies"
+              onPress={() => router.push('/colonies')}
+              badge={(state.colonies?.length ?? 0) > 0 ? state.colonies?.length : undefined}
+              color={Colors.xenogas}
+            />
+          </View>
+          <View style={actionStyles.row}>
+            <ActionButton
+              icon={MapPin}
+              label="Tutoriel"
+              onPress={() => {}}
+              color={Colors.xenogas}
+              accentBorder={Colors.xenogas}
+            />
+            <ActionButton
+              icon={MessageSquare}
+              label="Messages"
+              onPress={() => router.push('/messages')}
+              badge={unreadCount}
+              color={Colors.primary}
+              accentBorder={Colors.accent}
+            />
+          </View>
+          <View style={actionStyles.row}>
+            <SmallActionButton
+              icon={Settings}
+              label="Param\u00e8tres"
+              onPress={() => setShowSettings(!showSettings)}
+            />
+            <SmallActionButton
+              icon={Wallet}
+              label="Wallet"
+              onPress={() => {}}
+              color={Colors.solar}
+              accentBorder={Colors.solar}
+            />
+          </View>
         </View>
-
-        <TouchableOpacity
-          style={styles.messagesCard}
-          onPress={() => router.push('/messages')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.messagesIconWrap}>
-            <Mail size={20} color={Colors.primary} />
-            {unreadCount > 0 && (
-              <View style={styles.messagesBadge}>
-                <Text style={styles.messagesBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.messagesTextWrap}>
-            <Text style={styles.messagesTitle}>Messages</Text>
-            <Text style={styles.messagesDesc}>
-              {unreadCount > 0 ? `${unreadCount} non lu${unreadCount > 1 ? 's' : ''}` : 'Aucun nouveau message'}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.statsCard}
-          onPress={() => router.push('/statistics')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.statsIconWrap}>
-            <BarChart3 size={20} color={Colors.energy} />
-          </View>
-          <View style={styles.messagesTextWrap}>
-            <Text style={styles.messagesTitle}>Statistiques</Text>
-            <Text style={styles.messagesDesc}>Production, scores, combat</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.coloniesCard}
-          onPress={() => router.push('/colonies')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.coloniesIconWrap}>
-            <MapPin size={20} color={Colors.xenogas} />
-            {(state.colonies?.length ?? 0) > 0 && (
-              <View style={styles.coloniesBadge}>
-                <Text style={styles.coloniesBadgeText}>{state.colonies?.length}</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.messagesTextWrap}>
-            <Text style={styles.messagesTitle}>Colonies</Text>
-            <Text style={styles.messagesDesc}>
-              {(state.colonies?.length ?? 0) > 0 ? `${state.colonies?.length} colonie${(state.colonies?.length ?? 0) > 1 ? 's' : ''} active${(state.colonies?.length ?? 0) > 1 ? 's' : ''}` : 'Gérer vos colonies'}
-            </Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
 
         <TutorialReopenButton />
 
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => setShowSettings(!showSettings)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.settingsBtnLeft}>
-            <View style={[styles.settingsIconWrap, { backgroundColor: Colors.textMuted + '12' }]}>
-              <Settings size={18} color={Colors.textMuted} />
-            </View>
-            <Text style={styles.settingsBtnLabel}>Paramètres</Text>
-          </View>
-          <ChevronRight size={16} color={Colors.textMuted} style={showSettings ? { transform: [{ rotate: '90deg' }] } : undefined} />
-        </TouchableOpacity>
-
-        {showSettings && (<View>
-        <View style={styles.settingsCard}>
-          <View style={styles.settingsRow}>
-            <View style={styles.settingsIconWrap}>
-              <Mail size={18} color={Colors.primary} />
-            </View>
-            <View style={styles.settingsContent}>
-              <Text style={styles.settingsLabel}>Email</Text>
-              <Text style={styles.settingsValue}>{userEmail || '—'}</Text>
-            </View>
-          </View>
-
-          <View style={styles.settingsDivider} />
-
-          <View style={styles.settingsRow}>
-            <View style={styles.settingsIconWrap}>
-              <UserCircle size={18} color={Colors.accent} />
-            </View>
-            <View style={styles.settingsContent}>
-              <Text style={styles.settingsLabel}>Pseudo</Text>
-              {isEditingUsername ? (
-                <View style={styles.editRow}>
-                  <TextInput
-                    style={styles.editInput}
-                    value={newUsername}
-                    onChangeText={setNewUsername}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    maxLength={20}
-                    placeholder="Nouveau pseudo"
-                    placeholderTextColor={Colors.textMuted}
-                    testID="edit-username-input"
-                  />
-                  <TouchableOpacity
-                    onPress={handleSaveUsername}
-                    style={styles.editBtn}
-                    disabled={isSaving}
-                    activeOpacity={0.6}
-                  >
-                    {isSaving ? (
-                      <ActivityIndicator size="small" color={Colors.success} />
-                    ) : (
-                      <Check size={16} color={Colors.success} />
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleCancelEdit}
-                    style={styles.editBtn}
-                    activeOpacity={0.6}
-                  >
-                    <X size={16} color={Colors.danger} />
-                  </TouchableOpacity>
+        {showSettings && (
+          <View>
+            <View style={styles.settingsCard}>
+              <View style={styles.settingsRow}>
+                <View style={styles.settingsIconWrap}>
+                  <Mail size={18} color={Colors.primary} />
                 </View>
-              ) : (
-                <View style={styles.valueRow}>
-                  <Text style={styles.settingsValue}>{state.username || '—'}</Text>
-                  <TouchableOpacity onPress={handleEditUsername} style={styles.editIconBtn} activeOpacity={0.6}>
-                    <Pencil size={14} color={Colors.textMuted} />
-                  </TouchableOpacity>
+                <View style={styles.settingsContent}>
+                  <Text style={styles.settingsLabel}>Email</Text>
+                  <Text style={styles.settingsValue}>{userEmail || '\u2014'}</Text>
                 </View>
-              )}
+              </View>
+
+              <View style={styles.settingsDivider} />
+
+              <View style={styles.settingsRow}>
+                <View style={styles.settingsIconWrap}>
+                  <UserCircle size={18} color={Colors.accent} />
+                </View>
+                <View style={styles.settingsContent}>
+                  <Text style={styles.settingsLabel}>Pseudo</Text>
+                  {isEditingUsername ? (
+                    <View style={styles.editRow}>
+                      <TextInput
+                        style={styles.editInput}
+                        value={newUsername}
+                        onChangeText={setNewUsername}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        maxLength={20}
+                        placeholder="Nouveau pseudo"
+                        placeholderTextColor={Colors.textMuted}
+                        testID="edit-username-input"
+                      />
+                      <TouchableOpacity
+                        onPress={handleSaveUsername}
+                        style={styles.editBtn}
+                        disabled={isSaving}
+                        activeOpacity={0.6}
+                      >
+                        {isSaving ? (
+                          <ActivityIndicator size="small" color={Colors.success} />
+                        ) : (
+                          <Check size={16} color={Colors.success} />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={handleCancelEdit}
+                        style={styles.editBtn}
+                        activeOpacity={0.6}
+                      >
+                        <X size={16} color={Colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.valueRow}>
+                      <Text style={styles.settingsValue}>{state.username || '\u2014'}</Text>
+                      <TouchableOpacity onPress={handleEditUsername} style={styles.editIconBtn} activeOpacity={0.6}>
+                        <Pencil size={14} color={Colors.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.settingsDivider} />
+
+              <View style={styles.settingsRow}>
+                <View style={styles.settingsIconWrap}>
+                  <Wallet size={18} color={Colors.solar} />
+                </View>
+                <View style={styles.settingsContent}>
+                  <Text style={styles.settingsLabel}>Wallet</Text>
+                  <Text style={[styles.settingsValue, { color: Colors.textMuted, fontStyle: 'italic' as const }]}>Non connect\u00e9</Text>
+                </View>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.settingsDivider} />
+            <Text style={styles.usernameHint}>Le pseudo peut \u00eatre chang\u00e9 une fois par jour.</Text>
 
-          <View style={styles.settingsRow}>
-            <View style={styles.settingsIconWrap}>
-              <Wallet size={18} color={Colors.solar} />
-            </View>
-            <View style={styles.settingsContent}>
-              <Text style={styles.settingsLabel}>Wallet</Text>
-              <Text style={[styles.settingsValue, { color: Colors.textMuted, fontStyle: 'italic' as const }]}>Non connecté</Text>
-            </View>
-          </View>
-        </View>
-
-        <Text style={styles.usernameHint}>Le pseudo peut être changé une fois par jour.</Text>
-
-        <TouchableOpacity
-          style={styles.notifSettingsBtn}
-          onPress={() => setShowNotifSettings(!showNotifSettings)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.notifSettingsBtnLeft}>
-            <View style={[styles.settingsIconWrap, { backgroundColor: Colors.warning + '12' }]}>
-              <Bell size={18} color={Colors.warning} />
-            </View>
-            <Text style={styles.notifSettingsBtnLabel}>Notifications</Text>
-          </View>
-          <ChevronRight size={16} color={Colors.textMuted} style={showNotifSettings ? { transform: [{ rotate: '90deg' }] } : undefined} />
-        </TouchableOpacity>
-
-        {showNotifSettings && (
-          <View style={styles.notifCard}>
             <TouchableOpacity
-              style={styles.notifRow}
-              onPress={() => updateSetting('buildPopups', !notifSettings.buildPopups)}
+              style={styles.notifSettingsBtn}
+              onPress={() => setShowNotifSettings(!showNotifSettings)}
               activeOpacity={0.7}
             >
-              <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.buildPopups ? Colors.success + '15' : Colors.textMuted + '10' }]}>
-                <Hammer size={15} color={notifSettings.buildPopups ? Colors.success : Colors.textMuted} />
+              <View style={styles.notifSettingsBtnLeft}>
+                <View style={[styles.settingsIconWrap, { backgroundColor: Colors.warning + '12' }]}>
+                  <Bell size={18} color={Colors.warning} />
+                </View>
+                <Text style={styles.notifSettingsBtnLabel}>Notifications</Text>
               </View>
-              <View style={styles.notifTextWrap}>
-                <Text style={styles.notifTitle}>Pop-ups de fin de construction</Text>
-                <Text style={styles.notifDesc}>Bâtiments, recherches, vaisseaux, défenses</Text>
-              </View>
-              <View style={[styles.notifToggle, notifSettings.buildPopups ? styles.notifToggleOn : styles.notifToggleOff]}>
-                <View style={[styles.notifToggleThumb, notifSettings.buildPopups ? styles.notifThumbOn : styles.notifThumbOff]} />
-              </View>
+              <ChevronRight size={16} color={Colors.textMuted} style={showNotifSettings ? { transform: [{ rotate: '90deg' }] } : undefined} />
             </TouchableOpacity>
 
-            <View style={styles.notifDivider} />
+            {showNotifSettings && (
+              <View style={styles.notifCard}>
+                <TouchableOpacity
+                  style={styles.notifRow}
+                  onPress={() => updateSetting('buildPopups', !notifSettings.buildPopups)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.buildPopups ? Colors.success + '15' : Colors.textMuted + '10' }]}>
+                    <Hammer size={15} color={notifSettings.buildPopups ? Colors.success : Colors.textMuted} />
+                  </View>
+                  <View style={styles.notifTextWrap}>
+                    <Text style={styles.notifTitle}>Pop-ups de fin de construction</Text>
+                    <Text style={styles.notifDesc}>B\u00e2timents, recherches, vaisseaux, d\u00e9fenses</Text>
+                  </View>
+                  <View style={[styles.notifToggle, notifSettings.buildPopups ? styles.notifToggleOn : styles.notifToggleOff]}>
+                    <View style={[styles.notifToggleThumb, notifSettings.buildPopups ? styles.notifThumbOn : styles.notifThumbOff]} />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.notifDivider} />
+
+                <TouchableOpacity
+                  style={styles.notifRow}
+                  onPress={() => updateSetting('attackBanner', !notifSettings.attackBanner)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.attackBanner ? Colors.danger + '15' : Colors.textMuted + '10' }]}>
+                    <Swords size={15} color={notifSettings.attackBanner ? Colors.danger : Colors.textMuted} />
+                  </View>
+                  <View style={styles.notifTextWrap}>
+                    <Text style={styles.notifTitle}>Bandeau d{"'"}attaque</Text>
+                    <Text style={styles.notifDesc}>Alerte sous la barre de ressources</Text>
+                  </View>
+                  <View style={[styles.notifToggle, notifSettings.attackBanner ? styles.notifToggleOn : styles.notifToggleOff]}>
+                    <View style={[styles.notifToggleThumb, notifSettings.attackBanner ? styles.notifThumbOn : styles.notifThumbOff]} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
-              style={styles.notifRow}
-              onPress={() => updateSetting('attackBanner', !notifSettings.attackBanner)}
+              style={styles.friendsCard}
+              onPress={() => router.push('/friends')}
               activeOpacity={0.7}
             >
-              <View style={[styles.notifIconWrap, { backgroundColor: notifSettings.attackBanner ? Colors.danger + '15' : Colors.textMuted + '10' }]}>
-                <Swords size={15} color={notifSettings.attackBanner ? Colors.danger : Colors.textMuted} />
+              <View style={[styles.settingsIconWrap, { backgroundColor: Colors.success + '15' }]}>
+                <Users size={18} color={Colors.success} />
               </View>
-              <View style={styles.notifTextWrap}>
-                <Text style={styles.notifTitle}>Bandeau d{"'"}attaque</Text>
-                <Text style={styles.notifDesc}>Alerte sous la barre de ressources</Text>
+              <View style={styles.settingsContent}>
+                <Text style={styles.friendsTitle}>Amis</Text>
+                <Text style={styles.friendsSub}>G\u00e9rer votre liste d{"'"}amis</Text>
               </View>
-              <View style={[styles.notifToggle, notifSettings.attackBanner ? styles.notifToggleOn : styles.notifToggleOff]}>
-                <View style={[styles.notifToggleThumb, notifSettings.attackBanner ? styles.notifThumbOn : styles.notifThumbOff]} />
-              </View>
+              <ChevronRight size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={handleSignOut}
+              activeOpacity={0.7}
+            >
+              <LogOut size={18} color={Colors.danger} />
+              <Text style={styles.logoutText}>Se d\u00e9connecter</Text>
             </TouchableOpacity>
           </View>
         )}
-
-        <TouchableOpacity
-          style={styles.friendsCard}
-          onPress={() => router.push('/friends')}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.settingsIconWrap, { backgroundColor: Colors.success + '15' }]}>
-            <Users size={18} color={Colors.success} />
-          </View>
-          <View style={styles.settingsContent}>
-            <Text style={styles.friendsTitle}>Amis</Text>
-            <Text style={styles.friendsSub}>Gérer votre liste d{"'"}amis</Text>
-          </View>
-          <ChevronRight size={16} color={Colors.textMuted} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={handleSignOut}
-          activeOpacity={0.7}
-        >
-          <LogOut size={18} color={Colors.danger} />
-          <Text style={styles.logoutText}>Se déconnecter</Text>
-        </TouchableOpacity>
-        </View>)}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -596,7 +651,7 @@ export default function PlanetScreen() {
           <Pressable style={styles.modalOverlay} onPress={() => setRenameModalVisible(false)}>
             <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{activePlanet.isColony ? 'Renommer la colonie' : 'Renommer la planète'}</Text>
+                <Text style={styles.modalTitle}>{activePlanet.isColony ? 'Renommer la colonie' : 'Renommer la plan\u00e8te'}</Text>
                 <Pressable onPress={() => setRenameModalVisible(false)} hitSlop={8}>
                   <X size={20} color={Colors.textMuted} />
                 </Pressable>
@@ -608,7 +663,7 @@ export default function PlanetScreen() {
                 maxLength={24}
                 autoFocus
                 placeholderTextColor={Colors.textMuted}
-                placeholder={activePlanet.isColony ? 'Nom de la colonie' : 'Nom de la planète'}
+                placeholder={activePlanet.isColony ? 'Nom de la colonie' : 'Nom de la plan\u00e8te'}
                 selectionColor={Colors.primary}
               />
               <Text style={styles.charCount}>{newPlanetName.length}/24</Text>
@@ -628,6 +683,193 @@ export default function PlanetScreen() {
   );
 }
 
+const orbitalStyles = StyleSheet.create({
+  topRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 24,
+    marginBottom: -8,
+    zIndex: 2,
+  },
+  centerRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    zIndex: 1,
+  },
+  bottomRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'flex-start' as const,
+    paddingHorizontal: 16,
+    marginTop: -4,
+    zIndex: 2,
+  },
+  arrowBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  planetCenter: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginHorizontal: 4,
+  },
+  planetGlow: {
+    position: 'absolute' as const,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(212, 168, 71, 0.06)',
+  },
+  planetImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    borderWidth: 2,
+    borderColor: 'rgba(212, 168, 71, 0.25)',
+  },
+  planetInfo: {
+    alignItems: 'center' as const,
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  planetName: {
+    color: Colors.text,
+    fontSize: 20,
+    fontWeight: '700' as const,
+  },
+  editIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  coords: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '500' as const,
+    marginTop: 2,
+    letterSpacing: 1,
+  },
+  stat: {
+    alignItems: 'center' as const,
+    minWidth: 60,
+  },
+  statIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 4,
+  },
+  statValue: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '800' as const,
+    letterSpacing: -0.5,
+  },
+  statLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '500' as const,
+    marginTop: 1,
+    letterSpacing: 0.3,
+  },
+});
+
+const actionStyles = StyleSheet.create({
+  grid: {
+    gap: 10,
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  button: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  iconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 10,
+  },
+  label: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    textAlign: 'center' as const,
+  },
+  badge: {
+    position: 'absolute' as const,
+    top: 8,
+    right: 8,
+    backgroundColor: Colors.danger,
+    borderRadius: 9,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 5,
+    zIndex: 10,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  smallButton: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  smallIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  smallLabel: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
+  },
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -635,50 +877,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 8,
   },
-  planetSection: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  planetGlowOuter: {
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  planetSpriteImage: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 2,
-    borderColor: 'rgba(212, 168, 71, 0.25)',
-  },
-  planetNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  editIconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  planetName: {
-    color: Colors.text,
-    fontSize: 22,
-    fontWeight: '700' as const,
-  },
-  coordinates: {
-    color: Colors.primary,
-    fontSize: 13,
-    fontWeight: '500' as const,
-    marginTop: 4,
-    letterSpacing: 1,
+  orbitalSection: {
+    paddingVertical: 12,
+    marginBottom: 12,
   },
   timerBadge: {
     marginTop: 8,
@@ -690,6 +893,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '30',
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
+    alignSelf: 'center' as const,
     gap: 6,
   },
   timerDot: {
@@ -703,169 +907,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600' as const,
   },
-  solarCard: {
-    backgroundColor: Colors.solar + '10',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.solar + '25',
-  },
-  solarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  solarLabel: {
-    color: Colors.solar,
-    fontSize: 14,
-    fontWeight: '700' as const,
-    flex: 1,
-  },
-  solarValue: {
-    color: Colors.text,
-    fontSize: 18,
-    fontWeight: '700' as const,
-  },
-  solarDesc: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 1.2,
-    marginBottom: 10,
-    marginTop: 8,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 20,
-  },
-
-  overviewCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    width: '48%' as unknown as number,
-    flexGrow: 1,
-    flexBasis: '45%' as unknown as number,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  overviewValue: {
-    color: Colors.text,
-    fontSize: 22,
-    fontWeight: '800' as const,
-    marginTop: 8,
-    letterSpacing: -0.5,
-  },
-  overviewLabel: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    fontWeight: '500' as const,
-    marginTop: 3,
-    letterSpacing: 0.3,
-  },
-  web3Card: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    marginBottom: 16,
-  },
-  web3Gradient: {
-    padding: 16,
-  },
-  web3Header: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
-  },
-  web3TextWrap: {
-    flex: 1,
-  },
-  web3Title: {
-    color: Colors.text,
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  web3Sub: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-  web3Button: {
-    backgroundColor: Colors.primary + '15',
-    borderWidth: 1,
-    borderColor: Colors.primary + '35',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  web3ButtonText: {
-    color: Colors.primary,
-    fontSize: 13,
-    fontWeight: '700' as const,
-  },
-
-  messagesCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-  },
-  messagesIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '12',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  messagesBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: Colors.danger,
-    borderRadius: 8,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  messagesBadgeText: {
-    color: '#0A0A14',
-    fontSize: 10,
-    fontWeight: '700' as const,
-  },
-  messagesTextWrap: {
-    flex: 1,
-  },
-  messagesTitle: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '600' as const,
-  },
-  messagesDesc: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-
   colonyBanner: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -898,84 +939,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600' as const,
   },
-  fleetCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-  },
-  fleetIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: Colors.accent + '12',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fleetBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: Colors.accent,
-    borderRadius: 8,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  fleetBadgeText: {
-    color: '#0A0A14',
-    fontSize: 10,
-    fontWeight: '700' as const,
-  },
-  reportsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-  },
-  reportsIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: Colors.silice + '12',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reportsBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#ef4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  reportsBadgeText: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '700' as const,
-    lineHeight: 12,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
   modalContent: {
     backgroundColor: Colors.surface,
@@ -987,9 +955,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     marginBottom: 16,
   },
   modalTitle: {
@@ -1014,9 +982,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   confirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     gap: 8,
     backgroundColor: Colors.primary,
     borderRadius: 10,
@@ -1151,82 +1119,6 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: Colors.danger,
-    fontSize: 14,
-    fontWeight: '600' as const,
-  },
-  statsCard: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-  },
-  statsIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: Colors.energy + '12',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  coloniesCard: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: 12,
-  },
-  coloniesIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: Colors.xenogas + '12',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  coloniesBadge: {
-    position: 'absolute' as const,
-    top: -4,
-    right: -4,
-    backgroundColor: Colors.xenogas,
-    borderRadius: 8,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingHorizontal: 4,
-  },
-  coloniesBadgeText: {
-    color: '#0A0A14',
-    fontSize: 10,
-    fontWeight: '700' as const,
-  },
-  settingsBtn: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  settingsBtnLeft: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 12,
-  },
-  settingsBtnLabel: {
-    color: Colors.text,
     fontSize: 14,
     fontWeight: '600' as const,
   },
