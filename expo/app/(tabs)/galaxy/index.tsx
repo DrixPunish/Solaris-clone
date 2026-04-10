@@ -506,9 +506,19 @@ export default function GalaxyScreen() {
               <TouchableOpacity onPress={() => changeGalaxy(-1)} style={styles.navBtn} activeOpacity={0.6} disabled={viewGalaxy <= 1}>
                 <ChevronsLeft size={16} color={viewGalaxy <= 1 ? Colors.textMuted : Colors.primary} />
               </TouchableOpacity>
-              <View style={styles.navInputDisabled}>
-                <Text style={styles.navInputText}>{viewGalaxy}</Text>
-              </View>
+              <TextInput
+                style={styles.navInput}
+                value={String(viewGalaxy)}
+                onChangeText={(text) => {
+                  const num = parseInt(text, 10);
+                  if (!text) setViewGalaxy(1);
+                  else if (!isNaN(num)) setViewGalaxy(Math.max(1, Math.min(MAX_GALAXIES, num)));
+                }}
+                keyboardType="number-pad"
+                maxLength={1}
+                selectTextOnFocus
+                selectionColor={Colors.primary}
+              />
               <TouchableOpacity onPress={() => changeGalaxy(1)} style={styles.navBtn} activeOpacity={0.6} disabled={viewGalaxy >= MAX_GALAXIES}>
                 <ChevronsRight size={16} color={viewGalaxy >= MAX_GALAXIES ? Colors.textMuted : Colors.primary} />
               </TouchableOpacity>
