@@ -19,7 +19,6 @@ import { NotificationSettingsProvider } from "@/contexts/NotificationSettingsCon
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { supabase } from "@/utils/supabase";
 import { ActivityIndicator, View } from "react-native";
-import Colors from "@/constants/colors";
 
 void SplashScreen.preventAutoHideAsync();
 
