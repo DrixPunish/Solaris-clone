@@ -360,7 +360,7 @@ export default function PlanetScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <PlanetVisual size={190} />
+                <PlanetVisual size={140} />
               )}
             </View>
 
@@ -706,11 +706,9 @@ const orbitalStyles = StyleSheet.create({
     marginHorizontal: 4,
   },
   planetImage: {
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    borderWidth: 2,
-    borderColor: 'rgba(212, 168, 71, 0.25)',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
   },
   planetInfo: {
     alignItems: 'center' as const,
