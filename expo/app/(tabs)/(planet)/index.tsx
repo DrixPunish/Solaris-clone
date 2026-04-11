@@ -569,12 +569,12 @@ export default function PlanetScreen() {
                 </View>
                 <View style={styles.settingsContent}>
                   <Text style={styles.settingsLabel}>Wallet</Text>
-                  <Text style={[styles.settingsValue, { color: Colors.textMuted, fontStyle: 'italic' as const }]}>Non connect\u00e9</Text>
+                  <Text style={[styles.settingsValue, { color: Colors.textMuted, fontStyle: 'italic' as const }]}>Non connecté</Text>
                 </View>
               </View>
             </View>
 
-            <Text style={styles.usernameHint}>Le pseudo peut \u00eatre chang\u00e9 une fois par jour.</Text>
+            <Text style={styles.usernameHint}>Le pseudo peut être changé une fois par jour.</Text>
 
             <TouchableOpacity
               style={styles.notifSettingsBtn}
@@ -602,7 +602,7 @@ export default function PlanetScreen() {
                   </View>
                   <View style={styles.notifTextWrap}>
                     <Text style={styles.notifTitle}>Pop-ups de fin de construction</Text>
-                    <Text style={styles.notifDesc}>B\u00e2timents, recherches, vaisseaux, d\u00e9fenses</Text>
+                    <Text style={styles.notifDesc}>Bâtiments, recherches, vaisseaux, défenses</Text>
                   </View>
                   <View style={[styles.notifToggle, notifSettings.buildPopups ? styles.notifToggleOn : styles.notifToggleOff]}>
                     <View style={[styles.notifToggleThumb, notifSettings.buildPopups ? styles.notifThumbOn : styles.notifThumbOff]} />
@@ -640,7 +640,7 @@ export default function PlanetScreen() {
               </View>
               <View style={styles.settingsContent}>
                 <Text style={styles.friendsTitle}>Amis</Text>
-                <Text style={styles.friendsSub}>G\u00e9rer votre liste d{"'"}amis</Text>
+                <Text style={styles.friendsSub}>Gérer votre liste d{"'"}amis</Text>
               </View>
               <ChevronRight size={16} color={Colors.textMuted} />
             </TouchableOpacity>
@@ -651,7 +651,7 @@ export default function PlanetScreen() {
               activeOpacity={0.7}
             >
               <LogOut size={18} color={Colors.danger} />
-              <Text style={styles.logoutText}>Se d\u00e9connecter</Text>
+              <Text style={styles.logoutText}>Se déconnecter</Text>
             </TouchableOpacity>
           </View>
         )}
