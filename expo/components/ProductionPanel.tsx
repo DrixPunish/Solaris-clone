@@ -53,6 +53,15 @@ export default function ProductionModal({ visible, onClose }: ProductionModalPro
   const plasmaLevel = research?.plasmaOverdrive ?? 0;
   const plasmaBonus = useMemo(() => getPlasmaProductionBonus(plasmaLevel), [plasmaLevel]);
 
+  const activePlanetSlotData = useMemo(() => {
+    if (!activePlanet) return undefined;
+    const colony = (state.colonies ?? []).find(c => c.id === (activePlanet as { id?: string | null }).id);
+    if ((activePlanet as { isColony?: boolean }).isColony && colony) {
+      return colony.temperatureMax;
+    }
+    return state.temperatureMax;
+  }, [activePlanet, state.colonies, state.temperatureMax]);
+
   const producers = useMemo((): ProducerRow[] => {
     const ferLevel = buildings.ferMine ?? 0;
     const siliceLevel = buildings.siliceMine ?? 0;
@@ -104,15 +113,6 @@ export default function ProductionModal({ visible, onClose }: ProductionModalPro
 
     return rows;
   }, [buildings, plasmaBonus, activePlanetSlotData]);
-
-  const activePlanetSlotData = useMemo(() => {
-    if (!activePlanet) return undefined;
-    const colony = (state.colonies ?? []).find(c => c.id === (activePlanet as { id?: string | null }).id);
-    if ((activePlanet as { isColony?: boolean }).isColony && colony) {
-      return colony.temperatureMax;
-    }
-    return state.temperatureMax;
-  }, [activePlanet, state.colonies, state.temperatureMax]);
 
   const energySummary = useMemo(() => {
     const produced = calculateEnergyProduced(buildings, research, ships, localPct, activePlanetSlotData);
