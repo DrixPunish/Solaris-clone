@@ -653,9 +653,9 @@ export const DEFAULT_STATE: GameState = {
   ships: {},
   defenses: {},
   resources: {
-    fer: 50000,
-    silice: 25000,
-    xenogas: 10000,
+    fer: 1000,
+    silice: 1000,
+    xenogas: 0,
     energy: 0,
   },
   solar: 500,
