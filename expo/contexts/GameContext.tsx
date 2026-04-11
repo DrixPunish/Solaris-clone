@@ -60,6 +60,50 @@ async function saveStateToSupabase(userId: string, state: GameState, email: stri
   }
 }
 
+async function ensureHomeworldPlanetExists(userId: string, state: GameState): Promise<void> {
+  const { data: existing } = await supabase
+    .from('planets')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_main', true)
+    .maybeSingle();
+
+  if (existing) return;
+
+  logger.log('[GameContext] Creating homeworld planet row with slot data');
+  const { data: newPlanet, error: insertErr } = await supabase.from('planets').insert({
+    user_id: userId,
+    planet_name: state.planetName,
+    coordinates: state.coordinates,
+    is_main: true,
+    last_update: Date.now(),
+    slot_position: state.slotPosition ?? state.coordinates[2],
+    base_fields: 160,
+    total_fields: 160,
+    temperature_min: state.temperatureMin ?? 20,
+    temperature_max: state.temperatureMax ?? 60,
+    metal_bonus_pct: state.metalBonusPct ?? 0,
+    crystal_bonus_pct: state.crystalBonusPct ?? 0,
+    deut_bonus_pct: state.deutBonusPct ?? 0,
+  }).select('id').single();
+
+  if (insertErr) {
+    logger.log('[GameContext] Error creating homeworld planet:', insertErr.message);
+    return;
+  }
+
+  if (newPlanet) {
+    await supabase.from('planet_resources').insert({
+      planet_id: newPlanet.id,
+      fer: state.resources.fer,
+      silice: state.resources.silice,
+      xenogas: state.resources.xenogas,
+      energy: 0,
+    });
+    logger.log('[GameContext] Homeworld planet created:', newPlanet.id);
+  }
+}
+
 export const [GameProvider, useGame] = createContextHook(() => {
   const [state, setState] = useState<GameState>(DEFAULT_STATE);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -133,10 +177,34 @@ export const [GameProvider, useGame] = createContextHook(() => {
 
         console.log('[GameContext] New player - creating initial state');
         const coords = generateCoordinates();
+        const slotPos = coords[2];
+        const slotTempRanges: Record<number, [number, number]> = {
+          1: [220, 260], 2: [170, 220], 3: [120, 170], 4: [70, 120], 5: [60, 100],
+          6: [50, 90], 7: [40, 80], 8: [30, 70], 9: [20, 60], 10: [10, 50],
+          11: [-25, 30], 12: [-50, 10], 13: [-75, -15], 14: [-100, -35], 15: [-130, -60],
+        };
+        const slotBonuses: Record<number, [number, number, number]> = {
+          1: [0, 40, 0], 2: [0, 30, 0], 3: [0, 20, 0], 4: [0, 0, 0], 5: [0, 0, 0],
+          6: [5, 0, 0], 7: [10, 0, 0], 8: [15, 0, 0], 9: [10, 0, 0], 10: [5, 0, 0],
+          11: [0, 0, 0], 12: [0, 0, 0], 13: [0, 0, 5], 14: [0, 0, 10], 15: [0, 0, 20],
+        };
+        const [tMin, tMax] = slotTempRanges[slotPos] ?? [20, 60];
+        const tempRange = Math.max(1, tMax - tMin - 40 + 1);
+        const temperatureMin = Math.floor(Math.random() * tempRange) + tMin;
+        const temperatureMax = temperatureMin + 40;
+        const [mBonus, cBonus, dBonus] = slotBonuses[slotPos] ?? [0, 0, 0];
         const newState: GameState = {
           ...DEFAULT_STATE,
           coordinates: coords,
           lastUpdate: Date.now(),
+          slotPosition: slotPos,
+          baseFields: 160,
+          totalFields: 160,
+          temperatureMin,
+          temperatureMax,
+          metalBonusPct: mBonus,
+          crystalBonusPct: cBonus,
+          deutBonusPct: dBonus,
         };
         lastSavedSnapshotRef.current = {
           resources: { fer: newState.resources.fer, silice: newState.resources.silice, xenogas: newState.resources.xenogas },
@@ -145,6 +213,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
           savedAt: Date.now(),
         };
         await saveStateToSupabase(userId, newState, userEmail).catch(e => console.warn('[GameContext] Failed to save initial state:', e));
+        await ensureHomeworldPlanetExists(userId, newState).catch(e => console.warn('[GameContext] Failed to create homeworld planet:', e));
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newState)).catch(() => {});
         return newState;
       }
@@ -903,7 +972,12 @@ export const [GameProvider, useGame] = createContextHook(() => {
     return maxVal === Infinity ? 999 : Math.max(0, maxVal);
   }, []);
 
-  const production = useMemo(() => calculateProduction(state.buildings, state.research, state.ships, state.productionPercentages), [state.buildings, state.research, state.ships, state.productionPercentages]);
+  const production = useMemo(() => calculateProduction(state.buildings, state.research, state.ships, state.productionPercentages, {
+    temperatureMax: state.temperatureMax,
+    metalBonusPct: state.metalBonusPct,
+    crystalBonusPct: state.crystalBonusPct,
+    deutBonusPct: state.deutBonusPct,
+  }), [state.buildings, state.research, state.ships, state.productionPercentages, state.temperatureMax, state.metalBonusPct, state.crystalBonusPct, state.deutBonusPct]);
 
   const setUsername = useCallback((username: string) => {
     setState(prev => {
@@ -1774,8 +1848,15 @@ export const [GameProvider, useGame] = createContextHook(() => {
     const pct = activePlanet.isColony
       ? (state.colonies ?? []).find(c => c.id === activePlanetId)?.productionPercentages
       : state.productionPercentages;
-    return calculateProduction(activePlanet.buildings, state.research, activePlanet.ships, pct);
-  }, [activePlanet.buildings, activePlanet.isColony, state.research, activePlanet.ships, state.productionPercentages, state.colonies, activePlanetId]);
+    const colony = activePlanet.isColony ? (state.colonies ?? []).find(c => c.id === activePlanetId) : undefined;
+    const bonuses = {
+      temperatureMax: activePlanet.isColony ? colony?.temperatureMax : state.temperatureMax,
+      metalBonusPct: activePlanet.isColony ? colony?.metalBonusPct : state.metalBonusPct,
+      crystalBonusPct: activePlanet.isColony ? colony?.crystalBonusPct : state.crystalBonusPct,
+      deutBonusPct: activePlanet.isColony ? colony?.deutBonusPct : state.deutBonusPct,
+    };
+    return calculateProduction(activePlanet.buildings, state.research, activePlanet.ships, pct, bonuses);
+  }, [activePlanet.buildings, activePlanet.isColony, state.research, activePlanet.ships, state.productionPercentages, state.colonies, activePlanetId, state.temperatureMax, state.metalBonusPct, state.crystalBonusPct, state.deutBonusPct]);
 
   const applyTutorialReward = useCallback(async (reward: TutorialReward, stepId?: string) => {
     if (!userId || !mainPlanetIdRef.current || !stepId) {

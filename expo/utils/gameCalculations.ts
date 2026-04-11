@@ -149,21 +149,32 @@ export function calculateEnergyConsumption(buildings: Record<string, number>, pe
 
 export const HELIOS_ENERGY_PER_UNIT = 30;
 
-export function calculateEnergyProduced(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages): number {
+export function getHeliosEnergyPerUnit(temperatureMax?: number): number {
+  const tempMax = temperatureMax ?? 50;
+  return Math.max(0, (tempMax + 160) / 6);
+}
+
+export function getXenogasTempFactor(temperatureMax?: number): number {
+  const tempMax = temperatureMax ?? 50;
+  return Math.max(0, 1.28 - 0.002 * tempMax);
+}
+
+export function calculateEnergyProduced(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages, temperatureMax?: number): number {
   const pct = percentages ?? DEFAULT_PRODUCTION_PERCENTAGES;
   const solarLevel = buildings.solarPlant ?? 0;
   const quantumFluxLevel = research?.quantumFlux ?? 0;
   const techBonus = 1 + getEnergyTechBonus(quantumFluxLevel);
   const solarPlantEnergy = Math.floor(20 * solarLevel * Math.pow(1.1, solarLevel) * techBonus * (pct.solarPlant / 100));
   const heliosCount = ships?.heliosRemorqueur ?? 0;
-  const heliosEnergy = Math.floor(heliosCount * HELIOS_ENERGY_PER_UNIT * (pct.heliosRemorqueur / 100));
+  const heliosEPU = getHeliosEnergyPerUnit(temperatureMax);
+  const heliosEnergy = Math.floor(heliosCount * heliosEPU * (pct.heliosRemorqueur / 100));
   return solarPlantEnergy + heliosEnergy;
 }
 
-export function getEnergyRatio(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages): number {
+export function getEnergyRatio(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages, temperatureMax?: number): number {
   const consumed = calculateEnergyConsumption(buildings, percentages);
   if (consumed === 0) return 1;
-  const produced = calculateEnergyProduced(buildings, research, ships, percentages);
+  const produced = calculateEnergyProduced(buildings, research, ships, percentages, temperatureMax);
   return Math.min(1, produced / consumed);
 }
 
@@ -187,41 +198,57 @@ export function getMineEnergyConsumption(buildingId: string, level: number): num
   }
 }
 
-export function calculateProduction(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages): Resources {
+export interface PlanetBonuses {
+  temperatureMax?: number;
+  metalBonusPct?: number;
+  crystalBonusPct?: number;
+  deutBonusPct?: number;
+}
+
+export function calculateProduction(buildings: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages, bonuses?: PlanetBonuses): Resources {
   const pct = percentages ?? DEFAULT_PRODUCTION_PERCENTAGES;
   const ferLevel = buildings.ferMine ?? 0;
   const siliceLevel = buildings.siliceMine ?? 0;
   const xenogasLevel = buildings.xenogasRefinery ?? 0;
 
-  const energyProduced = calculateEnergyProduced(buildings, research, ships, pct);
+  const tempMax = bonuses?.temperatureMax;
+  const energyProduced = calculateEnergyProduced(buildings, research, ships, pct, tempMax);
   const energyConsumed = calculateEnergyConsumption(buildings, pct);
   const ratio = energyConsumed > 0 ? Math.min(1, energyProduced / energyConsumed) : 1;
 
   const plasmaLevel = research?.plasmaOverdrive ?? 0;
   const plasmaBonus = getPlasmaProductionBonus(plasmaLevel);
 
+  const metalMult = 1 + (bonuses?.metalBonusPct ?? 0) / 100;
+  const crystalMult = 1 + (bonuses?.crystalBonusPct ?? 0) / 100;
+  const xenoTempFactor = getXenogasTempFactor(tempMax);
+
   return {
-    fer: 10 + Math.floor(30 * ferLevel * Math.pow(1.1, ferLevel) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer)),
-    silice: 5 + Math.floor(20 * siliceLevel * Math.pow(1.1, siliceLevel) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice)),
-    xenogas: Math.floor(10 * xenogasLevel * Math.pow(1.1, xenogasLevel) * ratio * (pct.xenogasRefinery / 100) * (1 + plasmaBonus.xenogas)),
+    fer: 10 + Math.floor(30 * ferLevel * Math.pow(1.1, ferLevel) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer) * metalMult),
+    silice: 5 + Math.floor(20 * siliceLevel * Math.pow(1.1, siliceLevel) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice) * crystalMult),
+    xenogas: Math.floor(10 * xenogasLevel * Math.pow(1.1, xenogasLevel) * ratio * (pct.xenogasRefinery / 100) * (1 + plasmaBonus.xenogas) * xenoTempFactor),
     energy: energyProduced - energyConsumed,
   };
 }
 
-export function getBuildingProductionAtLevel(buildingId: string, level: number, buildings?: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages): string {
+export function getBuildingProductionAtLevel(buildingId: string, level: number, buildings?: Record<string, number>, research?: Record<string, number>, ships?: Record<string, number>, percentages?: ProductionPercentages, bonuses?: PlanetBonuses): string {
   if (level === 0) return '';
   const pct = percentages ?? DEFAULT_PRODUCTION_PERCENTAGES;
-  const ratio = buildings ? getEnergyRatio(buildings, research, ships, percentages) : 1;
+  const tempMax = bonuses?.temperatureMax;
+  const ratio = buildings ? getEnergyRatio(buildings, research, ships, percentages, tempMax) : 1;
   const plasmaLevel = research?.plasmaOverdrive ?? 0;
   const plasmaBonus = getPlasmaProductionBonus(plasmaLevel);
   const quantumFluxLevel = research?.quantumFlux ?? 0;
+  const metalMult = 1 + (bonuses?.metalBonusPct ?? 0) / 100;
+  const crystalMult = 1 + (bonuses?.crystalBonusPct ?? 0) / 100;
+  const xenoTempFactor = getXenogasTempFactor(tempMax);
   switch (buildingId) {
     case 'ferMine':
-      return `${10 + Math.floor(30 * level * Math.pow(1.1, level) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer))}/h`;
+      return `${10 + Math.floor(30 * level * Math.pow(1.1, level) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer) * metalMult)}/h`;
     case 'siliceMine':
-      return `${5 + Math.floor(20 * level * Math.pow(1.1, level) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice))}/h`;
+      return `${5 + Math.floor(20 * level * Math.pow(1.1, level) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice) * crystalMult)}/h`;
     case 'xenogasRefinery':
-      return `${Math.floor(10 * level * Math.pow(1.1, level) * ratio * (pct.xenogasRefinery / 100) * (1 + plasmaBonus.xenogas))}/h`;
+      return `${Math.floor(10 * level * Math.pow(1.1, level) * ratio * (pct.xenogasRefinery / 100) * (1 + plasmaBonus.xenogas) * xenoTempFactor)}/h`;
     case 'solarPlant':
       return `+${getSolarPlantProduction(level, quantumFluxLevel)} énergie`;
     case 'ferroStore':

@@ -10,6 +10,7 @@ import {
   formatNumber,
   getMineEnergyConsumption,
   getPlasmaProductionBonus,
+  getXenogasTempFactor,
 } from '@/utils/gameCalculations';
 import { ProductionPercentages } from '@/types/game';
 
@@ -87,7 +88,8 @@ export default function ProductionModal({ visible, onClose }: ProductionModalPro
     }
 
     if (xenogasLevel > 0) {
-      const baseProd = Math.floor(10 * xenogasLevel * Math.pow(1.1, xenogasLevel) * (1 + plasmaBonus.xenogas));
+      const xenoTempFactor = getXenogasTempFactor(activePlanetSlotData);
+      const baseProd = Math.floor(10 * xenogasLevel * Math.pow(1.1, xenogasLevel) * (1 + plasmaBonus.xenogas) * xenoTempFactor);
       rows.push({
         key: 'xenogasRefinery',
         label: 'Xeno Well',
@@ -101,13 +103,22 @@ export default function ProductionModal({ visible, onClose }: ProductionModalPro
     }
 
     return rows;
-  }, [buildings, plasmaBonus]);
+  }, [buildings, plasmaBonus, activePlanetSlotData]);
+
+  const activePlanetSlotData = useMemo(() => {
+    if (!activePlanet) return undefined;
+    const colony = (state.colonies ?? []).find(c => c.id === (activePlanet as { id?: string | null }).id);
+    if ((activePlanet as { isColony?: boolean }).isColony && colony) {
+      return colony.temperatureMax;
+    }
+    return state.temperatureMax;
+  }, [activePlanet, state.colonies, state.temperatureMax]);
 
   const energySummary = useMemo(() => {
-    const produced = calculateEnergyProduced(buildings, research, ships, localPct);
+    const produced = calculateEnergyProduced(buildings, research, ships, localPct, activePlanetSlotData);
     const consumed = calculateEnergyConsumption(buildings, localPct);
     return { produced, consumed, balance: produced - consumed };
-  }, [buildings, research, ships, localPct]);
+  }, [buildings, research, ships, localPct, activePlanetSlotData]);
 
   const adjustPercentage = useCallback((key: keyof ProductionPercentages, direction: 1 | -1) => {
     setLocalPct(prev => {

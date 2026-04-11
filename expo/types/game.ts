@@ -84,7 +84,18 @@ export interface ShipyardQueueItem {
   currentUnitEndTime: number;
 }
 
-export interface Colony {
+export interface PlanetSlotData {
+  slotPosition?: number;
+  baseFields?: number;
+  totalFields?: number;
+  temperatureMin?: number;
+  temperatureMax?: number;
+  metalBonusPct?: number;
+  crystalBonusPct?: number;
+  deutBonusPct?: number;
+}
+
+export interface Colony extends PlanetSlotData {
   id: string;
   planetName: string;
   coordinates: [number, number, number];
@@ -114,7 +125,7 @@ export const DEFAULT_PRODUCTION_PERCENTAGES: ProductionPercentages = {
   heliosRemorqueur: 100,
 };
 
-export interface GameState {
+export interface GameState extends PlanetSlotData {
   planetName: string;
   coordinates: [number, number, number];
   buildings: Record<string, number>;

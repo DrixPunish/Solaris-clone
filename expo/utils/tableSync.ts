@@ -164,7 +164,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
   try {
   const { data: allPlanets } = await supabase
     .from('planets')
-    .select('id, planet_name, coordinates, is_main, last_update, production_percentages')
+    .select('id, planet_name, coordinates, is_main, last_update, production_percentages, slot_position, base_fields, total_fields, temperature_min, temperature_max, metal_bonus_pct, crystal_bonus_pct, deut_bonus_pct')
     .eq('user_id', userId);
 
   if (!allPlanets || allPlanets.length === 0) {
@@ -227,7 +227,7 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
 
   const colonies: Colony[] = [];
 
-  for (const cp of colonyPlanets as Array<{ id: string; planet_name: string; coordinates: unknown; last_update: unknown; production_percentages: unknown }>) {
+  for (const cp of colonyPlanets as Array<{ id: string; planet_name: string; coordinates: unknown; last_update: unknown; production_percentages: unknown; slot_position?: number; base_fields?: number; total_fields?: number; temperature_min?: number; temperature_max?: number; metal_bonus_pct?: number; crystal_bonus_pct?: number; deut_bonus_pct?: number }>) {
     const cpId = cp.id as string;
     const colBuildings = getBuildingsForPlanet(cpId);
     const colShips = getShipsForPlanet(cpId);
@@ -248,13 +248,22 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
       shipyardQueue: parseQueueForPlanet(allQueue, cpId),
       lastUpdate: now,
       productionPercentages: colProdPct ?? undefined,
+      slotPosition: cp.slot_position ?? undefined,
+      baseFields: cp.base_fields ?? undefined,
+      totalFields: cp.total_fields ?? undefined,
+      temperatureMin: cp.temperature_min ?? undefined,
+      temperatureMax: cp.temperature_max ?? undefined,
+      metalBonusPct: cp.metal_bonus_pct ?? undefined,
+      crystalBonusPct: cp.crystal_bonus_pct ?? undefined,
+      deutBonusPct: cp.deut_bonus_pct ?? undefined,
     });
   }
 
   const mainProdPct = (mainPlanet as { production_percentages: unknown }).production_percentages as { ferMine: number; siliceMine: number; xenogasRefinery: number; solarPlant: number; heliosRemorqueur: number } | null;
+  const mp = mainPlanet as { planet_name: string; coordinates: unknown; slot_position?: number; base_fields?: number; total_fields?: number; temperature_min?: number; temperature_max?: number; metal_bonus_pct?: number; crystal_bonus_pct?: number; deut_bonus_pct?: number; production_percentages: unknown };
   const state: GameState = {
-    planetName: (mainPlanet.planet_name as string) ?? 'Homeworld',
-    coordinates: parseCoords(mainPlanet.coordinates),
+    planetName: (mp.planet_name as string) ?? 'Homeworld',
+    coordinates: parseCoords(mp.coordinates),
     buildings: mainBuildings,
     research,
     ships: mainShips,
@@ -267,6 +276,14 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
     username: plData?.username ?? '',
     colonies: colonies.length > 0 ? colonies : undefined,
     productionPercentages: mainProdPct ?? undefined,
+    slotPosition: mp.slot_position ?? undefined,
+    baseFields: mp.base_fields ?? undefined,
+    totalFields: mp.total_fields ?? undefined,
+    temperatureMin: mp.temperature_min ?? undefined,
+    temperatureMax: mp.temperature_max ?? undefined,
+    metalBonusPct: mp.metal_bonus_pct ?? undefined,
+    crystalBonusPct: mp.crystal_bonus_pct ?? undefined,
+    deutBonusPct: mp.deut_bonus_pct ?? undefined,
   };
 
   console.log('[tableSync] Full state loaded (server-authoritative). Main resources:', {

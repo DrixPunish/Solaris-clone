@@ -268,15 +268,46 @@ export default function PlanetScreen() {
     [activePlanet.defenses],
   );
 
-  const planetSize = useMemo(
-    () => Object.keys(activePlanet.buildings).filter(k => (activePlanet.buildings[k] ?? 0) > 0).length * 12 + 100,
-    [activePlanet.buildings],
-  );
+  const planetSlotData = useMemo(() => {
+    if (!activePlanetId) {
+      return {
+        totalFields: state.totalFields,
+        baseFields: state.baseFields,
+        temperatureMin: state.temperatureMin,
+        temperatureMax: state.temperatureMax,
+        metalBonusPct: state.metalBonusPct,
+        crystalBonusPct: state.crystalBonusPct,
+        deutBonusPct: state.deutBonusPct,
+      };
+    }
+    const colony = (state.colonies ?? []).find(c => c.id === activePlanetId);
+    return {
+      totalFields: colony?.totalFields,
+      baseFields: colony?.baseFields,
+      temperatureMin: colony?.temperatureMin,
+      temperatureMax: colony?.temperatureMax,
+      metalBonusPct: colony?.metalBonusPct,
+      crystalBonusPct: colony?.crystalBonusPct,
+      deutBonusPct: colony?.deutBonusPct,
+    };
+  }, [activePlanetId, state.totalFields, state.baseFields, state.temperatureMin, state.temperatureMax, state.metalBonusPct, state.crystalBonusPct, state.deutBonusPct, state.colonies]);
+
+  const usedFields = useMemo(() => {
+    return Object.values(activePlanet.buildings).reduce((sum, level) => sum + level, 0);
+  }, [activePlanet.buildings]);
+
+  const planetSize = useMemo(() => {
+    if (planetSlotData.totalFields) return `${usedFields}/${planetSlotData.totalFields}`;
+    return String(Object.keys(activePlanet.buildings).filter(k => (activePlanet.buildings[k] ?? 0) > 0).length * 12 + 100);
+  }, [activePlanet.buildings, planetSlotData.totalFields, usedFields]);
 
   const planetTemperature = useMemo(() => {
+    if (planetSlotData.temperatureMin != null && planetSlotData.temperatureMax != null) {
+      return `${planetSlotData.temperatureMin}/${planetSlotData.temperatureMax}`;
+    }
     const pos = activePlanet.coordinates[2];
-    return Math.round(75 - (pos * 5));
-  }, [activePlanet.coordinates]);
+    return String(Math.round(75 - (pos * 5)));
+  }, [activePlanet.coordinates, planetSlotData.temperatureMin, planetSlotData.temperatureMax]);
 
   const activeTimerCount = activePlanet.activeTimers.length;
 
@@ -382,7 +413,7 @@ export default function PlanetScreen() {
 
           <View style={orbitalStyles.bottomRow}>
             <OrbitalStat icon={Scan} value={planetSize} label="Taille" color={Colors.textSecondary} />
-            <OrbitalStat icon={Thermometer} value={`${planetTemperature}\u00b0`} label="Température" color={Colors.textSecondary} />
+            <OrbitalStat icon={Thermometer} value={`${planetTemperature}°C`} label="Température" color={Colors.textSecondary} />
           </View>
 
           {activeTimerCount > 0 && (

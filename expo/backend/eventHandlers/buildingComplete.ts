@@ -103,6 +103,18 @@ export async function handleBuildingComplete(event: GameEvent): Promise<void> {
     throw new Error(`Failed to complete building: ${upsertErr.message}`);
   }
 
+  if (building_id === 'geoformEngine') {
+    const { data: planetData } = await supabase
+      .from('planets')
+      .select('base_fields')
+      .eq('id', planet_id)
+      .maybeSingle();
+    const baseFields = (planetData?.base_fields as number) ?? 163;
+    const newTotalFields = baseFields + target_level * 5;
+    await supabase.from('planets').update({ total_fields: newTotalFields }).eq('id', planet_id);
+    logger.log('[EventHandler][BuildingComplete] GeoformEngine lv', target_level, '-> total_fields:', newTotalFields);
+  }
+
   logger.log('[EventHandler][BuildingComplete] Building completed:', building_id, 'level', target_level, 'on planet', planet_id);
 
   const { data: planetOwner } = await supabase

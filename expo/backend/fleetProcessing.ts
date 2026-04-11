@@ -558,9 +558,36 @@ export async function processColonizeMission(mission: FleetMission): Promise<voi
     return;
   }
 
+  const slotPosition = targetCoords[2];
+  const { data: slotDef } = await supabase
+    .from('planet_slot_defs')
+    .select('*')
+    .eq('position', slotPosition)
+    .single();
+
+  const fieldMin = (slotDef?.field_min as number) ?? 163;
+  const fieldMax = (slotDef?.field_max as number) ?? 248;
+  const baseFields = Math.floor(Math.random() * (fieldMax - fieldMin + 1)) + fieldMin;
+
+  const tempMinSlot = (slotDef?.temp_min as number) ?? 20;
+  const tempMaxSlot = (slotDef?.temp_max as number) ?? 60;
+  const tempRange = Math.max(1, tempMaxSlot - tempMinSlot - 40 + 1);
+  const temperatureMin = Math.floor(Math.random() * tempRange) + tempMinSlot;
+  const temperatureMax = temperatureMin + 40;
+
+  logger.log('[FleetProcessing][Colonize] Slot', slotPosition, 'fields:', baseFields, 'temp:', temperatureMin, '-', temperatureMax);
+
   const { data: newPlanet, error: insertErr } = await supabase.from('planets').insert({
     user_id: senderId, planet_name: `Colonie ${currentColonies + 1}`,
     coordinates: targetCoords, is_main: false, last_update: Date.now(),
+    slot_position: slotPosition,
+    base_fields: baseFields,
+    total_fields: baseFields,
+    temperature_min: temperatureMin,
+    temperature_max: temperatureMax,
+    metal_bonus_pct: (slotDef?.metal_bonus_pct as number) ?? 0,
+    crystal_bonus_pct: (slotDef?.crystal_bonus_pct as number) ?? 0,
+    deut_bonus_pct: (slotDef?.deut_bonus_pct as number) ?? 0,
   }).select('id').single();
 
   if (insertErr || !newPlanet) {
