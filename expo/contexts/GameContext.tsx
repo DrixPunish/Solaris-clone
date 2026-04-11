@@ -1728,6 +1728,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
         resources: { ...state.resources },
         activeTimers: state.activeTimers,
         shipyardQueue: state.shipyardQueue,
+        temperatureMax: state.temperatureMax,
       };
     }
     const colony = (state.colonies ?? []).find(c => c.id === activePlanetId);
@@ -1743,6 +1744,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
         resources: { ...state.resources },
         activeTimers: state.activeTimers,
         shipyardQueue: state.shipyardQueue,
+        temperatureMax: state.temperatureMax,
       };
     }
     return {
@@ -1756,8 +1758,9 @@ export const [GameProvider, useGame] = createContextHook(() => {
       resources: { ...colony.resources },
       activeTimers: colony.activeTimers,
       shipyardQueue: colony.shipyardQueue,
+      temperatureMax: colony.temperatureMax,
     };
-  }, [activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies]);
+  }, [activePlanetId, state.planetName, state.coordinates, state.buildings, state.ships, state.defenses, state.resources, state.activeTimers, state.shipyardQueue, state.colonies, state.temperatureMax]);
 
   const activeUpgradeBuilding = useCallback((buildingId: string) => {
     solarCooldownsRef.current.set(`building:${buildingId}`, Date.now() + SOLAR_COOLDOWN_MS);

@@ -247,7 +247,7 @@ export default function ResourceBar() {
       .sort((a, b) => a.arrival_time - b.arrival_time);
   }, [activeMissions, allPlayerCoords, userId]);
 
-  const energyProduced = calculateEnergyProduced(activePlanet.buildings, state.research, activePlanet.ships, activeProductionPercentages);
+  const energyProduced = calculateEnergyProduced(activePlanet.buildings, state.research, activePlanet.ships, activeProductionPercentages, activePlanet.temperatureMax);
   const energyConsumed = calculateEnergyConsumption(activePlanet.buildings, activeProductionPercentages);
   const energyBalance = energyProduced - energyConsumed;
   const energyColor = energyBalance < 0 ? Colors.danger : Colors.energy;
