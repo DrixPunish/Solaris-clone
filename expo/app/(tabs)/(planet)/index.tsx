@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import ClickableCoords from '@/components/ClickableCoords';
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, RefreshControl, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Wallet, Shield, Rocket, FlaskConical, Building2, Pencil, X, Check, Mail, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, MapPin, Bell, BellOff, Swords, Hammer, ChevronLeft, ChevronRight, Thermometer, Scan, Globe, MessageSquare } from 'lucide-react-native';
+import { Wallet, Shield, Rocket, FlaskConical, Building2, Pencil, X, Check, Mail, Navigation, FileText, UserCircle, Users, LogOut, Settings, BarChart3, BookOpen, Bell, BellOff, Swords, Hammer, ChevronLeft, ChevronRight, Thermometer, Scan, Globe, MessageSquare } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,7 +18,7 @@ import Colors from '@/constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { showGameAlert } from '@/components/GameAlert';
-import { TutorialReopenButton } from '@/components/TutorialWidget';
+import { TutorialFullModal } from '@/components/TutorialWidget';
 import QuantumShieldCard from '@/components/QuantumShieldCard';
 import { useNotificationSettings } from '@/contexts/NotificationSettingsContext';
 
@@ -165,6 +165,7 @@ export default function PlanetScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const [showTutorialModal, setShowTutorialModal] = useState(false);
   const { settings: notifSettings, updateSetting } = useNotificationSettings();
 
   const openRenameModal = useCallback(() => {
@@ -462,9 +463,9 @@ export default function PlanetScreen() {
           </View>
           <View style={actionStyles.row}>
             <ActionButton
-              icon={MapPin}
+              icon={BookOpen}
               label="Tutoriel"
-              onPress={() => {}}
+              onPress={() => setShowTutorialModal(true)}
               color={Colors.xenogas}
               accentBorder={Colors.xenogas}
             />
@@ -493,7 +494,7 @@ export default function PlanetScreen() {
           </View>
         </View>
 
-        <TutorialReopenButton />
+        <TutorialFullModal visible={showTutorialModal} onClose={() => setShowTutorialModal(false)} />
 
         {showSettings && (
           <View>

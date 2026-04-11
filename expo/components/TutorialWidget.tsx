@@ -26,7 +26,7 @@ function RewardBadge({ reward }: { reward: TutorialReward }) {
   );
 }
 
-function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const {
     allSteps, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, isFinished, completedCount, totalSteps, progress,
