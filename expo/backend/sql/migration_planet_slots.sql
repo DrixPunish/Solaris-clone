@@ -144,9 +144,9 @@ SET
   )
 WHERE p.total_fields IS NULL;
 
--- 3d. Set temperature_max = temperature_min + 40 (OGame standard spread)
+-- 3d. Set temperature_max = temperature_min (single fixed temperature per planet)
 UPDATE planets
-SET temperature_max = temperature_min + 40
+SET temperature_max = temperature_min
 WHERE temperature_max IS NULL AND temperature_min IS NOT NULL;
 
 -- =============================================================
