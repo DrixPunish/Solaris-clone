@@ -231,7 +231,7 @@ export default function StatisticsScreen() {
     if (heliosCount > 0) {
       const heliosTotal = Math.floor(heliosCount * heliosEPU);
       lines.push({ label: `Helios Remorqueur ×${heliosCount}`, value: `+${formatNumber(heliosTotal)}` });
-      lines.push({ label: `Par unité: (T+160)/6 = ${heliosEPU.toFixed(1)}`, value: '', color: Colors.textMuted, indent: true });
+      lines.push({ label: `Par unité : ${heliosEPU.toFixed(1)}`, value: '', color: Colors.textMuted, indent: true });
     }
     lines.push({ label: '', value: '' });
     if (ferLevel > 0) {
