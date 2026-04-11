@@ -302,8 +302,8 @@ export default function PlanetScreen() {
   }, [activePlanet.buildings, planetSlotData.totalFields, usedFields]);
 
   const planetTemperature = useMemo(() => {
-    if (planetSlotData.temperatureMin != null && planetSlotData.temperatureMax != null) {
-      return `${planetSlotData.temperatureMin}/${planetSlotData.temperatureMax}`;
+    if (planetSlotData.temperatureMax != null) {
+      return `${planetSlotData.temperatureMax}°C`;
     }
     const pos = activePlanet.coordinates[2];
     return String(Math.round(75 - (pos * 5)));

@@ -571,9 +571,9 @@ export async function processColonizeMission(mission: FleetMission): Promise<voi
 
   const tempMinSlot = (slotDef?.temp_min as number) ?? 20;
   const tempMaxSlot = (slotDef?.temp_max as number) ?? 60;
-  const tempRange = Math.max(1, tempMaxSlot - tempMinSlot - 40 + 1);
-  const temperatureMin = Math.floor(Math.random() * tempRange) + tempMinSlot;
-  const temperatureMax = temperatureMin + 40;
+  const temperature = Math.floor(Math.random() * (tempMaxSlot - tempMinSlot + 1)) + tempMinSlot;
+  const temperatureMin = temperature;
+  const temperatureMax = temperature;
 
   logger.log('[FleetProcessing][Colonize] Slot', slotPosition, 'fields:', baseFields, 'temp:', temperatureMin, '-', temperatureMax);
 

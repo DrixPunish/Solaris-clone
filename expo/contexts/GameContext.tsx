@@ -189,9 +189,9 @@ export const [GameProvider, useGame] = createContextHook(() => {
           11: [0, 0, 0], 12: [0, 0, 0], 13: [0, 0, 5], 14: [0, 0, 10], 15: [0, 0, 20],
         };
         const [tMin, tMax] = slotTempRanges[slotPos] ?? [20, 60];
-        const tempRange = Math.max(1, tMax - tMin - 40 + 1);
-        const temperatureMin = Math.floor(Math.random() * tempRange) + tMin;
-        const temperatureMax = temperatureMin + 40;
+        const temperature = Math.floor(Math.random() * (tMax - tMin + 1)) + tMin;
+        const temperatureMin = temperature;
+        const temperatureMax = temperature;
         const [mBonus, cBonus, dBonus] = slotBonuses[slotPos] ?? [0, 0, 0];
         const newState: GameState = {
           ...DEFAULT_STATE,
