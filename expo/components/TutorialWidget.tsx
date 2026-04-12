@@ -111,7 +111,7 @@ export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: b
       onClose();
       setTimeout(() => {
         const sep = navigateTo.includes('?') ? '&' : '?';
-        router.push(`${navigateTo}${sep}_t=${Date.now()}` as never);
+        router.navigate(`${navigateTo}${sep}_t=${Date.now()}` as never);
       }, 300);
     }
   }, [router, onClose]);
@@ -371,7 +371,7 @@ export default function TutorialWidget() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const nav = currentStep.navigateTo;
       const sep = nav.includes('?') ? '&' : '?';
-      router.push(`${nav}${sep}_t=${Date.now()}` as never);
+      router.navigate(`${nav}${sep}_t=${Date.now()}` as never);
     }
   }, [currentStep, router]);
 

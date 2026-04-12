@@ -154,9 +154,9 @@ export default function PrereqTree({ visible, onClose, itemId, itemType, buildin
     onClose();
     const ts = Date.now().toString();
     if (node.type === 'building') {
-      router.push({ pathname: '/(tabs)/buildings', params: { scrollTo: node.id, _t: ts } });
+      router.navigate({ pathname: '/(tabs)/buildings', params: { scrollTo: node.id, _t: ts } });
     } else {
-      router.push({ pathname: '/(tabs)/research', params: { scrollTo: node.id, _t: ts } });
+      router.navigate({ pathname: '/(tabs)/research', params: { scrollTo: node.id, _t: ts } });
     }
   }, [onClose, onNavigateToItem, router]);
 
