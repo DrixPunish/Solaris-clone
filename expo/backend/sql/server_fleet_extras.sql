@@ -319,6 +319,8 @@ DECLARE
   v_target_planet_id uuid;
   v_bashing_count integer;
   v_bashing_limit integer := 6;
+  v_execute_at timestamptz;
+  v_idempotency_key text;
 BEGIN
   v_now := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
 
@@ -517,6 +519,36 @@ BEGIN
     INSERT INTO bashing_log (attacker_id, defender_id, target_planet_id, target_type, fleet_mission_id, mission_type, counted, launched_at)
     VALUES (p_user_id, p_target_player_id, v_target_planet_id, 'planet', v_mission_id, 'attack', true, now());
   END IF;
+
+  -- Schedule fleet_arrival event
+  v_execute_at := to_timestamp(v_arrival_time / 1000.0);
+  v_idempotency_key := 'fleet_arrival:' || v_mission_id::text;
+
+  IF v_target_planet_id IS NULL AND p_target_coords IS NOT NULL THEN
+    SELECT id INTO v_target_planet_id
+    FROM planets
+    WHERE coordinates->>0 = (p_target_coords->>0)
+      AND coordinates->>1 = (p_target_coords->>1)
+      AND coordinates->>2 = (p_target_coords->>2)
+    LIMIT 1;
+  END IF;
+
+  INSERT INTO events (
+    event_type, entity_type, entity_id, payload, execute_at,
+    idempotency_key, priority, version, status
+  ) VALUES (
+    'fleet_arrival',
+    'planet',
+    COALESCE(v_target_planet_id, p_planet_id),
+    jsonb_build_object('mission_id', v_mission_id),
+    v_execute_at,
+    v_idempotency_key,
+    20,
+    2,
+    'pending'
+  )
+  ON CONFLICT (idempotency_key) WHERE status IN ('pending', 'processing')
+  DO NOTHING;
 
   RETURN json_build_object(
     'success', true,
