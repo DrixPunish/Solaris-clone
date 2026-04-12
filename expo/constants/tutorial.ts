@@ -413,7 +413,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkTarget: 'buy_shield',
     checkValue: 1,
     validationSource: 'solar_transaction',
-    reward: { type: 'resources', fer: 8000, silice: 6000, xenogas: 3000 },
+    reward: { type: 'resources', fer: 25000, silice: 25000, xenogas: 12500 },
     navigateTo: '/(tabs)/shipyard?tab=defenses',
   },
   {
