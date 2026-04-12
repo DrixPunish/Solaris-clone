@@ -7,7 +7,7 @@ import {
   checkPrerequisites,
 } from "@/utils/gameCalculations";
 import { logger } from "@/utils/logger";
-import { ensureEventForShipyardQueue } from "@/backend/eventScheduler";
+import { ensureEventForShipyardQueue, scheduleFleetReturn } from "@/backend/eventScheduler";
 import { tryValidateTutorialStep, verifyStepFromTables } from "@/backend/tutorialValidation";
 
 interface RpcResult {
@@ -630,6 +630,42 @@ export const actionsRouter = createTRPCRouter({
       const result = data as { success: boolean; error?: string; return_time?: number; return_duration_sec?: number };
       if (!result.success) {
         return { success: false, error: result.error };
+      }
+
+      if (result.return_time) {
+        const { data: missionRow } = await supabase
+          .from('fleet_missions')
+          .select('sender_id, sender_coords')
+          .eq('id', missionId)
+          .maybeSingle();
+
+        let originPlanetId = '00000000-0000-0000-0000-000000000000';
+
+        if (missionRow) {
+          const senderCoords = missionRow.sender_coords as number[] | null;
+          if (senderCoords) {
+            const { data: senderPlanet } = await supabase
+              .from('planets')
+              .select('id')
+              .eq('user_id', missionRow.sender_id as string)
+              .filter('coordinates->>0', 'eq', String(senderCoords[0]))
+              .filter('coordinates->>1', 'eq', String(senderCoords[1]))
+              .filter('coordinates->>2', 'eq', String(senderCoords[2]))
+              .maybeSingle();
+
+            if (senderPlanet) {
+              originPlanetId = senderPlanet.id as string;
+            }
+          }
+        }
+
+        try {
+          const executeAt = new Date(result.return_time);
+          const scheduled = await scheduleFleetReturn(missionId, originPlanetId, executeAt);
+          logger.log('[Actions] recallFleet: fleet_return event scheduled:', scheduled.eventId, 'execute_at:', executeAt.toISOString());
+        } catch (e) {
+          logger.error('[Actions] recallFleet: failed to schedule fleet_return event:', e instanceof Error ? e.message : String(e));
+        }
       }
 
       return { success: true, returnTime: result.return_time, returnDurationSec: result.return_duration_sec };
