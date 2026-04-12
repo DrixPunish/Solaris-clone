@@ -70,25 +70,63 @@ function matchesCurrentStep(
 export async function tryValidateTutorialStep(context: TutorialEventContext): Promise<void> {
   const userId = context.userId;
   try {
-    const { data: progress } = await supabase
+    logger.log('[Tutorial] tryValidateTutorialStep called:', JSON.stringify({
+      type: context.type,
+      userId,
+      ...(context.type === 'building' ? { buildingId: context.buildingId, level: context.level } : {}),
+      ...(context.type === 'research' ? { researchId: context.researchId, level: context.level } : {}),
+      ...(context.type === 'shipyard' ? { itemId: context.itemId, itemType: context.itemType, qty: context.newQuantity } : {}),
+      ...(context.type === 'fleet_event' ? { eventType: context.eventType } : {}),
+    }));
+
+    let { data: progress } = await supabase
       .from('player_tutorial_progress')
       .select('current_step_id, current_step_index, finished_at')
       .eq('user_id', userId)
       .maybeSingle();
 
     if (!progress) {
-      logger.log('[Tutorial] No tutorial progress found for user:', userId);
-      return;
+      logger.log('[Tutorial] No tutorial progress found for user:', userId, '- auto-creating');
+      const { error: insertErr } = await supabase
+        .from('player_tutorial_progress')
+        .insert({ user_id: userId, current_step_id: 'ch1_ferro_mine_1', current_step_index: 0 })
+        .select('current_step_id, current_step_index, finished_at')
+        .maybeSingle();
+
+      if (insertErr) {
+        logger.log('[Tutorial] Failed to auto-create progress:', insertErr.message);
+        return;
+      }
+
+      const { data: freshProgress } = await supabase
+        .from('player_tutorial_progress')
+        .select('current_step_id, current_step_index, finished_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!freshProgress) {
+        logger.log('[Tutorial] Still no progress after auto-create for user:', userId);
+        return;
+      }
+      progress = freshProgress;
     }
 
     if (progress.finished_at) {
+      logger.log('[Tutorial] Tutorial already finished for user:', userId);
       return;
     }
 
     const currentStepId = progress.current_step_id as string;
     const currentStepIndex = progress.current_step_index as number;
 
+    logger.log('[Tutorial] Current step:', currentStepId, 'index:', currentStepIndex, 'checking match...');
+
     if (!matchesCurrentStep(currentStepId, context)) {
+      logger.log('[Tutorial] Step does not match current context. Step:', currentStepId, 'Context type:', context.type,
+        context.type === 'building' ? `building=${context.buildingId} level=${context.level}` :
+        context.type === 'research' ? `research=${context.researchId} level=${context.level}` :
+        context.type === 'shipyard' ? `item=${context.itemId} type=${context.itemType} qty=${context.newQuantity}` :
+        context.type === 'fleet_event' ? `event=${context.eventType}` : '');
       return;
     }
 

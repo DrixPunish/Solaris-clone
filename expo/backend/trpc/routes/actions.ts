@@ -8,6 +8,7 @@ import {
 } from "@/utils/gameCalculations";
 import { logger } from "@/utils/logger";
 import { ensureEventForShipyardQueue } from "@/backend/eventScheduler";
+import { tryValidateTutorialStep } from "@/backend/tutorialValidation";
 
 interface RpcResult {
   success: boolean;
@@ -355,6 +356,29 @@ export const actionsRouter = createTRPCRouter({
       }
 
       logger.log("[Actions] Rush completed (atomic):", timerId, timerType);
+
+      try {
+        if (timerType === 'building' && result.completedId && result.completedLevel) {
+          logger.log("[Actions] Rush: triggering tutorial validation for building", result.completedId, "level", result.completedLevel);
+          await tryValidateTutorialStep({
+            type: 'building',
+            buildingId: result.completedId as string,
+            level: result.completedLevel as number,
+            userId,
+          });
+        } else if (timerType === 'research' && result.completedId && result.completedLevel) {
+          logger.log("[Actions] Rush: triggering tutorial validation for research", result.completedId, "level", result.completedLevel);
+          await tryValidateTutorialStep({
+            type: 'research',
+            researchId: result.completedId as string,
+            level: result.completedLevel as number,
+            userId,
+          });
+        }
+      } catch (e) {
+        logger.log("[Actions] Rush: non-blocking tutorial validation error:", e instanceof Error ? e.message : String(e));
+      }
+
       return {
         success: true,
         solar: result.solar,
@@ -433,6 +457,27 @@ export const actionsRouter = createTRPCRouter({
       }
 
       logger.log("[Actions] Shipyard rushed (atomic):", itemId, "x", result.completedQuantity);
+
+      try {
+        if (result.completedId && result.completedQuantity) {
+          const { data: currentQty } = result.completedType === 'ship'
+            ? await supabase.from('planet_ships').select('quantity').eq('planet_id', planetId).eq('ship_id', result.completedId).maybeSingle()
+            : await supabase.from('planet_defenses').select('quantity').eq('planet_id', planetId).eq('defense_id', result.completedId).maybeSingle();
+
+          const newQuantity = (currentQty?.quantity as number) ?? result.completedQuantity;
+          logger.log("[Actions] RushShipyard: triggering tutorial validation for", result.completedType, result.completedId, "qty", newQuantity);
+          await tryValidateTutorialStep({
+            type: 'shipyard',
+            itemId: result.completedId as string,
+            itemType: (result.completedType === 'ship' ? 'ship' : 'defense') as 'ship' | 'defense',
+            newQuantity,
+            userId,
+          });
+        }
+      } catch (e) {
+        logger.log("[Actions] RushShipyard: non-blocking tutorial validation error:", e instanceof Error ? e.message : String(e));
+      }
+
       return {
         success: true,
         solar: result.solar,
