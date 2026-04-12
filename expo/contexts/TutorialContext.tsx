@@ -269,8 +269,11 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
   const toggleMinimized = useCallback(() => {
     setProgress(prev => {
       const newMin = !prev.minimized;
-      void persistField({ minimized: newMin });
-      return { ...prev, minimized: newMin };
+      const updates = newMin
+        ? { minimized: true, dismissed: false }
+        : { minimized: false };
+      void persistField(updates);
+      return { ...prev, ...updates };
     });
   }, [persistField]);
 
