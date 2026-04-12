@@ -608,6 +608,40 @@ export const actionsRouter = createTRPCRouter({
         return { success: false, error: "Tutorial step not found" };
       }
 
+      const { data: progress } = await supabase
+        .from('player_tutorial_progress')
+        .select('current_step_id, current_step_index, claimed_rewards')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!progress) {
+        return { success: false, error: "No tutorial progress found" };
+      }
+
+      if (progress.current_step_id !== input.stepId) {
+        logger.log("[Actions] Tutorial step mismatch: expected", progress.current_step_id, "got", input.stepId);
+        return { success: false, error: "Step mismatch: not the current step" };
+      }
+
+      const claimedRewards = Array.isArray(progress.claimed_rewards) ? progress.claimed_rewards as string[] : [];
+      if (claimedRewards.includes(input.stepId)) {
+        return { success: false, error: "Reward already claimed" };
+      }
+
+      const { data: validation } = await supabase
+        .from('tutorial_step_validations')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('step_id', input.stepId)
+        .maybeSingle();
+
+      if (!validation) {
+        return { success: false, error: "Step not validated yet - complete the objective first" };
+      }
+
+      const nextStepIndex = step.order + 1;
+      const nextStep = TUTORIAL_STEPS.find(s => s.order === nextStepIndex);
+
       const reward = step.reward;
       const rewardType = reward.type;
       const serverFer = reward.fer ?? 0;
@@ -615,15 +649,18 @@ export const actionsRouter = createTRPCRouter({
       const serverXenogas = reward.xenogas ?? 0;
       const serverSolar = reward.solar ?? 0;
 
-      const { data, error } = await supabase.rpc("rpc_claim_tutorial_reward", {
+      const { data, error } = await supabase.rpc("rpc_claim_tutorial_step_reward", {
         p_user_id: userId,
         p_planet_id: input.planetId,
         p_step_id: input.stepId,
+        p_step_index: step.order,
         p_reward_type: rewardType,
         p_fer: serverFer,
         p_silice: serverSilice,
         p_xenogas: serverXenogas,
         p_solar: serverSolar,
+        p_next_step_id: nextStep?.id ?? null,
+        p_next_step_index: nextStep ? nextStepIndex : null,
       });
 
       if (error) {
@@ -635,6 +672,7 @@ export const actionsRouter = createTRPCRouter({
       if (!result.success) {
         return { success: false, error: result.error };
       }
+      logger.log("[Actions] Tutorial reward claimed:", input.stepId, "next:", nextStep?.id ?? 'FINISHED');
       return { success: true, solar: result.solar, resources: result.resources };
     }),
 

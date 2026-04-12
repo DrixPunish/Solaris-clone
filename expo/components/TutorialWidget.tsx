@@ -1,12 +1,12 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles } from 'lucide-react-native';
+import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useTutorial } from '@/contexts/TutorialContext';
 import { useGame } from '@/contexts/GameContext';
-import { TUTORIAL_CATEGORIES, TutorialReward } from '@/constants/tutorial';
+import { TUTORIAL_CATEGORIES, TUTORIAL_CHAPTERS, TUTORIAL_STEPS, TutorialReward, TutorialChapter } from '@/constants/tutorial';
 import { formatNumber } from '@/utils/gameCalculations';
 
 function RewardBadge({ reward }: { reward: TutorialReward }) {
@@ -26,14 +26,56 @@ function RewardBadge({ reward }: { reward: TutorialReward }) {
   );
 }
 
+function ChapterHeader({ chapter, isActive, isComplete, stepsDone, stepsTotal }: {
+  chapter: TutorialChapter;
+  isActive: boolean;
+  isComplete: boolean;
+  stepsDone: number;
+  stepsTotal: number;
+}) {
+  return (
+    <View style={[styles.chapterHeader, isActive && styles.chapterHeaderActive]}>
+      <View style={styles.chapterHeaderLeft}>
+        {isComplete ? (
+          <CheckCircle size={16} color={Colors.success} />
+        ) : isActive ? (
+          <BookOpen size={16} color={Colors.primary} />
+        ) : (
+          <Lock size={14} color={Colors.textMuted} />
+        )}
+        <View style={styles.chapterTextWrap}>
+          <Text style={[
+            styles.chapterTitle,
+            isActive && styles.chapterTitleActive,
+            !isActive && !isComplete && styles.chapterTitleLocked,
+          ]}>
+            {chapter.title}
+          </Text>
+          <Text style={[
+            styles.chapterDesc,
+            !isActive && !isComplete && styles.chapterDescLocked,
+          ]} numberOfLines={2}>
+            {chapter.description}
+          </Text>
+        </View>
+      </View>
+      <Text style={[styles.chapterCount, isActive && styles.chapterCountActive]}>
+        {stepsDone}/{stepsTotal}
+      </Text>
+    </View>
+  );
+}
+
 export function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const {
-    allSteps, completedStepIds, claimedRewards, currentStepIndex,
-    claimReward, isFinished, completedCount, totalSteps, progress,
+    allSteps, allChapters, completedStepIds, claimedRewards, currentStepIndex,
+    claimReward, advanceToNextStep, isFinished, completedCount, totalSteps, progress,
+    isCurrentStepCompleted, currentStep,
   } = useTutorial();
   const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
   const router = useRouter();
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
   const claimAnim = useRef(new Animated.Value(1)).current;
 
   const handleClaimFromList = useCallback((stepId: string) => {
@@ -46,23 +88,30 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
       const reward = claimReward(stepId);
       if (reward && applyTutorialReward) {
         console.log('[TUTORIAL CLAIM] Calling server for step:', stepId);
-        void applyTutorialReward(reward, stepId).finally(() => {
+        void applyTutorialReward(reward, stepId).then(() => {
+          advanceToNextStep();
+          setClaimingId(null);
+        }).catch(() => {
           setClaimingId(null);
         });
       } else {
         setClaimingId(null);
       }
     });
-  }, [claimReward, claimAnim, applyTutorialReward]);
+  }, [claimReward, claimAnim, applyTutorialReward, advanceToNextStep]);
 
   const handleNavigate = useCallback((navigateTo?: string) => {
     if (navigateTo) {
       onClose();
       setTimeout(() => {
-        router.push(navigateTo as any);
+        router.push(navigateTo as never);
       }, 300);
     }
   }, [router, onClose]);
+
+  const toggleExplanation = useCallback((stepId: string) => {
+    setExpandedExplanation(prev => prev === stepId ? null : stepId);
+  }, []);
 
   return (
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
@@ -88,83 +137,129 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
           </View>
 
           <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-            {allSteps.map((step, index) => {
-              const isCompleted = completedStepIds.has(step.id);
-              const isClaimed = claimedRewards.includes(step.id);
-              const isCurrent = index === currentStepIndex;
-              const isLocked = index > currentStepIndex && !isCompleted;
-              const canClaim = isCompleted && !isClaimed;
-              const category = TUTORIAL_CATEGORIES[step.category];
+            {allChapters.map((chapter) => {
+              const chapterSteps = allSteps.filter(s => s.chapterId === chapter.id);
+              const chapterDone = chapterSteps.filter(s => claimedRewards.includes(s.id)).length;
+              const isChapterComplete = chapterDone >= chapterSteps.length;
+
+              const firstStepOrder = chapterSteps[0]?.order ?? 999;
+              const isChapterActive = !isChapterComplete && currentStepIndex >= firstStepOrder && currentStepIndex <= (chapterSteps[chapterSteps.length - 1]?.order ?? 0);
+              const isChapterLocked = currentStepIndex < firstStepOrder && !isChapterComplete;
 
               return (
-                <Animated.View
-                  key={step.id}
-                  style={[
-                    styles.stepCard,
-                    isCurrent && styles.stepCardCurrent,
-                    isClaimed && styles.stepCardDone,
-                    isLocked && styles.stepCardLocked,
-                    claimingId === step.id ? { transform: [{ scale: claimAnim }] } : undefined,
-                  ]}
-                >
-                  <View style={styles.stepLeftIcon}>
-                    {isClaimed ? (
-                      <CheckCircle size={20} color={Colors.success} />
-                    ) : isCompleted ? (
-                      <Gift size={20} color={Colors.primary} />
-                    ) : isLocked ? (
-                      <Lock size={12} color={Colors.textMuted} />
-                    ) : (
-                      <Circle size={18} color={isCurrent ? Colors.primary : Colors.textMuted} />
-                    )}
-                  </View>
+                <View key={chapter.id} style={styles.chapterBlock}>
+                  <ChapterHeader
+                    chapter={chapter}
+                    isActive={isChapterActive}
+                    isComplete={isChapterComplete}
+                    stepsDone={chapterDone}
+                    stepsTotal={chapterSteps.length}
+                  />
 
-                  <View style={styles.stepContent}>
-                    <View style={styles.stepTopRow}>
-                      <Text style={[
-                        styles.stepTitle,
-                        isClaimed && styles.stepTitleDone,
-                        isLocked && styles.stepTitleLocked,
-                      ]}>
-                        {step.title}
-                      </Text>
-                      <View style={[styles.categoryBadge, { backgroundColor: category.color + '20' }]}>
-                        <Text style={[styles.categoryText, { color: category.color }]}>
-                          {category.label}
-                        </Text>
-                      </View>
-                    </View>
+                  {chapterSteps.map((step) => {
+                    const isCompleted = completedStepIds.has(step.id);
+                    const isClaimed = claimedRewards.includes(step.id);
+                    const isCurrent = step.id === currentStep?.id;
+                    const isLocked = step.order > currentStepIndex && !isClaimed;
+                    const canClaim = isCurrent && isCurrentStepCompleted && !isClaimed;
+                    const category = TUTORIAL_CATEGORIES[step.category];
+                    const isExplanationExpanded = expandedExplanation === step.id;
 
-                    <Text style={[
-                      styles.stepDesc,
-                      isLocked && styles.stepDescLocked,
-                    ]}>
-                      {isLocked ? 'Complétez les missions précédentes...' : step.description}
-                    </Text>
-
-                    {!isLocked && <RewardBadge reward={step.reward} />}
-
-                    {canClaim && (
-                      <Pressable
-                        style={styles.claimButtonList}
-                        onPress={() => handleClaimFromList(step.id)}
+                    return (
+                      <Animated.View
+                        key={step.id}
+                        style={[
+                          styles.stepCard,
+                          isCurrent && styles.stepCardCurrent,
+                          isClaimed && styles.stepCardDone,
+                          isLocked && styles.stepCardLocked,
+                          claimingId === step.id ? { transform: [{ scale: claimAnim }] } : undefined,
+                        ]}
                       >
-                        <Sparkles size={14} color="#000" />
-                        <Text style={styles.claimButtonListText}>Récupérer</Text>
-                      </Pressable>
-                    )}
+                        <View style={styles.stepLeftIcon}>
+                          {isClaimed ? (
+                            <CheckCircle size={20} color={Colors.success} />
+                          ) : canClaim ? (
+                            <Gift size={20} color={Colors.primary} />
+                          ) : isLocked ? (
+                            <Lock size={12} color={Colors.textMuted} />
+                          ) : (
+                            <Circle size={18} color={isCurrent ? Colors.primary : Colors.textMuted} />
+                          )}
+                        </View>
 
-                    {isCurrent && !isCompleted && step.navigateTo && (
-                      <Pressable
-                        style={styles.goButton}
-                        onPress={() => handleNavigate(step.navigateTo)}
-                      >
-                        <Text style={styles.goButtonText}>Y aller</Text>
-                        <ChevronRight size={14} color={Colors.primary} />
-                      </Pressable>
-                    )}
-                  </View>
-                </Animated.View>
+                        <View style={styles.stepContent}>
+                          <View style={styles.stepTopRow}>
+                            <Text style={[
+                              styles.stepTitle,
+                              isClaimed && styles.stepTitleDone,
+                              isLocked && styles.stepTitleLocked,
+                            ]}>
+                              {step.title}
+                            </Text>
+                            <View style={[styles.categoryBadge, { backgroundColor: category.color + '20' }]}>
+                              <Text style={[styles.categoryText, { color: category.color }]}>
+                                {category.label}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <Text style={[
+                            styles.stepDesc,
+                            isLocked && styles.stepDescLocked,
+                          ]}>
+                            {isLocked ? 'Complétez les missions précédentes...' : step.description}
+                          </Text>
+
+                          {!isLocked && (
+                            <Pressable
+                              style={styles.explanationToggle}
+                              onPress={() => toggleExplanation(step.id)}
+                              hitSlop={4}
+                            >
+                              <Info size={11} color={Colors.textSecondary} />
+                              <Text style={styles.explanationToggleText}>
+                                {isExplanationExpanded ? 'Masquer' : 'Pourquoi ?'}
+                              </Text>
+                              {isExplanationExpanded
+                                ? <ChevronUp size={11} color={Colors.textSecondary} />
+                                : <ChevronDown size={11} color={Colors.textSecondary} />
+                              }
+                            </Pressable>
+                          )}
+
+                          {isExplanationExpanded && !isLocked && (
+                            <View style={styles.explanationBox}>
+                              <Text style={styles.explanationText}>{step.explanation}</Text>
+                            </View>
+                          )}
+
+                          {!isLocked && <RewardBadge reward={step.reward} />}
+
+                          {canClaim && (
+                            <Pressable
+                              style={styles.claimButtonList}
+                              onPress={() => handleClaimFromList(step.id)}
+                            >
+                              <Sparkles size={14} color="#000" />
+                              <Text style={styles.claimButtonListText}>Récupérer</Text>
+                            </Pressable>
+                          )}
+
+                          {isCurrent && !isCurrentStepCompleted && step.navigateTo && (
+                            <Pressable
+                              style={styles.goButton}
+                              onPress={() => handleNavigate(step.navigateTo)}
+                            >
+                              <Text style={styles.goButtonText}>Y aller</Text>
+                              <ChevronRight size={14} color={Colors.primary} />
+                            </Pressable>
+                          )}
+                        </View>
+                      </Animated.View>
+                    );
+                  })}
+                </View>
               );
             })}
             <View style={{ height: 40 }} />
@@ -177,15 +272,16 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
 
 export default function TutorialWidget() {
   const {
-    currentStep, isCurrentStepCompleted, isCurrentStepClaimed,
+    currentStep, currentChapter, isCurrentStepCompleted, isCurrentStepClaimed,
     isDismissed, isMinimized, isLoaded, isFinished,
-    claimReward, dismissTutorial, toggleMinimized,
+    claimReward, advanceToNextStep, dismissTutorial, toggleMinimized,
     completedCount, totalSteps, progress,
   } = useTutorial();
   const { state } = useGame();
   const router = useRouter();
   const [showFullModal, setShowFullModal] = useState(false);
   const [showRewardAnimation, setShowRewardAnimation] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -229,14 +325,16 @@ export default function TutorialWidget() {
     const reward = claimReward(currentStep.id);
     if (reward && applyTutorialReward) {
       console.log('[TUTORIAL CLAIM] Calling server for step:', currentStep.id);
-      void applyTutorialReward(reward, currentStep.id);
+      void applyTutorialReward(reward, currentStep.id).then(() => {
+        advanceToNextStep();
+      });
     }
-  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim]);
+  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep]);
 
   const handleNavigate = useCallback(() => {
     if (currentStep?.navigateTo) {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push(currentStep.navigateTo as any);
+      router.push(currentStep.navigateTo as never);
     }
   }, [currentStep, router]);
 
@@ -292,7 +390,9 @@ export default function TutorialWidget() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <BookOpen size={14} color={Colors.primary} />
-            <Text style={styles.headerTitle}>Mission {completedCount + 1}/{totalSteps}</Text>
+            <Text style={styles.headerTitle}>
+              {currentChapter ? currentChapter.title : 'Mission'} — {completedCount + 1}/{totalSteps}
+            </Text>
           </View>
           <View style={styles.headerActions}>
             <Pressable onPress={() => setShowFullModal(true)} hitSlop={8} style={styles.headerBtn}>
@@ -313,6 +413,23 @@ export default function TutorialWidget() {
 
           {!isCurrentStepCompleted && (
             <Text style={styles.hintText}>{currentStep.hint}</Text>
+          )}
+
+          <Pressable
+            style={styles.explanationToggleWidget}
+            onPress={() => setShowExplanation(prev => !prev)}
+            hitSlop={4}
+          >
+            <Info size={11} color={Colors.textSecondary} />
+            <Text style={styles.explanationToggleText}>
+              {showExplanation ? 'Masquer' : 'Pourquoi cette mission ?'}
+            </Text>
+          </Pressable>
+
+          {showExplanation && (
+            <View style={styles.explanationBoxWidget}>
+              <Text style={styles.explanationText}>{currentStep.explanation}</Text>
+            </View>
           )}
 
           <RewardBadge reward={currentStep.reward} />
@@ -413,6 +530,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
   },
   headerTitle: {
     fontSize: 11,
@@ -451,6 +569,22 @@ const styles = StyleSheet.create({
     fontStyle: 'italic' as const,
     marginBottom: 6,
     opacity: 0.8,
+  },
+  explanationToggleWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    alignSelf: 'flex-start' as const,
+  },
+  explanationBoxWidget: {
+    backgroundColor: Colors.primary + '0A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.primary + '40',
   },
   rewardBadge: {
     flexDirection: 'row',
@@ -628,14 +762,72 @@ const styles = StyleSheet.create({
   modalScroll: {
     paddingHorizontal: 16,
   },
+  chapterBlock: {
+    marginBottom: 16,
+  },
+  chapterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chapterHeaderActive: {
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '08',
+  },
+  chapterHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  chapterTextWrap: {
+    flex: 1,
+  },
+  chapterTitle: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    marginBottom: 2,
+  },
+  chapterTitleActive: {
+    color: Colors.primary,
+  },
+  chapterTitleLocked: {
+    color: Colors.textMuted,
+  },
+  chapterDesc: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 15,
+  },
+  chapterDescLocked: {
+    color: Colors.textMuted,
+  },
+  chapterCount: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+    marginLeft: 8,
+  },
+  chapterCountActive: {
+    color: Colors.primary,
+  },
   stepCard: {
     flexDirection: 'row',
     backgroundColor: Colors.card,
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 6,
     padding: 12,
     borderWidth: 1,
     borderColor: Colors.border,
+    marginLeft: 12,
   },
   stepCardCurrent: {
     borderColor: Colors.primary + '50',
@@ -689,10 +881,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textSecondary,
     lineHeight: 15,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   stepDescLocked: {
     color: Colors.textMuted,
+    fontStyle: 'italic' as const,
+  },
+  explanationToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    alignSelf: 'flex-start' as const,
+  },
+  explanationToggleText: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  explanationBox: {
+    backgroundColor: Colors.primary + '0A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.primary + '40',
+  },
+  explanationText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
     fontStyle: 'italic' as const,
   },
   claimButtonList: {

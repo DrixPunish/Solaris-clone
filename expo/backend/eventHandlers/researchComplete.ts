@@ -1,6 +1,7 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
 import { scheduleScoreRecalc } from '@/backend/eventScheduler';
+import { tryValidateTutorialStep } from '@/backend/tutorialValidation';
 import type { GameEvent } from './types';
 
 export async function handleResearchComplete(event: GameEvent): Promise<void> {
@@ -110,5 +111,16 @@ export async function handleResearchComplete(event: GameEvent): Promise<void> {
     logger.log('[EventHandler][ResearchComplete] Score recalc scheduled for player', player_id);
   } catch (e) {
     logger.log('[EventHandler][ResearchComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    await tryValidateTutorialStep({
+      type: 'research',
+      researchId: research_id,
+      level: target_level,
+      userId: player_id,
+    });
+  } catch (e) {
+    logger.log('[EventHandler][ResearchComplete] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
   }
 }

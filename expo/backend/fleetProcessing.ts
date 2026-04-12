@@ -10,6 +10,7 @@ import {
   getResourceStorageCapacity,
 } from '@/utils/gameCalculations';
 import { logger } from '@/utils/logger';
+import { tryValidateTutorialStep } from '@/backend/tutorialValidation';
 
 export interface FleetMission {
   id: string;
@@ -253,6 +254,19 @@ export async function processEspionageMission(mission: FleetMission): Promise<vo
     ...(finalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
 
+  if (!allProbesLost) {
+    try {
+      await tryValidateTutorialStep({
+        type: 'fleet_event',
+        eventType: 'espionage_report_created',
+        userId: senderId,
+        proofId: mission.id,
+      });
+    } catch (e) {
+      logger.log('[FleetProcessing][Espionage] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
+    }
+  }
+
   logger.log('[FleetProcessing][Espionage] === DONE === mission', mission.id, 'surviving:', survivingProbes);
 }
 
@@ -410,6 +424,17 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
     result: { type: 'combat', outcome: combatResult.result, loot: combatResult.loot },
     ...(attackFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
+
+  try {
+    await tryValidateTutorialStep({
+      type: 'fleet_event',
+      eventType: 'combat_report_created',
+      userId: String(senderId),
+      proofId: mission.id,
+    });
+  } catch (e) {
+    logger.log('[FleetProcessing][Attack] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
+  }
 
   logger.log('[FleetProcessing][Attack] Done:', mission.id, 'result:', combatResult.result);
 }
@@ -622,6 +647,17 @@ export async function processColonizeMission(mission: FleetMission): Promise<voi
     result: { type: 'colonize', success: true, colonyId: newPlanet.id },
     ...(colonizeFinalPhase === 'completed' ? { completed_at: new Date().toISOString() } : {}),
   }).eq('id', mission.id);
+
+  try {
+    await tryValidateTutorialStep({
+      type: 'fleet_event',
+      eventType: 'colony_created',
+      userId: senderId,
+      proofId: newPlanet.id as string,
+    });
+  } catch (e) {
+    logger.log('[FleetProcessing][Colonize] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
+  }
 
   logger.log('[FleetProcessing][Colonize] Colony created:', newPlanet.id, 'at', targetCoords);
 }

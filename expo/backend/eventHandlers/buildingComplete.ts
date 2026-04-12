@@ -1,6 +1,7 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
 import { scheduleScoreRecalc } from '@/backend/eventScheduler';
+import { tryValidateTutorialStep } from '@/backend/tutorialValidation';
 import type { GameEvent } from './types';
 
 export async function handleBuildingComplete(event: GameEvent): Promise<void> {
@@ -129,6 +130,17 @@ export async function handleBuildingComplete(event: GameEvent): Promise<void> {
       logger.log('[EventHandler][BuildingComplete] Score recalc scheduled for player', planetOwner.user_id);
     } catch (e) {
       logger.log('[EventHandler][BuildingComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+    }
+
+    try {
+      await tryValidateTutorialStep({
+        type: 'building',
+        buildingId: building_id,
+        level: target_level,
+        userId: planetOwner.user_id as string,
+      });
+    } catch (e) {
+      logger.log('[EventHandler][BuildingComplete] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
     }
   }
 }

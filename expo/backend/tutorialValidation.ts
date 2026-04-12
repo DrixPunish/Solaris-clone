@@ -1,0 +1,144 @@
+import { supabase } from '@/backend/supabase';
+import { TUTORIAL_STEPS } from '@/constants/tutorial';
+import { logger } from '@/utils/logger';
+
+interface BuildingContext {
+  type: 'building';
+  buildingId: string;
+  level: number;
+  userId: string;
+}
+
+interface ResearchContext {
+  type: 'research';
+  researchId: string;
+  level: number;
+  userId: string;
+}
+
+interface ShipyardContext {
+  type: 'shipyard';
+  itemId: string;
+  itemType: 'ship' | 'defense';
+  newQuantity: number;
+  userId: string;
+}
+
+interface FleetEventContext {
+  type: 'fleet_event';
+  eventType: 'espionage_report_created' | 'combat_report_created' | 'colony_created' | 'transport_delivered' | 'debris_collected';
+  userId: string;
+  proofId?: string;
+}
+
+type TutorialEventContext = BuildingContext | ResearchContext | ShipyardContext | FleetEventContext;
+
+function matchesCurrentStep(
+  stepId: string,
+  context: TutorialEventContext,
+): boolean {
+  const step = TUTORIAL_STEPS.find(s => s.id === stepId);
+  if (!step) return false;
+
+  switch (context.type) {
+    case 'building':
+      if (step.checkType !== 'building_level') return false;
+      return step.checkTarget === context.buildingId && context.level >= step.checkValue;
+
+    case 'research':
+      if (step.checkType !== 'research_level') return false;
+      return step.checkTarget === context.researchId && context.level >= step.checkValue;
+
+    case 'shipyard':
+      if (step.checkType === 'ship_count' && context.itemType === 'ship') {
+        return step.checkTarget === context.itemId && context.newQuantity >= step.checkValue;
+      }
+      if (step.checkType === 'defense_count' && context.itemType === 'defense') {
+        return step.checkTarget === context.itemId && context.newQuantity >= step.checkValue;
+      }
+      return false;
+
+    case 'fleet_event':
+      if (step.checkType !== 'server_event') return false;
+      return step.validationSource === context.eventType;
+
+    default:
+      return false;
+  }
+}
+
+export async function tryValidateTutorialStep(context: TutorialEventContext): Promise<void> {
+  const userId = context.userId;
+  try {
+    const { data: progress } = await supabase
+      .from('player_tutorial_progress')
+      .select('current_step_id, current_step_index, finished_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!progress) {
+      logger.log('[Tutorial] No tutorial progress found for user:', userId);
+      return;
+    }
+
+    if (progress.finished_at) {
+      return;
+    }
+
+    const currentStepId = progress.current_step_id as string;
+    const currentStepIndex = progress.current_step_index as number;
+
+    if (!matchesCurrentStep(currentStepId, context)) {
+      return;
+    }
+
+    const step = TUTORIAL_STEPS.find(s => s.id === currentStepId);
+    if (!step) return;
+
+    const proofId = context.type === 'fleet_event' ? context.proofId : undefined;
+
+    const validationSource = step.validationSource;
+
+    const { data: existing } = await supabase
+      .from('tutorial_step_validations')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('step_id', currentStepId)
+      .maybeSingle();
+
+    if (existing) {
+      logger.log('[Tutorial] Step already validated:', currentStepId);
+      return;
+    }
+
+    const { error: insertErr } = await supabase
+      .from('tutorial_step_validations')
+      .insert({
+        user_id: userId,
+        step_id: currentStepId,
+        step_index: currentStepIndex,
+        validation_source: validationSource,
+        proof_id: proofId ?? null,
+        proof_data: {
+          context_type: context.type,
+          ...(context.type === 'building' ? { building_id: context.buildingId, level: context.level } : {}),
+          ...(context.type === 'research' ? { research_id: context.researchId, level: context.level } : {}),
+          ...(context.type === 'shipyard' ? { item_id: context.itemId, item_type: context.itemType, quantity: context.newQuantity } : {}),
+          ...(context.type === 'fleet_event' ? { event_type: context.eventType } : {}),
+        },
+      });
+
+    if (insertErr) {
+      if (insertErr.code === '23505') {
+        logger.log('[Tutorial] Step validation already exists (duplicate key):', currentStepId);
+        return;
+      }
+      logger.log('[Tutorial] Error inserting validation:', insertErr.message);
+      return;
+    }
+
+    logger.log('[Tutorial] Step validated:', currentStepId, 'source:', validationSource, 'for user:', userId);
+  } catch (e) {
+    logger.log('[Tutorial] Non-blocking validation error:', e instanceof Error ? e.message : String(e));
+  }
+}

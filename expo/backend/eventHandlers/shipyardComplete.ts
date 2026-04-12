@@ -1,6 +1,7 @@
 import { supabase } from '@/backend/supabase';
 import { logger } from '@/utils/logger';
 import { scheduleShipyardUnitComplete, scheduleScoreRecalc } from '@/backend/eventScheduler';
+import { tryValidateTutorialStep } from '@/backend/tutorialValidation';
 import type { GameEvent } from './types';
 
 export async function handleShipyardUnitComplete(event: GameEvent): Promise<void> {
@@ -160,6 +161,27 @@ export async function handleShipyardUnitComplete(event: GameEvent): Promise<void
       await scheduleScoreRecalc(planetOwner.user_id as string);
     } catch (e) {
       logger.log('[EventHandler][ShipyardComplete] Non-blocking: failed to schedule score recalc:', e instanceof Error ? e.message : String(e));
+    }
+
+    try {
+      const tableName = item_type === 'ship' ? 'planet_ships' : 'planet_defenses';
+      const idCol = item_type === 'ship' ? 'ship_id' : 'defense_id';
+      const { data: currentQty } = await supabase
+        .from(tableName)
+        .select('quantity')
+        .eq('planet_id', planet_id)
+        .eq(idCol, item_id)
+        .maybeSingle();
+
+      await tryValidateTutorialStep({
+        type: 'shipyard',
+        itemId: item_id,
+        itemType: item_type,
+        newQuantity: (currentQty?.quantity as number) ?? 0,
+        userId: planetOwner.user_id as string,
+      });
+    } catch (e) {
+      logger.log('[EventHandler][ShipyardComplete] Non-blocking: tutorial validation error:', e instanceof Error ? e.message : String(e));
     }
   }
 }
