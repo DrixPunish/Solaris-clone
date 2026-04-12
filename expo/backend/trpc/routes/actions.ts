@@ -8,7 +8,7 @@ import {
 } from "@/utils/gameCalculations";
 import { logger } from "@/utils/logger";
 import { ensureEventForShipyardQueue } from "@/backend/eventScheduler";
-import { tryValidateTutorialStep } from "@/backend/tutorialValidation";
+import { tryValidateTutorialStep, verifyStepFromTables } from "@/backend/tutorialValidation";
 
 interface RpcResult {
   success: boolean;
@@ -681,7 +681,27 @@ export const actionsRouter = createTRPCRouter({
         .maybeSingle();
 
       if (!validation) {
-        return { success: false, error: "Step not validated yet - complete the objective first" };
+        logger.log("[Actions] No validation row found for step:", input.stepId, "- trying direct table check");
+        const directCheck = await verifyStepFromTables(step, userId);
+
+        if (!directCheck.verified) {
+          logger.log("[Actions] Direct table check FAILED for step:", input.stepId);
+          return { success: false, error: "Step not validated yet - complete the objective first" };
+        }
+
+        logger.log("[Actions] Direct table check PASSED for step:", input.stepId, "- auto-inserting validation");
+        const { error: autoInsertErr } = await supabase
+          .from('tutorial_step_validations')
+          .insert({
+            user_id: userId,
+            step_id: input.stepId,
+            step_index: step.order,
+            validation_source: 'direct_table_check',
+            proof_data: directCheck.proof ?? {},
+          });
+        if (autoInsertErr && autoInsertErr.code !== '23505') {
+          logger.log("[Actions] Auto-insert validation warning:", autoInsertErr.message);
+        }
       }
 
       const nextStepIndex = step.order + 1;
@@ -781,6 +801,51 @@ export const actionsRouter = createTRPCRouter({
 
       logger.log("[Actions] Tutorial reward claimed:", input.stepId, "next:", nextStep?.id ?? 'FINISHED', "completed_steps:", newCompletedSteps.length);
       return { success: true, solar: resultSolar, resources: resultResources };
+    }),
+
+  checkTutorialStepValidation: protectedProcedure
+    .input(z.object({
+      stepId: z.string(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const userId = ctx.userId;
+      const step = TUTORIAL_STEPS.find(s => s.id === input.stepId);
+      if (!step) return { validated: false };
+
+      const { data: validation } = await supabase
+        .from('tutorial_step_validations')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('step_id', input.stepId)
+        .maybeSingle();
+
+      if (validation) return { validated: true };
+
+      const directCheck = await verifyStepFromTables(step, userId);
+      if (directCheck.verified) {
+        logger.log("[Actions] checkTutorialStep: direct check PASSED for", input.stepId, "- auto-inserting validation");
+        const { data: progress } = await supabase
+          .from('player_tutorial_progress')
+          .select('current_step_index')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        const { error: autoInsertErr } = await supabase
+          .from('tutorial_step_validations')
+          .insert({
+            user_id: userId,
+            step_id: input.stepId,
+            step_index: progress?.current_step_index ?? step.order,
+            validation_source: 'direct_table_check',
+            proof_data: directCheck.proof ?? {},
+          });
+        if (autoInsertErr && autoInsertErr.code !== '23505') {
+          logger.log("[Actions] checkTutorialStep auto-insert warning:", autoInsertErr.message);
+        }
+        return { validated: true };
+      }
+
+      return { validated: false };
     }),
 
   setProductionPercentages: protectedProcedure

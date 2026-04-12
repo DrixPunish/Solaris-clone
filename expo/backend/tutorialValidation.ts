@@ -1,5 +1,5 @@
 import { supabase } from '@/backend/supabase';
-import { TUTORIAL_STEPS } from '@/constants/tutorial';
+import { TUTORIAL_STEPS, TutorialStep } from '@/constants/tutorial';
 import { logger } from '@/utils/logger';
 
 interface BuildingContext {
@@ -64,6 +64,123 @@ function matchesCurrentStep(
 
     default:
       return false;
+  }
+}
+
+export async function verifyStepFromTables(
+  step: TutorialStep,
+  userId: string,
+): Promise<{ verified: boolean; proof?: Record<string, unknown> }> {
+  try {
+    logger.log('[Tutorial][DirectCheck] Verifying step:', step.id, 'type:', step.checkType, 'target:', step.checkTarget, 'value:', step.checkValue);
+
+    const { data: playerPlanets } = await supabase
+      .from('planets')
+      .select('id')
+      .eq('user_id', userId);
+    const planetIds = (playerPlanets ?? []).map((p: { id: string }) => p.id);
+
+    switch (step.checkType) {
+      case 'building_level': {
+        if (planetIds.length === 0) return { verified: false };
+        const { data } = await supabase
+          .from('planet_buildings')
+          .select('level, planet_id')
+          .in('planet_id', planetIds)
+          .eq('building_id', step.checkTarget)
+          .gte('level', step.checkValue)
+          .limit(1);
+        const found = (data?.length ?? 0) > 0;
+        logger.log('[Tutorial][DirectCheck] building_level:', step.checkTarget, '>= ', step.checkValue, '->', found);
+        return { verified: found, proof: found ? { building_id: step.checkTarget, level: (data as Array<{ level: number; planet_id: string }>)[0].level } : undefined };
+      }
+
+      case 'research_level': {
+        const { data } = await supabase
+          .from('player_research')
+          .select('level')
+          .eq('user_id', userId)
+          .eq('research_id', step.checkTarget)
+          .gte('level', step.checkValue)
+          .limit(1);
+        const found = (data?.length ?? 0) > 0;
+        logger.log('[Tutorial][DirectCheck] research_level:', step.checkTarget, '>= ', step.checkValue, '->', found);
+        return { verified: found, proof: found ? { research_id: step.checkTarget, level: (data as Array<{ level: number }>)[0].level } : undefined };
+      }
+
+      case 'ship_count': {
+        if (planetIds.length === 0) return { verified: false };
+        const { data } = await supabase
+          .from('planet_ships')
+          .select('quantity, planet_id')
+          .in('planet_id', planetIds)
+          .eq('ship_id', step.checkTarget);
+        const totalQty = (data ?? []).reduce((sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0), 0);
+        const found = totalQty >= step.checkValue;
+        logger.log('[Tutorial][DirectCheck] ship_count:', step.checkTarget, 'total:', totalQty, '>= ', step.checkValue, '->', found);
+        return { verified: found, proof: found ? { ship_id: step.checkTarget, total_quantity: totalQty } : undefined };
+      }
+
+      case 'defense_count': {
+        if (planetIds.length === 0) return { verified: false };
+        const { data } = await supabase
+          .from('planet_defenses')
+          .select('quantity, planet_id')
+          .in('planet_id', planetIds)
+          .eq('defense_id', step.checkTarget);
+        const totalQty = (data ?? []).reduce((sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0), 0);
+        const found = totalQty >= step.checkValue;
+        logger.log('[Tutorial][DirectCheck] defense_count:', step.checkTarget, 'total:', totalQty, '>= ', step.checkValue, '->', found);
+        return { verified: found, proof: found ? { defense_id: step.checkTarget, total_quantity: totalQty } : undefined };
+      }
+
+      case 'server_event': {
+        if (step.checkTarget === 'espionage_report_created') {
+          const { data } = await supabase
+            .from('espionage_reports')
+            .select('id')
+            .eq('player_id', userId)
+            .gt('probes_sent', 0)
+            .limit(1);
+          const found = (data?.length ?? 0) > 0;
+          logger.log('[Tutorial][DirectCheck] espionage_report_created for sender ->', found);
+          return { verified: found, proof: found ? { event: 'espionage_report_created' } : undefined };
+        }
+
+        if (step.checkTarget === 'combat_report_created') {
+          const { data } = await supabase
+            .from('combat_reports')
+            .select('id')
+            .eq('attacker_id', userId)
+            .eq('viewer_role', 'attacker')
+            .limit(1);
+          const found = (data?.length ?? 0) > 0;
+          logger.log('[Tutorial][DirectCheck] combat_report_created for attacker ->', found);
+          return { verified: found, proof: found ? { event: 'combat_report_created' } : undefined };
+        }
+
+        if (step.checkTarget === 'colony_created') {
+          const { data } = await supabase
+            .from('planets')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('is_main', false)
+            .limit(1);
+          const found = (data?.length ?? 0) > 0;
+          logger.log('[Tutorial][DirectCheck] colony_created ->', found);
+          return { verified: found, proof: found ? { event: 'colony_created', colony_id: (data as Array<{ id: string }>)[0].id } : undefined };
+        }
+
+        logger.log('[Tutorial][DirectCheck] Unknown server_event target:', step.checkTarget);
+        return { verified: false };
+      }
+
+      default:
+        return { verified: false };
+    }
+  } catch (e) {
+    logger.log('[Tutorial][DirectCheck] Error verifying step:', step.id, e instanceof Error ? e.message : String(e));
+    return { verified: false };
   }
 }
 

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useGame } from '@/contexts/GameContext';
 import { TUTORIAL_STEPS, TUTORIAL_CHAPTERS, TutorialStep, TutorialReward, getNextStep } from '@/constants/tutorial';
 import { supabase } from '@/utils/supabase';
+import { trpcClient } from '@/lib/trpc';
 
 interface TutorialProgressState {
   currentStepId: string;
@@ -102,13 +103,20 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     queryKey: ['tutorial_validation', userId, progress.currentStepId],
     queryFn: async () => {
       if (!userId || !progress.currentStepId || progress.finishedAt) return false;
-      const { data } = await supabase
-        .from('tutorial_step_validations')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('step_id', progress.currentStepId)
-        .maybeSingle();
-      return !!data;
+      try {
+        const result = await trpcClient.actions.checkTutorialStepValidation.query({ stepId: progress.currentStepId });
+        console.log('[Tutorial] Server validation check for', progress.currentStepId, '->', result.validated);
+        return result.validated;
+      } catch (e) {
+        console.log('[Tutorial] Error checking validation via tRPC, falling back to direct query:', e);
+        const { data } = await supabase
+          .from('tutorial_step_validations')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('step_id', progress.currentStepId)
+          .maybeSingle();
+        return !!data;
+      }
     },
     enabled: !!userId && isLoaded && !progress.finishedAt,
     refetchInterval: 10000,
