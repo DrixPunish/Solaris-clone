@@ -66,7 +66,7 @@ function ChapterHeader({ chapter, isActive, isComplete, stepsDone, stepsTotal }:
   );
 }
 
-export function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: boolean; onClose: () => void; onMinimize: () => void }) {
   const {
     allSteps, allChapters, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, advanceToNextStep, isFinished, completedCount, totalSteps, progress,
@@ -129,9 +129,22 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
               <BookOpen size={20} color={Colors.primary} />
               <Text style={styles.modalTitle}>Guide du Nephilim</Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <X size={22} color={Colors.textSecondary} />
-            </Pressable>
+            <View style={styles.modalHeaderActions}>
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose();
+                  onMinimize();
+                }}
+                hitSlop={8}
+                style={styles.modalMinimizeBtn}
+              >
+                <ChevronsDown size={18} color={Colors.primary} />
+              </Pressable>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <X size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.progressSection}>
@@ -500,7 +513,7 @@ export default function TutorialWidget() {
         </View>
       )}
 
-      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} />
+      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} onMinimize={toggleMinimized} />
     </>
   );
 }
@@ -763,6 +776,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 12,
+  },
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalMinimizeBtn: {
+    padding: 6,
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   modalTitleRow: {
     flexDirection: 'row',
