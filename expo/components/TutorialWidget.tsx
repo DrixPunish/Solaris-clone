@@ -422,7 +422,7 @@ export default function TutorialWidget() {
               <Maximize2 size={14} color={Colors.textSecondary} />
             </Pressable>
             <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={12} style={styles.minimizeBtn}>
-              <ChevronsDown size={16} color={Colors.textSecondary} />
+              <ChevronsDown size={18} color={Colors.primary} />
             </Pressable>
             <Pressable onPress={handleDismiss} hitSlop={8} style={styles.headerBtn}>
               <X size={14} color={Colors.textMuted} />
@@ -578,8 +578,10 @@ const styles = StyleSheet.create({
   },
   minimizeBtn: {
     padding: 6,
-    backgroundColor: Colors.border,
-    borderRadius: 6,
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
   },
   body: {
     paddingHorizontal: 14,
