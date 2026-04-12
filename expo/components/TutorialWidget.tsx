@@ -66,7 +66,7 @@ function ChapterHeader({ chapter, isActive, isComplete, stepsDone, stepsTotal }:
   );
 }
 
-export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: boolean; onClose: () => void; onMinimize: () => void }) {
+export function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const {
     allSteps, allChapters, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, advanceToNextStep, isFinished, completedCount, totalSteps, progress,
@@ -129,24 +129,9 @@ export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: b
               <BookOpen size={20} color={Colors.primary} />
               <Text style={styles.modalTitle}>Guide du Nephilim</Text>
             </View>
-            <View style={styles.modalHeaderActions}>
-              <Pressable
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onClose();
-                  if (typeof onMinimize === 'function') {
-                    onMinimize();
-                  }
-                }}
-                hitSlop={8}
-                style={styles.modalMinimizeBtn}
-              >
-                <ChevronsDown size={18} color={Colors.primary} />
-              </Pressable>
-              <Pressable onPress={onClose} hitSlop={12}>
-                <X size={22} color={Colors.textSecondary} />
-              </Pressable>
-            </View>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <X size={22} color={Colors.textSecondary} />
+            </Pressable>
           </View>
 
           <View style={styles.progressSection}>
@@ -436,8 +421,8 @@ export default function TutorialWidget() {
             <Pressable onPress={() => setShowFullModal(true)} hitSlop={8} style={styles.headerBtn}>
               <Maximize2 size={14} color={Colors.textSecondary} />
             </Pressable>
-            <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={12} style={styles.minimizeBtn}>
-              <ChevronsDown size={18} color={Colors.primary} />
+            <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={8} style={styles.headerBtn}>
+              <ChevronsDown size={14} color={Colors.textSecondary} />
             </Pressable>
             <Pressable onPress={handleDismiss} hitSlop={8} style={styles.headerBtn}>
               <X size={14} color={Colors.textMuted} />
@@ -515,7 +500,7 @@ export default function TutorialWidget() {
         </View>
       )}
 
-      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} onMinimize={toggleMinimized} />
+      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} />
     </>
   );
 }
@@ -590,13 +575,6 @@ const styles = StyleSheet.create({
   },
   headerBtn: {
     padding: 4,
-  },
-  minimizeBtn: {
-    padding: 6,
-    backgroundColor: Colors.primary + '20',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
   },
   body: {
     paddingHorizontal: 14,
@@ -778,18 +756,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 12,
-  },
-  modalHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  modalMinimizeBtn: {
-    padding: 6,
-    backgroundColor: Colors.primary + '20',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
   },
   modalTitleRow: {
     flexDirection: 'row',
