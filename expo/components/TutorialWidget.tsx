@@ -134,7 +134,9 @@ export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: b
                 onPress={() => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   onClose();
-                  onMinimize();
+                  if (typeof onMinimize === 'function') {
+                    onMinimize();
+                  }
                 }}
                 hitSlop={8}
                 style={styles.modalMinimizeBtn}
