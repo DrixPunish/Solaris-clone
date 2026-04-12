@@ -148,7 +148,7 @@ export async function verifyStepFromTables(
         const { data: txData } = await supabase
           .from('solar_transactions')
           .select('id')
-          .eq('user_id', userId)
+          .eq('player_id', userId)
           .eq('transaction_type', step.checkTarget)
           .limit(1);
         const txFound = (txData?.length ?? 0) > 0;
