@@ -1909,10 +1909,10 @@ export const [GameProvider, useGame] = createContextHook(() => {
           });
         }
       } else {
-        console.log('[GameContext] Tutorial reward rejected by server:', result.error);
+        console.log('[GameContext] Tutorial reward REJECTED by server:', result.error, '- stepId:', stepId, 'planetId:', mainPlanetIdRef.current);
       }
     } catch (e) {
-      console.log('[GameContext] Error claiming tutorial reward:', e);
+      console.log('[GameContext] Error claiming tutorial reward (exception):', e instanceof Error ? e.message : String(e), '- stepId:', stepId);
     }
   }, [userId]);
 

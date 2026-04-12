@@ -195,6 +195,34 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     return step.reward;
   }, [progress.claimedRewards, isCurrentStepCompleted, isValidated]);
 
+  const reloadFromServer = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const { data } = await supabase
+        .from('player_tutorial_progress')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (data) {
+        const serverCompleted: string[] = Array.isArray(data.completed_steps) ? data.completed_steps : [];
+        const serverClaimed: string[] = Array.isArray(data.claimed_rewards) ? data.claimed_rewards : [];
+        setProgress({
+          currentStepId: (data.current_step_id as string) ?? FIRST_STEP?.id ?? '',
+          currentStepIndex: (data.current_step_index as number) ?? 0,
+          completedSteps: serverCompleted,
+          claimedRewards: serverClaimed,
+          dismissed: (data.dismissed as boolean) ?? false,
+          minimized: (data.minimized as boolean) ?? false,
+          finishedAt: (data.finished_at as string) ?? null,
+        });
+        console.log('[Tutorial] Reloaded from server: step=', data.current_step_id, 'completed=', serverCompleted.length);
+      }
+    } catch (err) {
+      console.log('[Tutorial] Error reloading from server:', err);
+    }
+  }, [userId]);
+
   const advanceToNextStep = useCallback(() => {
     if (!currentStep) return;
     const nextStep = getNextStep(currentStep.id);
@@ -219,8 +247,12 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     }
 
     setIsValidated(false);
-    void validationQuery.refetch();
-  }, [currentStep, progress.completedSteps, progress.claimedRewards, validationQuery]);
+
+    setTimeout(() => {
+      void reloadFromServer();
+      void validationQuery.refetch();
+    }, 500);
+  }, [currentStep, progress.completedSteps, progress.claimedRewards, validationQuery, reloadFromServer]);
 
   const dismissTutorial = useCallback(() => {
     console.log('[Tutorial] Tutorial dismissed');

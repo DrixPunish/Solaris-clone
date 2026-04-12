@@ -649,31 +649,93 @@ export const actionsRouter = createTRPCRouter({
       const serverXenogas = reward.xenogas ?? 0;
       const serverSolar = reward.solar ?? 0;
 
-      const { data, error } = await supabase.rpc("rpc_claim_tutorial_step_reward", {
-        p_user_id: userId,
-        p_planet_id: input.planetId,
-        p_step_id: input.stepId,
-        p_step_index: step.order,
-        p_reward_type: rewardType,
-        p_fer: serverFer,
-        p_silice: serverSilice,
-        p_xenogas: serverXenogas,
-        p_solar: serverSolar,
-        p_next_step_id: nextStep?.id ?? null,
-        p_next_step_index: nextStep ? nextStepIndex : null,
-      });
+      let resultResources: { fer: number; silice: number; xenogas: number } | undefined;
+      let resultSolar: number | undefined;
 
-      if (error) {
-        logger.error("[Actions] RPC error claimTutorialReward:", error.message);
-        return { success: false, error: error.message };
+      if (rewardType === 'resources' && (serverFer > 0 || serverSilice > 0 || serverXenogas > 0)) {
+        const { data: currentRes, error: resErr } = await supabase
+          .from('planet_resources')
+          .select('fer, silice, xenogas')
+          .eq('planet_id', input.planetId)
+          .single();
+
+        if (resErr || !currentRes) {
+          logger.error("[Actions] Failed to fetch planet resources for tutorial reward:", resErr?.message);
+          return { success: false, error: "Failed to fetch planet resources" };
+        }
+
+        const curRes = currentRes as { fer: number; silice: number; xenogas: number };
+        const newFer = curRes.fer + serverFer;
+        const newSilice = curRes.silice + serverSilice;
+        const newXenogas = curRes.xenogas + serverXenogas;
+
+        const { error: updateResErr } = await supabase
+          .from('planet_resources')
+          .update({ fer: newFer, silice: newSilice, xenogas: newXenogas })
+          .eq('planet_id', input.planetId);
+
+        if (updateResErr) {
+          logger.error("[Actions] Failed to update planet resources for tutorial reward:", updateResErr.message);
+          return { success: false, error: "Failed to update resources" };
+        }
+
+        resultResources = { fer: newFer, silice: newSilice, xenogas: newXenogas };
+        logger.log("[Actions] Tutorial reward resources added: fer+", serverFer, "silice+", serverSilice, "xenogas+", serverXenogas);
       }
 
-      const result = data as { success: boolean; error?: string; solar?: number; resources?: { fer: number; silice: number; xenogas: number } };
-      if (!result.success) {
-        return { success: false, error: result.error };
+      if (rewardType === 'solar' && serverSolar > 0) {
+        const { data: playerData, error: playerErr } = await supabase
+          .from('players')
+          .select('solar')
+          .eq('user_id', userId)
+          .single();
+
+        if (playerErr || !playerData) {
+          logger.error("[Actions] Failed to fetch player solar for tutorial reward:", playerErr?.message);
+          return { success: false, error: "Failed to fetch player solar" };
+        }
+
+        const newSolar = ((playerData as { solar: number }).solar ?? 0) + serverSolar;
+
+        const { error: updateSolarErr } = await supabase
+          .from('players')
+          .update({ solar: newSolar })
+          .eq('user_id', userId);
+
+        if (updateSolarErr) {
+          logger.error("[Actions] Failed to update player solar for tutorial reward:", updateSolarErr.message);
+          return { success: false, error: "Failed to update solar" };
+        }
+
+        resultSolar = newSolar;
+        logger.log("[Actions] Tutorial reward solar added:", serverSolar, "new total:", newSolar);
       }
-      logger.log("[Actions] Tutorial reward claimed:", input.stepId, "next:", nextStep?.id ?? 'FINISHED');
-      return { success: true, solar: result.solar, resources: result.resources };
+
+      const newCompletedSteps = [...claimedRewards, input.stepId];
+      const progressUpdate: Record<string, unknown> = {
+        completed_steps: newCompletedSteps,
+        claimed_rewards: newCompletedSteps,
+      };
+
+      if (nextStep) {
+        progressUpdate.current_step_id = nextStep.id;
+        progressUpdate.current_step_index = nextStepIndex;
+      } else {
+        progressUpdate.finished_at = new Date().toISOString();
+      }
+
+      const { error: progressErr } = await supabase
+        .from('player_tutorial_progress')
+        .update(progressUpdate)
+        .eq('user_id', userId);
+
+      if (progressErr) {
+        logger.error("[Actions] Failed to update tutorial progress:", progressErr.message);
+        return { success: false, error: "Failed to update tutorial progress" };
+      }
+
+      logger.log("[Actions] Tutorial reward claimed:", input.stepId, "next:", nextStep?.id ?? 'FINISHED', "completed_steps:", newCompletedSteps.length);
+      return { success: true, solar: resultSolar, resources: resultResources };
     }),
 
   setProductionPercentages: protectedProcedure
