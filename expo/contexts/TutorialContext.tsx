@@ -127,7 +127,7 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
   }, [validationQuery.data]);
 
   const checkLocalCompletion = useCallback((step: TutorialStep): boolean => {
-    if (step.checkType === 'server_event') return false;
+    if (step.checkType === 'server_event' || step.checkType === 'transaction_check') return false;
     switch (step.checkType) {
       case 'building_level':
         return (state.buildings[step.checkTarget] ?? 0) >= step.checkValue;
@@ -192,16 +192,18 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
 
   const claimReward = useCallback((stepId: string): TutorialReward | null => {
     const step = TUTORIAL_STEPS.find(s => s.id === stepId);
-    if (!step) return null;
+    if (!step) {
+      console.log('[Tutorial] claimReward: step not found:', stepId);
+      return null;
+    }
     if (progress.claimedRewards.includes(stepId)) {
       console.log('[Tutorial] Step already claimed locally, skipping:', stepId);
       return null;
     }
-    if (!isCurrentStepCompleted && !isValidated) return null;
 
-    console.log('[Tutorial] Claiming reward for step:', stepId);
+    console.log('[Tutorial] Claiming reward for step:', stepId, '(server will validate)');
     return step.reward;
-  }, [progress.claimedRewards, isCurrentStepCompleted, isValidated]);
+  }, [progress.claimedRewards]);
 
   const reloadFromServer = useCallback(async () => {
     if (!userId) return;
@@ -237,6 +239,8 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     const newCompleted = [...progress.completedSteps, currentStep.id];
     const newClaimed = [...progress.claimedRewards, currentStep.id];
 
+    console.log('[Tutorial] Advancing from', currentStep.id, 'to', nextStep?.id ?? 'FINISHED');
+
     if (nextStep) {
       setProgress(prev => ({
         ...prev,
@@ -259,7 +263,7 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     setTimeout(() => {
       void reloadFromServer();
       void validationQuery.refetch();
-    }, 500);
+    }, 1000);
   }, [currentStep, progress.completedSteps, progress.claimedRewards, validationQuery, reloadFromServer]);
 
   const dismissTutorial = useCallback(() => {
@@ -285,9 +289,11 @@ export const [TutorialProvider, useTutorial] = createContextHook(() => {
     });
   }, [persistField]);
 
-  const refreshValidation = useCallback(() => {
-    void validationQuery.refetch();
-  }, [validationQuery]);
+  const refreshValidation = useCallback(async () => {
+    console.log('[Tutorial] Refreshing validation for step:', progress.currentStepId);
+    const result = await validationQuery.refetch();
+    return result.data === true;
+  }, [validationQuery, progress.currentStepId]);
 
   const totalSteps = TUTORIAL_STEPS.length;
   const completedCount = progress.claimedRewards.length;

@@ -696,17 +696,40 @@ export const actionsRouter = createTRPCRouter({
         .maybeSingle();
 
       if (!progress) {
-        return { success: false, error: "No tutorial progress found" };
-      }
-
-      if (progress.current_step_id !== input.stepId) {
-        logger.log("[Actions] Tutorial step mismatch: expected", progress.current_step_id, "got", input.stepId);
-        return { success: false, error: "Step mismatch: not the current step" };
+        logger.log("[Actions] No tutorial progress found, auto-creating for:", userId);
+        const { error: createErr } = await supabase
+          .from('player_tutorial_progress')
+          .insert({ user_id: userId, current_step_id: 'ch1_ferro_mine_1', current_step_index: 0 });
+        if (createErr && createErr.code !== '23505') {
+          return { success: false, error: "Failed to create tutorial progress" };
+        }
+        const { data: freshProgress } = await supabase
+          .from('player_tutorial_progress')
+          .select('current_step_id, current_step_index, claimed_rewards')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (!freshProgress) {
+          return { success: false, error: "No tutorial progress found" };
+        }
+        progress = freshProgress;
       }
 
       const claimedRewards = Array.isArray(progress.claimed_rewards) ? progress.claimed_rewards as string[] : [];
       if (claimedRewards.includes(input.stepId)) {
+        logger.log("[Actions] Reward already claimed for step:", input.stepId);
         return { success: false, error: "Reward already claimed" };
+      }
+
+      if (progress.current_step_id !== input.stepId) {
+        const serverStepIndex = TUTORIAL_STEPS.findIndex(s => s.id === progress!.current_step_id);
+        const requestedStepIndex = TUTORIAL_STEPS.findIndex(s => s.id === input.stepId);
+
+        if (requestedStepIndex >= 0 && requestedStepIndex < serverStepIndex && !claimedRewards.includes(input.stepId)) {
+          logger.log("[Actions] Step mismatch but requested step is an earlier unclaimed step - allowing:", input.stepId, "(server at:", progress.current_step_id, ")");
+        } else {
+          logger.log("[Actions] Tutorial step mismatch: server at", progress.current_step_id, "(idx:", serverStepIndex, ") requested", input.stepId, "(idx:", requestedStepIndex, ")");
+          return { success: false, error: "Step mismatch: not the current step" };
+        }
       }
 
       const { data: validation } = await supabase

@@ -1861,10 +1861,10 @@ export const [GameProvider, useGame] = createContextHook(() => {
     return calculateProduction(activePlanet.buildings, state.research, activePlanet.ships, pct, bonuses);
   }, [activePlanet.buildings, activePlanet.isColony, state.research, activePlanet.ships, state.productionPercentages, state.colonies, activePlanetId, state.temperatureMax, state.metalBonusPct, state.crystalBonusPct, state.deutBonusPct]);
 
-  const applyTutorialReward = useCallback(async (reward: TutorialReward, stepId?: string) => {
+  const applyTutorialReward = useCallback(async (reward: TutorialReward, stepId?: string): Promise<{ success: boolean; error?: string }> => {
     if (!userId || !mainPlanetIdRef.current || !stepId) {
       console.log('[GameContext] Tutorial reward skipped - missing userId/planetId/stepId');
-      return;
+      return { success: false, error: 'Données manquantes' };
     }
 
     console.log('[GameContext] Tutorial reward claiming via server - step:', stepId, 'type:', reward.type);
@@ -1908,11 +1908,14 @@ export const [GameProvider, useGame] = createContextHook(() => {
             return newState;
           });
         }
+        return { success: true };
       } else {
         console.log('[GameContext] Tutorial reward REJECTED by server:', result.error, '- stepId:', stepId, 'planetId:', mainPlanetIdRef.current);
+        return { success: false, error: result.error ?? 'Rejeté par le serveur' };
       }
     } catch (e) {
       console.log('[GameContext] Error claiming tutorial reward (exception):', e instanceof Error ? e.message : String(e), '- stepId:', stepId);
+      return { success: false, error: 'Erreur réseau' };
     }
   }, [userId]);
 

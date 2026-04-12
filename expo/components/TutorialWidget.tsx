@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView, Platform, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp, ChevronsDown, Loader } from 'lucide-react-native';
+import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp, ChevronsDown, Loader, AlertCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useTutorial } from '@/contexts/TutorialContext';
@@ -70,41 +70,79 @@ export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: b
   const {
     allSteps, allChapters, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, advanceToNextStep, isFinished, completedCount, totalSteps, progress,
-    isCurrentStepCompleted, currentStep, toggleMinimized,
+    isCurrentStepCompleted, currentStep, toggleMinimized, refreshValidation,
   } = useTutorial();
-  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
+  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<{ success: boolean; error?: string }> };
   const router = useRouter();
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [isClaimLoading, setIsClaimLoading] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
   const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
   const claimAnim = useRef(new Animated.Value(1)).current;
 
-  const handleClaimFromList = useCallback((stepId: string) => {
+  useEffect(() => {
+    if (claimError) {
+      const timer = setTimeout(() => setClaimError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [claimError]);
+
+  const handleClaimFromList = useCallback(async (stepId: string) => {
     if (isClaimLoading) return;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setClaimError(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setClaimingId(stepId);
     setIsClaimLoading(stepId);
-    Animated.sequence([
-      Animated.timing(claimAnim, { toValue: 1.15, duration: 150, useNativeDriver: true }),
-      Animated.timing(claimAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start(() => {
+
+    try {
+      await refreshValidation();
+
       const reward = claimReward(stepId);
-      if (reward && applyTutorialReward) {
-        console.log('[TUTORIAL CLAIM] Calling server for step:', stepId);
-        void applyTutorialReward(reward, stepId).then(() => {
-          advanceToNextStep();
-          setClaimingId(null);
-          setIsClaimLoading(null);
-        }).catch(() => {
-          setClaimingId(null);
-          setIsClaimLoading(null);
-        });
-      } else {
+      if (!reward) {
+        console.log('[TUTORIAL CLAIM] claimReward returned null for:', stepId);
         setClaimingId(null);
         setIsClaimLoading(null);
+        setClaimError('Récompense déjà récupérée');
+        return;
       }
-    });
-  }, [claimReward, claimAnim, applyTutorialReward, advanceToNextStep, isClaimLoading]);
+
+      if (!applyTutorialReward) {
+        setClaimingId(null);
+        setIsClaimLoading(null);
+        return;
+      }
+
+      console.log('[TUTORIAL CLAIM] Calling server for step:', stepId);
+      const result = await applyTutorialReward(reward, stepId);
+
+      if (result.success) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Animated.sequence([
+          Animated.timing(claimAnim, { toValue: 1.15, duration: 150, useNativeDriver: true }),
+          Animated.timing(claimAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+        ]).start();
+        advanceToNextStep();
+      } else {
+        console.log('[TUTORIAL CLAIM] Server rejected:', result.error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (result.error?.includes('not validated') || result.error?.includes('complete the objective')) {
+          setClaimError('Objectif pas encore détecté. Réessayez dans quelques secondes.');
+        } else if (result.error?.includes('mismatch')) {
+          setClaimError('Désynchronisation. Rechargement...');
+          setTimeout(() => refreshValidation(), 1000);
+        } else {
+          setClaimError(result.error ?? 'Erreur lors de la récupération');
+        }
+      }
+    } catch (e) {
+      console.log('[TUTORIAL CLAIM] Exception:', e);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setClaimError('Erreur réseau. Réessayez.');
+    } finally {
+      setClaimingId(null);
+      setIsClaimLoading(null);
+    }
+  }, [claimReward, claimAnim, applyTutorialReward, advanceToNextStep, isClaimLoading, refreshValidation]);
 
   const handleNavigate = useCallback((navigateTo?: string) => {
     if (navigateTo) {
@@ -258,20 +296,28 @@ export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: b
                           {!isLocked && <RewardBadge reward={step.reward} />}
 
                           {canClaim && (
-                            <Pressable
-                              style={[styles.claimButtonList, isClaimLoading === step.id && styles.claimButtonListLoading]}
-                              onPress={() => handleClaimFromList(step.id)}
-                              disabled={isClaimLoading !== null}
-                            >
-                              {isClaimLoading === step.id ? (
-                                <Loader size={14} color="#000" />
-                              ) : (
-                                <Sparkles size={14} color="#000" />
+                            <>
+                              <Pressable
+                                style={[styles.claimButtonList, isClaimLoading === step.id && styles.claimButtonListLoading]}
+                                onPress={() => void handleClaimFromList(step.id)}
+                                disabled={isClaimLoading !== null}
+                              >
+                                {isClaimLoading === step.id ? (
+                                  <Loader size={14} color="#000" />
+                                ) : (
+                                  <Sparkles size={14} color="#000" />
+                                )}
+                                <Text style={styles.claimButtonListText}>
+                                  {isClaimLoading === step.id ? 'Vérification...' : 'Récupérer'}
+                                </Text>
+                              </Pressable>
+                              {claimError && claimingId === null && (
+                                <View style={styles.claimErrorBadge}>
+                                  <AlertCircle size={11} color="#EF4444" />
+                                  <Text style={styles.claimErrorText}>{claimError}</Text>
+                                </View>
                               )}
-                              <Text style={styles.claimButtonListText}>
-                                {isClaimLoading === step.id ? 'Chargement...' : 'Récupérer'}
-                              </Text>
-                            </Pressable>
+                            </>
                           )}
 
                           {isCurrent && !isCurrentStepCompleted && step.navigateTo && (
@@ -303,7 +349,7 @@ export default function TutorialWidget() {
     currentStep, currentChapter, isCurrentStepCompleted, isCurrentStepClaimed,
     isDismissed, isMinimized, isLoaded, isFinished,
     claimReward, advanceToNextStep, dismissTutorial, toggleMinimized,
-    completedCount, totalSteps, progress,
+    completedCount, totalSteps, progress, refreshValidation,
   } = useTutorial();
   const { state } = useGame();
   const router = useRouter();
@@ -335,36 +381,73 @@ export default function TutorialWidget() {
     }
   }, [isCurrentStepCompleted, isCurrentStepClaimed, pulseAnim]);
 
-  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
+  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<{ success: boolean; error?: string }> };
+  const [widgetClaimError, setWidgetClaimError] = useState<string | null>(null);
 
-  const handleClaim = useCallback(() => {
+  useEffect(() => {
+    if (widgetClaimError) {
+      const timer = setTimeout(() => setWidgetClaimError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [widgetClaimError]);
+
+  const handleClaim = useCallback(async () => {
     if (!currentStep || isClaimingWidget) return;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setWidgetClaimError(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsClaimingWidget(true);
 
-    setShowRewardAnimation(true);
-    Animated.sequence([
-      Animated.spring(rewardScaleAnim, { toValue: 1, useNativeDriver: true, tension: 100, friction: 6 }),
-      Animated.delay(600),
-      Animated.timing(rewardScaleAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      setShowRewardAnimation(false);
-      rewardScaleAnim.setValue(0);
-    });
+    try {
+      await refreshValidation();
 
-    const reward = claimReward(currentStep.id);
-    if (reward && applyTutorialReward) {
-      console.log('[TUTORIAL CLAIM] Calling server for step:', currentStep.id);
-      void applyTutorialReward(reward, currentStep.id).then(() => {
+      const reward = claimReward(currentStep.id);
+      if (!reward) {
+        console.log('[TUTORIAL CLAIM WIDGET] claimReward returned null for:', currentStep.id);
+        setIsClaimingWidget(false);
+        setWidgetClaimError('Récompense déjà récupérée');
+        return;
+      }
+
+      if (!applyTutorialReward) {
+        setIsClaimingWidget(false);
+        return;
+      }
+
+      console.log('[TUTORIAL CLAIM WIDGET] Calling server for step:', currentStep.id);
+      const result = await applyTutorialReward(reward, currentStep.id);
+
+      if (result.success) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setShowRewardAnimation(true);
+        Animated.sequence([
+          Animated.spring(rewardScaleAnim, { toValue: 1, useNativeDriver: true, tension: 100, friction: 6 }),
+          Animated.delay(600),
+          Animated.timing(rewardScaleAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]).start(() => {
+          setShowRewardAnimation(false);
+          rewardScaleAnim.setValue(0);
+        });
         advanceToNextStep();
-        setIsClaimingWidget(false);
-      }).catch(() => {
-        setIsClaimingWidget(false);
-      });
-    } else {
+      } else {
+        console.log('[TUTORIAL CLAIM WIDGET] Server rejected:', result.error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (result.error?.includes('not validated') || result.error?.includes('complete the objective')) {
+          setWidgetClaimError('Objectif pas encore détecté. Réessayez.');
+        } else if (result.error?.includes('mismatch')) {
+          setWidgetClaimError('Désynchronisation. Rechargement...');
+          setTimeout(() => void refreshValidation(), 1000);
+        } else {
+          setWidgetClaimError(result.error ?? 'Erreur lors de la récupération');
+        }
+      }
+    } catch (e) {
+      console.log('[TUTORIAL CLAIM WIDGET] Exception:', e);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setWidgetClaimError('Erreur réseau. Réessayez.');
+    } finally {
       setIsClaimingWidget(false);
     }
-  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep, isClaimingWidget]);
+  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep, isClaimingWidget, refreshValidation]);
 
   const handleNavigate = useCallback(() => {
     if (currentStep?.navigateTo) {
@@ -474,16 +557,24 @@ export default function TutorialWidget() {
 
         <View style={styles.footer}>
           {canClaim ? (
-            <Pressable style={[styles.claimButton, isClaimingWidget && styles.claimButtonLoading]} onPress={handleClaim} disabled={isClaimingWidget}>
-              {isClaimingWidget ? (
-                <Loader size={16} color="#000" />
-              ) : (
-                <Sparkles size={16} color="#000" />
+            <>
+              <Pressable style={[styles.claimButton, isClaimingWidget && styles.claimButtonLoading]} onPress={() => void handleClaim()} disabled={isClaimingWidget}>
+                {isClaimingWidget ? (
+                  <Loader size={16} color="#000" />
+                ) : (
+                  <Sparkles size={16} color="#000" />
+                )}
+                <Text style={styles.claimButtonText}>
+                  {isClaimingWidget ? 'Vérification...' : 'Récupérer la récompense'}
+                </Text>
+              </Pressable>
+              {widgetClaimError && !isClaimingWidget && (
+                <View style={styles.claimErrorBadge}>
+                  <AlertCircle size={11} color="#EF4444" />
+                  <Text style={styles.claimErrorText}>{widgetClaimError}</Text>
+                </View>
               )}
-              <Text style={styles.claimButtonText}>
-                {isClaimingWidget ? 'Chargement...' : 'Récupérer la récompense'}
-              </Text>
-            </Pressable>
+            </>
           ) : !isCurrentStepCompleted && currentStep.navigateTo ? (
             <Pressable style={styles.navigateButton} onPress={handleNavigate}>
               <Text style={styles.navigateButtonText}>Y aller</Text>
@@ -1043,5 +1134,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600' as const,
     color: Colors.primary,
+  },
+  claimErrorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#EF444415',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#EF444430',
+  },
+  claimErrorText: {
+    fontSize: 11,
+    color: '#EF4444',
+    fontWeight: '600' as const,
+    flex: 1,
   },
 });
