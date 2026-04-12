@@ -421,8 +421,8 @@ export default function TutorialWidget() {
             <Pressable onPress={() => setShowFullModal(true)} hitSlop={8} style={styles.headerBtn}>
               <Maximize2 size={14} color={Colors.textSecondary} />
             </Pressable>
-            <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={8} style={styles.headerBtn}>
-              <ChevronsDown size={14} color={Colors.textSecondary} />
+            <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={12} style={styles.minimizeBtn}>
+              <ChevronsDown size={16} color={Colors.textSecondary} />
             </Pressable>
             <Pressable onPress={handleDismiss} hitSlop={8} style={styles.headerBtn}>
               <X size={14} color={Colors.textMuted} />
@@ -575,6 +575,11 @@ const styles = StyleSheet.create({
   },
   headerBtn: {
     padding: 4,
+  },
+  minimizeBtn: {
+    padding: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 6,
   },
   body: {
     paddingHorizontal: 14,
