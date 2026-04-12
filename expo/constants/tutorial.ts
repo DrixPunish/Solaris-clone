@@ -78,7 +78,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 500 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=ferMine',
   },
   {
     id: 'ch1_power_plant_1',
@@ -94,7 +94,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 300, silice: 150 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=solarPlant',
   },
   {
     id: 'ch1_silica_mine_1',
@@ -110,7 +110,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', silice: 500 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=siliceMine',
   },
   {
     id: 'ch1_ferro_mine_2',
@@ -126,7 +126,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 2,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 800, silice: 400 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=ferMine',
   },
   {
     id: 'ch1_power_plant_2',
@@ -142,7 +142,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 2,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 500, silice: 300 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=solarPlant',
   },
   {
     id: 'ch1_xeno_well_1',
@@ -158,7 +158,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', xenogas: 500 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=xenogasRefinery',
   },
   {
     id: 'ch1_ferro_store_1',
@@ -174,7 +174,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 1000, silice: 500 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=ferroStore',
   },
   {
     id: 'ch2_automata_1',
@@ -190,7 +190,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 2000, silice: 1000, xenogas: 500 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=roboticsFactory',
   },
   {
     id: 'ch2_research_lab_1',
@@ -206,7 +206,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 1500, silice: 2000, xenogas: 1000 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=researchLab',
   },
   {
     id: 'ch2_quantum_flux_1',
@@ -222,7 +222,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'research_complete',
     reward: { type: 'resources', silice: 2000, xenogas: 1000 },
-    navigateTo: '/(tabs)/research',
+    navigateTo: '/(tabs)/research?scrollTo=quantumFlux',
   },
   {
     id: 'ch2_particle_beam_1',
@@ -238,7 +238,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'research_complete',
     reward: { type: 'resources', fer: 1500, silice: 1000 },
-    navigateTo: '/(tabs)/research',
+    navigateTo: '/(tabs)/research?scrollTo=particleBeam',
   },
   {
     id: 'ch2_chemical_drive_1',
@@ -254,7 +254,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'research_complete',
     reward: { type: 'resources', fer: 2000, silice: 2000 },
-    navigateTo: '/(tabs)/research',
+    navigateTo: '/(tabs)/research?scrollTo=chemicalDrive',
   },
   {
     id: 'ch3_automata_2',
@@ -270,7 +270,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 2,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 3000, silice: 1500, xenogas: 1000 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=roboticsFactory',
   },
   {
     id: 'ch3_shipyard_1',
@@ -286,7 +286,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'building_complete',
     reward: { type: 'resources', fer: 5000, silice: 3000, xenogas: 1000 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=shipyard',
   },
   {
     id: 'ch3_first_defense',
@@ -366,7 +366,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'research_complete',
     reward: { type: 'resources', fer: 3000, silice: 5000, xenogas: 2000 },
-    navigateTo: '/(tabs)/research',
+    navigateTo: '/(tabs)/research?scrollTo=espionageTech',
   },
   {
     id: 'ch4_send_espionage',
@@ -414,7 +414,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'research_complete',
     reward: { type: 'solar', solar: 50 },
-    navigateTo: '/(tabs)/research',
+    navigateTo: '/(tabs)/research?scrollTo=computerTech',
   },
   {
     id: 'ch5_colony_ship',
@@ -478,7 +478,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 5,
     validationSource: 'building_complete',
     reward: { type: 'solar', solar: 75 },
-    navigateTo: '/(tabs)/buildings',
+    navigateTo: '/(tabs)/buildings?scrollTo=ferMine',
   },
 ];
 

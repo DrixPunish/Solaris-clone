@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp, ChevronsDown, Loader } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useTutorial } from '@/contexts/TutorialContext';
@@ -75,12 +75,15 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
   const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
   const router = useRouter();
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [isClaimLoading, setIsClaimLoading] = useState<string | null>(null);
   const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
   const claimAnim = useRef(new Animated.Value(1)).current;
 
   const handleClaimFromList = useCallback((stepId: string) => {
+    if (isClaimLoading) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setClaimingId(stepId);
+    setIsClaimLoading(stepId);
     Animated.sequence([
       Animated.timing(claimAnim, { toValue: 1.15, duration: 150, useNativeDriver: true }),
       Animated.timing(claimAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
@@ -91,20 +94,24 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
         void applyTutorialReward(reward, stepId).then(() => {
           advanceToNextStep();
           setClaimingId(null);
+          setIsClaimLoading(null);
         }).catch(() => {
           setClaimingId(null);
+          setIsClaimLoading(null);
         });
       } else {
         setClaimingId(null);
+        setIsClaimLoading(null);
       }
     });
-  }, [claimReward, claimAnim, applyTutorialReward, advanceToNextStep]);
+  }, [claimReward, claimAnim, applyTutorialReward, advanceToNextStep, isClaimLoading]);
 
   const handleNavigate = useCallback((navigateTo?: string) => {
     if (navigateTo) {
       onClose();
       setTimeout(() => {
-        router.push(navigateTo as never);
+        const sep = navigateTo.includes('?') ? '&' : '?';
+        router.push(`${navigateTo}${sep}_t=${Date.now()}` as never);
       }, 300);
     }
   }, [router, onClose]);
@@ -120,7 +127,7 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleRow}>
               <BookOpen size={20} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Guide du Commandant</Text>
+              <Text style={styles.modalTitle}>Guide du Nephilim</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={12}>
               <X size={22} color={Colors.textSecondary} />
@@ -238,11 +245,18 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
 
                           {canClaim && (
                             <Pressable
-                              style={styles.claimButtonList}
+                              style={[styles.claimButtonList, isClaimLoading === step.id && styles.claimButtonListLoading]}
                               onPress={() => handleClaimFromList(step.id)}
+                              disabled={isClaimLoading !== null}
                             >
-                              <Sparkles size={14} color="#000" />
-                              <Text style={styles.claimButtonListText}>Récupérer</Text>
+                              {isClaimLoading === step.id ? (
+                                <Loader size={14} color="#000" />
+                              ) : (
+                                <Sparkles size={14} color="#000" />
+                              )}
+                              <Text style={styles.claimButtonListText}>
+                                {isClaimLoading === step.id ? 'Chargement...' : 'Récupérer'}
+                              </Text>
                             </Pressable>
                           )}
 
@@ -282,6 +296,7 @@ export default function TutorialWidget() {
   const [showFullModal, setShowFullModal] = useState(false);
   const [showRewardAnimation, setShowRewardAnimation] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [isClaimingWidget, setIsClaimingWidget] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -309,8 +324,9 @@ export default function TutorialWidget() {
   const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
 
   const handleClaim = useCallback(() => {
-    if (!currentStep) return;
+    if (!currentStep || isClaimingWidget) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setIsClaimingWidget(true);
 
     setShowRewardAnimation(true);
     Animated.sequence([
@@ -327,14 +343,21 @@ export default function TutorialWidget() {
       console.log('[TUTORIAL CLAIM] Calling server for step:', currentStep.id);
       void applyTutorialReward(reward, currentStep.id).then(() => {
         advanceToNextStep();
+        setIsClaimingWidget(false);
+      }).catch(() => {
+        setIsClaimingWidget(false);
       });
+    } else {
+      setIsClaimingWidget(false);
     }
-  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep]);
+  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep, isClaimingWidget]);
 
   const handleNavigate = useCallback(() => {
     if (currentStep?.navigateTo) {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push(currentStep.navigateTo as never);
+      const nav = currentStep.navigateTo;
+      const sep = nav.includes('?') ? '&' : '?';
+      router.push(`${nav}${sep}_t=${Date.now()}` as never);
     }
   }, [currentStep, router]);
 
@@ -399,7 +422,7 @@ export default function TutorialWidget() {
               <Maximize2 size={14} color={Colors.textSecondary} />
             </Pressable>
             <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={8} style={styles.headerBtn}>
-              <Minimize2 size={14} color={Colors.textSecondary} />
+              <ChevronsDown size={14} color={Colors.textSecondary} />
             </Pressable>
             <Pressable onPress={handleDismiss} hitSlop={8} style={styles.headerBtn}>
               <X size={14} color={Colors.textMuted} />
@@ -437,9 +460,15 @@ export default function TutorialWidget() {
 
         <View style={styles.footer}>
           {canClaim ? (
-            <Pressable style={styles.claimButton} onPress={handleClaim}>
-              <Sparkles size={16} color="#000" />
-              <Text style={styles.claimButtonText}>Récupérer la récompense</Text>
+            <Pressable style={[styles.claimButton, isClaimingWidget && styles.claimButtonLoading]} onPress={handleClaim} disabled={isClaimingWidget}>
+              {isClaimingWidget ? (
+                <Loader size={16} color="#000" />
+              ) : (
+                <Sparkles size={16} color="#000" />
+              )}
+              <Text style={styles.claimButtonText}>
+                {isClaimingWidget ? 'Chargement...' : 'Récupérer la récompense'}
+              </Text>
             </Pressable>
           ) : !isCurrentStepCompleted && currentStep.navigateTo ? (
             <Pressable style={styles.navigateButton} onPress={handleNavigate}>
@@ -930,6 +959,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800' as const,
     color: '#000',
+  },
+  claimButtonListLoading: {
+    opacity: 0.7,
+  },
+  claimButtonLoading: {
+    opacity: 0.7,
   },
   goButton: {
     flexDirection: 'row',
