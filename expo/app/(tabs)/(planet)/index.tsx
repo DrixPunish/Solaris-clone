@@ -414,7 +414,7 @@ export default function PlanetScreen() {
 
           <View style={orbitalStyles.bottomRow}>
             <OrbitalStat icon={Scan} value={planetSize} label="Taille" color={Colors.textSecondary} />
-            <OrbitalStat icon={Thermometer} value={`${planetTemperature}°C`} label="Température" color={Colors.textSecondary} />
+            <OrbitalStat icon={Thermometer} value={`${planetTemperature}`} label="Température" color={Colors.textSecondary} />
           </View>
 
           {activeTimerCount > 0 && (
