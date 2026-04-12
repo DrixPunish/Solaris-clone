@@ -66,11 +66,11 @@ function ChapterHeader({ chapter, isActive, isComplete, stepsDone, stepsTotal }:
   );
 }
 
-export function TutorialFullModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function TutorialFullModal({ visible, onClose, onMinimize }: { visible: boolean; onClose: () => void; onMinimize?: () => void }) {
   const {
     allSteps, allChapters, completedStepIds, claimedRewards, currentStepIndex,
     claimReward, advanceToNextStep, isFinished, completedCount, totalSteps, progress,
-    isCurrentStepCompleted, currentStep,
+    isCurrentStepCompleted, currentStep, toggleMinimized,
   } = useTutorial();
   const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<void> };
   const router = useRouter();
@@ -129,9 +129,23 @@ export function TutorialFullModal({ visible, onClose }: { visible: boolean; onCl
               <BookOpen size={20} color={Colors.primary} />
               <Text style={styles.modalTitle}>Guide du Nephilim</Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <X size={22} color={Colors.textSecondary} />
-            </Pressable>
+            <View style={styles.modalHeaderActions}>
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose();
+                  toggleMinimized();
+                  if (onMinimize) onMinimize();
+                }}
+                hitSlop={12}
+                style={styles.modalHeaderBtn}
+              >
+                <ChevronsDown size={20} color={Colors.textSecondary} />
+              </Pressable>
+              <Pressable onPress={onClose} hitSlop={12} style={styles.modalHeaderBtn}>
+                <X size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.progressSection}>
@@ -500,7 +514,7 @@ export default function TutorialWidget() {
         </View>
       )}
 
-      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} />
+      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} onMinimize={() => setShowFullModal(false)} />
     </>
   );
 }
@@ -761,6 +775,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalHeaderBtn: {
+    padding: 4,
   },
   modalTitle: {
     fontSize: 18,
