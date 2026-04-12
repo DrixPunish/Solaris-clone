@@ -31,7 +31,13 @@ interface FleetEventContext {
   proofId?: string;
 }
 
-type TutorialEventContext = BuildingContext | ResearchContext | ShipyardContext | FleetEventContext;
+interface TransactionContext {
+  type: 'transaction';
+  transactionType: string;
+  userId: string;
+}
+
+type TutorialEventContext = BuildingContext | ResearchContext | ShipyardContext | FleetEventContext | TransactionContext;
 
 function matchesCurrentStep(
   stepId: string,
@@ -61,6 +67,10 @@ function matchesCurrentStep(
     case 'fleet_event':
       if (step.checkType !== 'server_event') return false;
       return step.validationSource === context.eventType;
+
+    case 'transaction':
+      if (step.checkType !== 'transaction_check') return false;
+      return step.checkTarget === context.transactionType;
 
     default:
       return false;
@@ -134,6 +144,18 @@ export async function verifyStepFromTables(
         return { verified: found, proof: found ? { defense_id: step.checkTarget, total_quantity: totalQty } : undefined };
       }
 
+      case 'transaction_check': {
+        const { data: txData } = await supabase
+          .from('solar_transactions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('transaction_type', step.checkTarget)
+          .limit(1);
+        const txFound = (txData?.length ?? 0) > 0;
+        logger.log('[Tutorial][DirectCheck] transaction_check:', step.checkTarget, '->', txFound);
+        return { verified: txFound, proof: txFound ? { transaction_type: step.checkTarget } : undefined };
+      }
+
       case 'server_event': {
         if (step.checkTarget === 'espionage_report_created') {
           const { data } = await supabase
@@ -194,6 +216,7 @@ export async function tryValidateTutorialStep(context: TutorialEventContext): Pr
       ...(context.type === 'research' ? { researchId: context.researchId, level: context.level } : {}),
       ...(context.type === 'shipyard' ? { itemId: context.itemId, itemType: context.itemType, qty: context.newQuantity } : {}),
       ...(context.type === 'fleet_event' ? { eventType: context.eventType } : {}),
+      ...(context.type === 'transaction' ? { transactionType: context.transactionType } : {}),
     }));
 
     let { data: progress } = await supabase
@@ -243,7 +266,8 @@ export async function tryValidateTutorialStep(context: TutorialEventContext): Pr
         context.type === 'building' ? `building=${context.buildingId} level=${context.level}` :
         context.type === 'research' ? `research=${context.researchId} level=${context.level}` :
         context.type === 'shipyard' ? `item=${context.itemId} type=${context.itemType} qty=${context.newQuantity}` :
-        context.type === 'fleet_event' ? `event=${context.eventType}` : '');
+        context.type === 'fleet_event' ? `event=${context.eventType}` :
+        context.type === 'transaction' ? `txType=${context.transactionType}` : '');
       return;
     }
 
@@ -280,6 +304,7 @@ export async function tryValidateTutorialStep(context: TutorialEventContext): Pr
           ...(context.type === 'research' ? { research_id: context.researchId, level: context.level } : {}),
           ...(context.type === 'shipyard' ? { item_id: context.itemId, item_type: context.itemType, quantity: context.newQuantity } : {}),
           ...(context.type === 'fleet_event' ? { event_type: context.eventType } : {}),
+          ...(context.type === 'transaction' ? { transaction_type: context.transactionType } : {}),
         },
       });
 

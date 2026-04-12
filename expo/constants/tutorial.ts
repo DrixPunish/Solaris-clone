@@ -15,7 +15,7 @@ export interface TutorialStep {
   explanation: string;
   hint: string;
   category: 'economy' | 'facilities' | 'research' | 'military' | 'exploration';
-  checkType: 'building_level' | 'research_level' | 'ship_count' | 'defense_count' | 'server_event';
+  checkType: 'building_level' | 'research_level' | 'ship_count' | 'defense_count' | 'server_event' | 'transaction_check';
   checkTarget: string;
   checkValue: number;
   validationSource: string;
@@ -53,7 +53,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
     id: 'ch4',
     title: 'Opérations Spatiales',
     description: 'Votre flotte est prête. Chaque mission a un objectif précis.',
-    stepIds: ['ch4_espionage_tech_1', 'ch4_send_espionage', 'ch4_send_attack', 'ch4_computer_tech_1'],
+    stepIds: ['ch4_espionage_tech_1', 'ch4_send_espionage', 'ch4_send_attack', 'ch4_quantum_shield', 'ch4_computer_tech_1'],
   },
   {
     id: 'ch5',
@@ -401,9 +401,25 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     navigateTo: '/(tabs)/galaxy',
   },
   {
-    id: 'ch4_computer_tech_1',
+    id: 'ch4_quantum_shield',
     chapterId: 'ch4',
     order: 21,
+    title: 'Défense Quantique',
+    description: 'Achetez un Bouclier Quantique pour renforcer vos défenses planétaires.',
+    explanation: 'Le Bouclier Quantique est une défense avancée qui protège votre planète contre les attaques ennemies. Il absorbe une partie des dégâts avant que vos tourelles ne soient touchées.',
+    hint: 'Rendez-vous dans la boutique et achetez un Bouclier Quantique.',
+    category: 'military',
+    checkType: 'transaction_check',
+    checkTarget: 'buy_shield',
+    checkValue: 1,
+    validationSource: 'solar_transaction',
+    reward: { type: 'resources', fer: 8000, silice: 6000, xenogas: 3000 },
+    navigateTo: '/(tabs)/shipyard?tab=defenses',
+  },
+  {
+    id: 'ch4_computer_tech_1',
+    chapterId: 'ch4',
+    order: 22,
     title: 'IA stratégique',
     description: 'Recherchez l\'IA Stratégique niveau 1 pour envoyer plus de flottes.',
     explanation: 'L\'IA Stratégique augmente le nombre de flottes que vous pouvez envoyer simultanément. Par défaut, vous ne pouvez envoyer qu\'une seule flotte.',
@@ -419,7 +435,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'ch5_colony_ship',
     chapterId: 'ch5',
-    order: 22,
+    order: 23,
     title: 'Barge coloniale',
     description: 'Construisez une Barge Coloniale pour coloniser de nouveaux mondes.',
     explanation: 'La Barge Coloniale est consommée lors de la colonisation. Chaque colonie multiplie votre production totale.',
@@ -435,7 +451,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'ch5_first_colony',
     chapterId: 'ch5',
-    order: 23,
+    order: 24,
     title: 'Nouveau monde',
     description: 'Colonisez une planète vierge avec succès.',
     explanation: 'Trouvez une position vide dans la Galaxie et envoyez votre Barge. La position influence la température, les bonus et le nombre de cases. La colonie doit être créée avec succès.',
@@ -451,7 +467,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'ch5_fleet_5_scouts',
     chapterId: 'ch5',
-    order: 24,
+    order: 25,
     title: 'Escadron de chasse',
     description: 'Assemblez une flotte de 5 Nova Scouts.',
     explanation: 'La force est dans le nombre. Un escadron complet vous permet de mener des raids efficaces et de protéger vos convois.',
@@ -467,7 +483,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'ch5_ferro_mine_5',
     chapterId: 'ch5',
-    order: 25,
+    order: 26,
     title: 'Empire minier',
     description: 'Améliorez la Ferro Mine au niveau 5 sur votre planète principale.',
     explanation: 'Une économie solide est le pilier de tout empire durable. Plus vos mines sont hautes, plus votre croissance est rapide. N\'oubliez pas l\'énergie !',

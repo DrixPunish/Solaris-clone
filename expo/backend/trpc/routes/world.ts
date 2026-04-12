@@ -3,6 +3,7 @@ import { supabase } from "@/backend/supabase";
 import { z } from "zod";
 import { logger } from "@/utils/logger";
 import { getEventWorkerStats } from "@/backend/eventWorker";
+import { tryValidateTutorialStep } from "@/backend/tutorialValidation";
 
 interface LeaderboardRow {
   player_id: string;
@@ -399,6 +400,16 @@ export const worldRouter = createTRPCRouter({
 
       if (!result.success) {
         return { success: false as const, error: result.error ?? 'Erreur inconnue' };
+      }
+
+      try {
+        await tryValidateTutorialStep({
+          type: 'transaction',
+          transactionType: 'buy_shield',
+          userId,
+        });
+      } catch (e) {
+        logger.log('[tRPC] Tutorial validation after buy_shield failed (non-blocking):', e instanceof Error ? e.message : String(e));
       }
 
       return {
