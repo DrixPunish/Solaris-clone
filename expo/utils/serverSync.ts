@@ -166,8 +166,6 @@ export async function addResourcesToTargetState(
 
     if (rpcError) {
       logger.error('[serverSync] RPC add_resources error:', rpcError.message);
-    } else {
-      await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planetId);
     }
   } else {
     logger.warn('[serverSync] No planet found in tables, skipping RPC');
@@ -196,8 +194,6 @@ export async function addResourcesToPlanetByCoords(
 
     if (rpcError) {
       logger.error('[serverSync] RPC add_resources_by_coords error:', rpcError.message);
-    } else {
-      await supabase.from('planets').update({ last_update: Date.now() }).eq('id', planet.id);
     }
   } else {
     logger.warn('[serverSync] No planet found at coords', coords);

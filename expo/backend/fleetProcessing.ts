@@ -459,8 +459,6 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
     });
     if (rpcErr) {
       logger.log('[FleetProcessing][Transport] Error adding resources:', rpcErr.message);
-    } else {
-      await supabase.from('planets').update({ last_update: Date.now() }).eq('id', targetPlanetInfo.planetId);
     }
   }
 
