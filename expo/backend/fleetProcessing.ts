@@ -439,6 +439,57 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
   logger.log('[FleetProcessing][Attack] Done:', mission.id, 'result:', combatResult.result);
 }
 
+async function insertTransportReportsSafely(
+  rows: Array<Record<string, unknown>>,
+  context: string,
+  missionId: string,
+): Promise<void> {
+  if (rows.length === 0) {
+    logger.log(`[FleetProcessing][${context}] No transport report rows to insert for mission`, missionId);
+    return;
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await supabase
+      .from('transport_reports')
+      .insert(rows)
+      .select('id');
+
+    if (!error) {
+      logger.log(
+        `[FleetProcessing][${context}] Inserted ${data?.length ?? 0}/${rows.length} transport report(s) for mission`,
+        missionId,
+        'roles:',
+        rows.map(r => r.viewer_role).join(','),
+      );
+      return;
+    }
+
+    logger.log(
+      `[FleetProcessing][${context}] INSERT FAILED attempt ${attempt}/3 for mission ${missionId}:`,
+      error.message,
+      'details:',
+      JSON.stringify(error),
+    );
+
+    if (attempt === 1) {
+      for (const r of rows) {
+        logger.log(
+          `[FleetProcessing][${context}] Row payload: viewer=${String(r.viewer_id)} role=${String(r.viewer_role)} sender=${String(r.sender_id)} receiver=${String(r.receiver_id)} mission_type=${String(r.mission_type)}`,
+        );
+      }
+    }
+
+    if (attempt < 3) {
+      await new Promise(r => setTimeout(r, 300 * attempt));
+    }
+  }
+
+  logger.log(
+    `[FleetProcessing][${context}] GIVING UP on transport report insert for mission ${missionId} after 3 attempts`,
+  );
+}
+
 export async function processTransportMission(mission: FleetMission): Promise<void> {
   const targetCoords = mission.target_coords;
   const resources = mission.resources;
@@ -450,6 +501,17 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
   };
 
   const targetPlanetInfo = await getPlanetIdByCoords(targetCoords);
+  logger.log(
+    '[FleetProcessing][Transport] START mission',
+    mission.id,
+    'sender:',
+    mission.sender_id,
+    'targetPlanetInfo:',
+    targetPlanetInfo ? `planet=${targetPlanetInfo.planetId} user=${targetPlanetInfo.userId}` : 'null',
+    'coords:',
+    JSON.stringify(targetCoords),
+  );
+
   if (targetPlanetInfo && (deliveredResources.fer > 0 || deliveredResources.silice > 0 || deliveredResources.xenogas > 0)) {
     const { error: rpcErr } = await supabase.rpc('add_resources_to_planet', {
       p_planet_id: targetPlanetInfo.planetId,
@@ -474,50 +536,53 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
     result: { type: 'transport', delivered: resources },
   }).eq('id', mission.id);
 
-  const isSelfTransport = mission.sender_id === (targetPlanetInfo?.userId ?? null);
+  const receiverUserId: string | null = targetPlanetInfo?.userId ?? null;
+  const isSelfTransport = receiverUserId !== null && mission.sender_id === receiverUserId;
 
-  const senderReport = {
+  logger.log(
+    '[FleetProcessing][Transport] Writing reports. isSelfTransport=',
+    isSelfTransport,
+    'receiverUserId=',
+    receiverUserId,
+  );
+
+  const senderReport: Record<string, unknown> = {
     fleet_mission_id: mission.id,
     viewer_id: mission.sender_id,
     viewer_role: 'sender',
     sender_id: mission.sender_id,
     sender_username: mission.sender_username ?? 'Inconnu',
     sender_coords: mission.sender_coords,
-    receiver_id: targetPlanetInfo?.userId ?? null,
+    receiver_id: receiverUserId,
     receiver_username: mission.target_username ?? null,
     receiver_coords: targetCoords,
-    ships: mission.ships,
+    ships: mission.ships ?? {},
     resources: deliveredResources,
     mission_type: 'transport',
     completed_at: new Date().toISOString(),
   };
 
-  const reportsToInsert = [senderReport];
+  const reportsToInsert: Array<Record<string, unknown>> = [senderReport];
 
-  if (!isSelfTransport && targetPlanetInfo?.userId) {
+  if (!isSelfTransport && receiverUserId) {
     reportsToInsert.push({
       fleet_mission_id: mission.id,
-      viewer_id: targetPlanetInfo.userId,
+      viewer_id: receiverUserId,
       viewer_role: 'receiver',
       sender_id: mission.sender_id,
       sender_username: mission.sender_username ?? 'Inconnu',
       sender_coords: mission.sender_coords,
-      receiver_id: targetPlanetInfo.userId,
+      receiver_id: receiverUserId,
       receiver_username: mission.target_username ?? null,
       receiver_coords: targetCoords,
-      ships: mission.ships,
+      ships: mission.ships ?? {},
       resources: deliveredResources,
       mission_type: 'transport',
       completed_at: new Date().toISOString(),
     });
   }
 
-  const { error: reportErr } = await supabase.from('transport_reports').insert(reportsToInsert);
-  if (reportErr) {
-    logger.log('[FleetProcessing][Transport] Error inserting transport reports:', reportErr.message);
-  } else {
-    logger.log('[FleetProcessing][Transport] Inserted', reportsToInsert.length, 'transport report(s) for mission', mission.id);
-  }
+  await insertTransportReportsSafely(reportsToInsert, 'Transport', mission.id);
 
   logger.log('[FleetProcessing][Transport] Done:', mission.id);
 }
@@ -758,6 +823,62 @@ export async function processStationMission(mission: FleetMission): Promise<void
     completed_at: new Date().toISOString(),
     result: { type: 'station', delivered_ships: ships, delivered_resources: resources },
   }).eq('id', mission.id);
+
+  const deliveredResources = {
+    fer: resources?.fer ?? 0,
+    silice: resources?.silice ?? 0,
+    xenogas: resources?.xenogas ?? 0,
+  };
+
+  const receiverUserId: string | null = targetPlanetInfo?.userId ?? null;
+  const isSelfStation = receiverUserId !== null && mission.sender_id === receiverUserId;
+
+  logger.log(
+    '[FleetProcessing][Station] Writing reports. isSelfStation=',
+    isSelfStation,
+    'receiverUserId=',
+    receiverUserId,
+    'targetCoords=',
+    JSON.stringify(targetCoords),
+  );
+
+  const senderStationReport: Record<string, unknown> = {
+    fleet_mission_id: mission.id,
+    viewer_id: mission.sender_id,
+    viewer_role: 'sender',
+    sender_id: mission.sender_id,
+    sender_username: mission.sender_username ?? 'Inconnu',
+    sender_coords: mission.sender_coords,
+    receiver_id: receiverUserId,
+    receiver_username: mission.target_username ?? null,
+    receiver_coords: targetCoords,
+    ships: ships ?? {},
+    resources: deliveredResources,
+    mission_type: 'transport',
+    completed_at: new Date().toISOString(),
+  };
+
+  const stationReportsToInsert: Array<Record<string, unknown>> = [senderStationReport];
+
+  if (!isSelfStation && receiverUserId) {
+    stationReportsToInsert.push({
+      fleet_mission_id: mission.id,
+      viewer_id: receiverUserId,
+      viewer_role: 'receiver',
+      sender_id: mission.sender_id,
+      sender_username: mission.sender_username ?? 'Inconnu',
+      sender_coords: mission.sender_coords,
+      receiver_id: receiverUserId,
+      receiver_username: mission.target_username ?? null,
+      receiver_coords: targetCoords,
+      ships: ships ?? {},
+      resources: deliveredResources,
+      mission_type: 'transport',
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+  await insertTransportReportsSafely(stationReportsToInsert, 'Station', mission.id);
 
   logger.log('[FleetProcessing][Station] Done:', mission.id);
 }
