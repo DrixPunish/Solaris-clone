@@ -493,6 +493,7 @@ async function insertTransportReportsSafely(
 export async function processTransportMission(mission: FleetMission): Promise<void> {
   const targetCoords = mission.target_coords;
   const resources = mission.resources;
+  const reportMissionType: 'transport' | 'station' = mission.mission_type === 'station' ? 'station' : 'transport';
 
   const deliveredResources = {
     fer: resources?.fer ?? 0,
@@ -558,7 +559,7 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
     receiver_coords: targetCoords,
     ships: mission.ships ?? {},
     resources: deliveredResources,
-    mission_type: 'transport',
+    mission_type: reportMissionType,
     completed_at: new Date().toISOString(),
   };
 
@@ -577,12 +578,12 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
       receiver_coords: targetCoords,
       ships: mission.ships ?? {},
       resources: deliveredResources,
-      mission_type: 'transport',
+      mission_type: reportMissionType,
       completed_at: new Date().toISOString(),
     });
   }
 
-  await insertTransportReportsSafely(reportsToInsert, 'Transport', mission.id);
+  await insertTransportReportsSafely(reportsToInsert, reportMissionType === 'station' ? 'Station' : 'Transport', mission.id);
 
   logger.log('[FleetProcessing][Transport] Done:', mission.id);
 }
