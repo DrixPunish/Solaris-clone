@@ -128,22 +128,19 @@ export interface CombatReport {
 
 export interface TransportReport {
   id: string;
+  fleet_mission_id: string | null;
+  viewer_id: string;
+  viewer_role: 'sender' | 'receiver';
   sender_id: string;
   sender_username: string;
   sender_coords: [number, number, number];
-  target_coords: [number, number, number];
-  target_player_id: string | null;
-  target_username: string | null;
-  target_planet: string | null;
-  mission_type: 'transport' | 'recycle';
+  receiver_id: string | null;
+  receiver_username: string | null;
+  receiver_coords: [number, number, number];
   ships: Record<string, number>;
   resources: { fer: number; silice: number; xenogas: number };
-  arrival_time: number;
-  result: {
-    type: string;
-    delivered?: { fer: number; silice: number; xenogas: number };
-    collected?: { fer: number; silice: number };
-  } | null;
+  mission_type: 'transport' | 'recycle';
+  completed_at: string;
   created_at: string;
 }
 

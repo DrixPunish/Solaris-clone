@@ -123,14 +123,14 @@ export const worldRouter = createTRPCRouter({
     }),
 
   deleteTransportReport: protectedProcedure
-    .input(z.object({ missionId: z.string() }))
+    .input(z.object({ reportId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.userId;
       const { error } = await supabase
-        .from('fleet_missions')
+        .from('transport_reports')
         .delete()
-        .eq('id', input.missionId)
-        .or(`sender_id.eq.${userId},target_player_id.eq.${userId}`);
+        .eq('id', input.reportId)
+        .eq('viewer_id', userId);
       if (error) {
         logger.error('[tRPC] Error deleting transport report:', error.message);
         return { success: false, error: error.message };
@@ -540,24 +540,14 @@ export const worldRouter = createTRPCRouter({
   deleteAllTransportReports: protectedProcedure
     .mutation(async ({ ctx }) => {
       const userId = ctx.userId;
-      const { error: e1 } = await supabase
-        .from('fleet_missions')
+      const { error } = await supabase
+        .from('transport_reports')
         .delete()
-        .eq('sender_id', userId)
-        .in('mission_type', ['transport', 'recycle'])
-        .eq('status', 'completed');
-      if (e1) logger.error('[tRPC] Error deleting sent transport reports:', e1.message);
-
-      const { error: e2 } = await supabase
-        .from('fleet_missions')
-        .delete()
-        .eq('target_player_id', userId)
-        .neq('sender_id', userId)
-        .eq('mission_type', 'transport')
-        .eq('processed', true)
-        .eq('status', 'completed');
-      if (e2) logger.error('[tRPC] Error deleting received transport reports:', e2.message);
-
+        .eq('viewer_id', userId);
+      if (error) {
+        logger.error('[tRPC] Error deleting all transport reports:', error.message);
+        return { success: false, error: error.message };
+      }
       return { success: true };
     }),
 });

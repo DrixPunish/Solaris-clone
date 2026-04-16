@@ -474,6 +474,51 @@ export async function processTransportMission(mission: FleetMission): Promise<vo
     result: { type: 'transport', delivered: resources },
   }).eq('id', mission.id);
 
+  const isSelfTransport = mission.sender_id === (targetPlanetInfo?.userId ?? null);
+
+  const senderReport = {
+    fleet_mission_id: mission.id,
+    viewer_id: mission.sender_id,
+    viewer_role: 'sender',
+    sender_id: mission.sender_id,
+    sender_username: mission.sender_username ?? 'Inconnu',
+    sender_coords: mission.sender_coords,
+    receiver_id: targetPlanetInfo?.userId ?? null,
+    receiver_username: mission.target_username ?? null,
+    receiver_coords: targetCoords,
+    ships: mission.ships,
+    resources: deliveredResources,
+    mission_type: 'transport',
+    completed_at: new Date().toISOString(),
+  };
+
+  const reportsToInsert = [senderReport];
+
+  if (!isSelfTransport && targetPlanetInfo?.userId) {
+    reportsToInsert.push({
+      fleet_mission_id: mission.id,
+      viewer_id: targetPlanetInfo.userId,
+      viewer_role: 'receiver',
+      sender_id: mission.sender_id,
+      sender_username: mission.sender_username ?? 'Inconnu',
+      sender_coords: mission.sender_coords,
+      receiver_id: targetPlanetInfo.userId,
+      receiver_username: mission.target_username ?? null,
+      receiver_coords: targetCoords,
+      ships: mission.ships,
+      resources: deliveredResources,
+      mission_type: 'transport',
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+  const { error: reportErr } = await supabase.from('transport_reports').insert(reportsToInsert);
+  if (reportErr) {
+    logger.log('[FleetProcessing][Transport] Error inserting transport reports:', reportErr.message);
+  } else {
+    logger.log('[FleetProcessing][Transport] Inserted', reportsToInsert.length, 'transport report(s) for mission', mission.id);
+  }
+
   logger.log('[FleetProcessing][Transport] Done:', mission.id);
 }
 
@@ -534,6 +579,27 @@ export async function processRecycleMission(mission: FleetMission): Promise<void
     resources: { fer: collectedFer, silice: collectedSilice, xenogas: 0 },
     result: { type: 'recycle', collected: { fer: collectedFer, silice: collectedSilice } },
   }).eq('id', mission.id);
+
+  const { error: reportErr } = await supabase.from('transport_reports').insert({
+    fleet_mission_id: mission.id,
+    viewer_id: senderId,
+    viewer_role: 'sender',
+    sender_id: senderId,
+    sender_username: mission.sender_username ?? 'Inconnu',
+    sender_coords: mission.sender_coords,
+    receiver_id: null,
+    receiver_username: null,
+    receiver_coords: coords,
+    ships: ships,
+    resources: { fer: collectedFer, silice: collectedSilice, xenogas: 0 },
+    mission_type: 'recycle',
+    completed_at: new Date().toISOString(),
+  });
+  if (reportErr) {
+    logger.log('[FleetProcessing][Recycle] Error inserting recycle report:', reportErr.message);
+  } else {
+    logger.log('[FleetProcessing][Recycle] Inserted recycle report for mission', mission.id);
+  }
 
   logger.log('[FleetProcessing][Recycle] Done:', collectedFer, 'fer,', collectedSilice, 'silice');
 }

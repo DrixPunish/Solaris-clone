@@ -46,15 +46,14 @@ export default function TransportReportScreen() {
   }
 
   const isRecycle = report.mission_type === 'recycle';
-  const coords = report.target_coords;
   const senderCoords = report.sender_coords;
-  const date = report.arrival_time
-    ? new Date(report.arrival_time).toLocaleString('fr-FR')
-    : new Date(report.created_at).toLocaleString('fr-FR');
+  const receiverCoords = report.receiver_coords;
+  const date = new Date(report.completed_at).toLocaleString('fr-FR');
   const accentColor = isRecycle ? Colors.warning : Colors.success;
 
-  const delivered = report.result?.delivered;
-  const collected = report.result?.collected;
+  const res = report.resources;
+  const isTransportWithResources = !isRecycle && res && (res.fer > 0 || res.silice > 0 || res.xenogas > 0);
+  const isRecycleWithResources = isRecycle && res && (res.fer > 0 || res.silice > 0);
 
   return (
     <View style={styles.container}>
@@ -78,7 +77,7 @@ export default function TransportReportScreen() {
               <Truck size={28} color={accentColor} />
             )}
             <Text style={[styles.resultTitle, { color: accentColor }]}>
-              {isRecycle ? 'Mission de recyclage' : 'Ressources livrées'}
+              {isRecycle ? 'Mission de recyclage' : (report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées')}
             </Text>
             <Text style={styles.dateText}>{date}</Text>
           </View>
@@ -102,64 +101,66 @@ export default function TransportReportScreen() {
               <View style={styles.routeInfo}>
                 <Text style={styles.routeLabel}>Destination</Text>
                 <Text style={styles.routeName}>
-                  {isRecycle ? 'Champ de débris' : (report.target_username ?? report.target_planet ?? 'Inconnu')}
+                  {isRecycle ? 'Champ de débris' : (report.receiver_username ?? 'Inconnu')}
                 </Text>
-                <ClickableCoords coords={coords} style={styles.routeCoords} />
+                <ClickableCoords coords={receiverCoords} style={styles.routeCoords} />
               </View>
             </View>
           </View>
 
-          {!isRecycle && delivered && (delivered.fer > 0 || delivered.silice > 0 || delivered.xenogas > 0) && (
+          {isTransportWithResources && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Package size={16} color={Colors.success} />
-                <Text style={styles.sectionTitle}>Ressources livrées</Text>
+                <Text style={styles.sectionTitle}>
+                  {report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées'}
+                </Text>
               </View>
               <View style={styles.resourceGrid}>
-                {delivered.fer > 0 && (
+                {res.fer > 0 && (
                   <View style={styles.resourceItem}>
                     <View style={[styles.resDot, { backgroundColor: Colors.fer }]} />
                     <Text style={styles.resLabel}>Fer</Text>
-                    <Text style={styles.resValue}>{formatN(delivered.fer)}</Text>
+                    <Text style={styles.resValue}>{formatN(res.fer)}</Text>
                   </View>
                 )}
-                {delivered.silice > 0 && (
+                {res.silice > 0 && (
                   <View style={styles.resourceItem}>
                     <View style={[styles.resDot, { backgroundColor: Colors.silice }]} />
                     <Text style={styles.resLabel}>Silice</Text>
-                    <Text style={styles.resValue}>{formatN(delivered.silice)}</Text>
+                    <Text style={styles.resValue}>{formatN(res.silice)}</Text>
                   </View>
                 )}
-                {delivered.xenogas > 0 && (
+                {res.xenogas > 0 && (
                   <View style={styles.resourceItem}>
                     <View style={[styles.resDot, { backgroundColor: Colors.xenogas }]} />
                     <Text style={styles.resLabel}>Xenogas</Text>
-                    <Text style={styles.resValue}>{formatN(delivered.xenogas)}</Text>
+                    <Text style={styles.resValue}>{formatN(res.xenogas)}</Text>
                   </View>
                 )}
               </View>
             </View>
           )}
 
-          {isRecycle && collected && (collected.fer > 0 || collected.silice > 0) && (
+          {isRecycleWithResources && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Recycle size={16} color={Colors.warning} />
                 <Text style={styles.sectionTitle}>Débris collectés</Text>
               </View>
               <View style={styles.resourceGrid}>
-                {collected.fer > 0 && (
+                {res.fer > 0 && (
                   <View style={styles.resourceItem}>
                     <View style={[styles.resDot, { backgroundColor: Colors.fer }]} />
                     <Text style={styles.resLabel}>Fer</Text>
-                    <Text style={styles.resValue}>{formatN(collected.fer)}</Text>
+                    <Text style={styles.resValue}>{formatN(res.fer)}</Text>
                   </View>
                 )}
-                {collected.silice > 0 && (
+                {res.silice > 0 && (
                   <View style={styles.resourceItem}>
                     <View style={[styles.resDot, { backgroundColor: Colors.silice }]} />
                     <Text style={styles.resLabel}>Silice</Text>
-                    <Text style={styles.resValue}>{formatN(collected.silice)}</Text>
+                    <Text style={styles.resValue}>{formatN(res.silice)}</Text>
                   </View>
                 )}
               </View>

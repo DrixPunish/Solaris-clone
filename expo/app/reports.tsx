@@ -145,12 +145,16 @@ function CombatReportCard({ report, onPress, onDelete, userId }: { report: Comba
 
 function TransportReportCard({ report, onPress, onDelete }: { report: TransportReport; onPress: () => void; onDelete: () => void }) {
   const isRecycle = report.mission_type === 'recycle';
-  const coords = report.target_coords;
   const iconColor = isRecycle ? Colors.warning : Colors.success;
   const Icon = isRecycle ? Recycle : Truck;
 
-  const delivered = report.result?.delivered;
-  const collected = report.result?.collected;
+  const res = report.resources;
+  const senderCoords = report.sender_coords;
+  const receiverCoords = report.receiver_coords;
+
+  const title = isRecycle
+    ? `Recyclage [${receiverCoords[0]}:${receiverCoords[1]}:${receiverCoords[2]}]`
+    : `${report.sender_username} [${senderCoords[0]}:${senderCoords[1]}:${senderCoords[2]}] → ${report.receiver_username ?? 'Inconnu'} [${receiverCoords[0]}:${receiverCoords[1]}:${receiverCoords[2]}]`;
 
   return (
     <TouchableOpacity style={styles.reportCard} onPress={onPress} activeOpacity={0.7}>
@@ -159,10 +163,9 @@ function TransportReportCard({ report, onPress, onDelete }: { report: TransportR
           <Icon size={16} color={iconColor} />
         </View>
         <View style={styles.reportInfo}>
-          <Text style={styles.reportTitle}>
-            {isRecycle ? 'Recyclage' : (report.target_username ?? 'Transport')}
+          <Text style={styles.reportTitle} numberOfLines={2}>
+            {title}
           </Text>
-          <ClickableCoords coords={coords} style={styles.reportCoords} />
         </View>
         <View style={styles.reportRight}>
           <TouchableOpacity onPress={onDelete} hitSlop={8} style={styles.deleteBtn}>
@@ -170,28 +173,19 @@ function TransportReportCard({ report, onPress, onDelete }: { report: TransportR
           </TouchableOpacity>
           <View style={[styles.resultBadge, { backgroundColor: iconColor + '18', borderColor: iconColor + '40' }]}>
             <Text style={[styles.resultText, { color: iconColor }]}>
-              {isRecycle ? 'Recyclage' : 'Livré'}
+              {isRecycle ? 'Recyclage' : (report.viewer_role === 'receiver' ? 'Reçu' : 'Livré')}
             </Text>
           </View>
-          <Text style={styles.reportTime}>{report.arrival_time ? timeAgo(new Date(report.arrival_time).toISOString()) : timeAgo(report.created_at)}</Text>
+          <Text style={styles.reportTime}>{timeAgo(report.completed_at)}</Text>
         </View>
       </View>
-      {delivered && (delivered.fer > 0 || delivered.silice > 0 || delivered.xenogas > 0) && (
+      {res && (res.fer > 0 || res.silice > 0 || res.xenogas > 0) && (
         <View style={styles.reportResources}>
-          <Text style={styles.lootLabel}>Livré: </Text>
+          <Text style={styles.lootLabel}>{isRecycle ? 'Collecté: ' : (report.viewer_role === 'receiver' ? 'Reçu: ' : 'Livré: ')}</Text>
           <Text style={styles.resText}>
-            {delivered.fer > 0 && <Text style={{ color: Colors.fer }}>Fe: {formatNumber(delivered.fer)}  </Text>}
-            {delivered.silice > 0 && <Text style={{ color: Colors.silice }}>Si: {formatNumber(delivered.silice)}  </Text>}
-            {delivered.xenogas > 0 && <Text style={{ color: Colors.xenogas }}>Xe: {formatNumber(delivered.xenogas)}</Text>}
-          </Text>
-        </View>
-      )}
-      {collected && (collected.fer > 0 || collected.silice > 0) && (
-        <View style={styles.reportResources}>
-          <Text style={styles.lootLabel}>Collecté: </Text>
-          <Text style={styles.resText}>
-            {collected.fer > 0 && <Text style={{ color: Colors.fer }}>Fe: {formatNumber(collected.fer)}  </Text>}
-            {collected.silice > 0 && <Text style={{ color: Colors.silice }}>Si: {formatNumber(collected.silice)}</Text>}
+            {res.fer > 0 && <Text style={{ color: Colors.fer }}>Fe: {formatNumber(res.fer)}  </Text>}
+            {res.silice > 0 && <Text style={{ color: Colors.silice }}>Si: {formatNumber(res.silice)}  </Text>}
+            {res.xenogas > 0 && <Text style={{ color: Colors.xenogas }}>Xe: {formatNumber(res.xenogas)}</Text>}
           </Text>
         </View>
       )}

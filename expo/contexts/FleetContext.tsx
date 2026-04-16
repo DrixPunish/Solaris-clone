@@ -155,37 +155,18 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     queryFn: async () => {
       if (!userId) return [];
 
-      const { data: sentData, error: sentError } = await supabase
-        .from('fleet_missions')
+      const { data, error } = await supabase
+        .from('transport_reports')
         .select('*')
-        .eq('sender_id', userId)
-        .in('mission_type', ['transport', 'recycle'])
-        .in('status', ['completed', 'returning'])
-        .eq('processed', true)
+        .eq('viewer_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
-      if (sentError) {
-        console.log('[FleetContext] Error loading sent transport reports:', sentError.message);
+      if (error) {
+        console.log('[FleetContext] Error loading transport reports:', error.message);
+        return [];
       }
-
-      const { data: receivedData, error: receivedError } = await supabase
-        .from('fleet_missions')
-        .select('*')
-        .eq('target_player_id', userId)
-        .neq('sender_id', userId)
-        .eq('mission_type', 'transport')
-        .eq('processed', true)
-        .in('status', ['completed', 'returning'])
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (receivedError) {
-        console.log('[FleetContext] Error loading received transport reports:', receivedError.message);
-      }
-
-      const all = [...(sentData ?? []), ...(receivedData ?? [])];
-      all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      console.log('[FleetContext] Transport reports loaded:', all.length);
-      return all as TransportReport[];
+      console.log('[FleetContext] Transport reports loaded:', (data ?? []).length);
+      return (data ?? []) as TransportReport[];
     },
     enabled: !!userId,
     staleTime: 30000,
@@ -290,14 +271,14 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     }
   }, [markAsDeleted, userId]);
 
-  const deleteTransportReport = useCallback(async (missionId: string) => {
+  const deleteTransportReport = useCallback(async (reportId: string) => {
     if (!userId) return;
-    console.log('[FleetContext] Deleting transport report via tRPC:', missionId);
-    markAsDeleted(missionId);
+    console.log('[FleetContext] Deleting transport report via tRPC:', reportId);
+    markAsDeleted(reportId);
     try {
-      const result = await deleteTransportReportRef.current.mutateAsync({ missionId });
+      const result = await deleteTransportReportRef.current.mutateAsync({ reportId });
       if (!result.success) console.log('[FleetContext] tRPC delete transport report failed:', result.error);
-      else console.log('[FleetContext] Transport report deleted from DB:', missionId);
+      else console.log('[FleetContext] Transport report deleted from DB:', reportId);
     } catch (e) {
       console.log('[FleetContext] Error deleting transport report:', e);
     }
