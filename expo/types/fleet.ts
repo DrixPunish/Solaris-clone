@@ -139,7 +139,7 @@ export interface TransportReport {
   receiver_coords: [number, number, number];
   ships: Record<string, number>;
   resources: { fer: number; silice: number; xenogas: number };
-  mission_type: 'transport' | 'recycle';
+  mission_type: 'transport' | 'recycle' | 'station';
   completed_at: string;
   created_at: string;
 }

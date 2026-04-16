@@ -854,7 +854,7 @@ export async function processStationMission(mission: FleetMission): Promise<void
     receiver_coords: targetCoords,
     ships: ships ?? {},
     resources: deliveredResources,
-    mission_type: 'transport',
+    mission_type: 'station',
     completed_at: new Date().toISOString(),
   };
 
@@ -873,7 +873,7 @@ export async function processStationMission(mission: FleetMission): Promise<void
       receiver_coords: targetCoords,
       ships: ships ?? {},
       resources: deliveredResources,
-      mission_type: 'transport',
+      mission_type: 'station',
       completed_at: new Date().toISOString(),
     });
   }

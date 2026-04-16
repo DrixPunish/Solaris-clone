@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS transport_reports (
   receiver_coords JSONB NOT NULL,
   ships JSONB NOT NULL DEFAULT '{}'::jsonb,
   resources JSONB NOT NULL DEFAULT '{"fer":0,"silice":0,"xenogas":0}'::jsonb,
-  mission_type TEXT NOT NULL CHECK (mission_type IN ('transport', 'recycle')),
+  mission_type TEXT NOT NULL CHECK (mission_type IN ('transport', 'recycle', 'station')),
   completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -40,6 +40,15 @@ CREATE INDEX IF NOT EXISTS idx_transport_reports_viewer
 
 CREATE INDEX IF NOT EXISTS idx_transport_reports_mission
   ON transport_reports (fleet_mission_id);
+
+-- Migration: extend mission_type to accept 'station'
+DO $
+BEGIN
+  ALTER TABLE transport_reports DROP CONSTRAINT IF EXISTS transport_reports_mission_type_check;
+  ALTER TABLE transport_reports
+    ADD CONSTRAINT transport_reports_mission_type_check
+    CHECK (mission_type IN ('transport', 'recycle', 'station'));
+END $;
 
 -- =============================================================
 -- RLS POLICIES

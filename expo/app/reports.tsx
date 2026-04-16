@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { ScanEye, Swords, Truck, Recycle, ShieldAlert, Trash2 } from 'lucide-react-native';
+import { ScanEye, Swords, Truck, Recycle, ShieldAlert, Trash2, Anchor } from 'lucide-react-native';
 import ClickableCoords from '@/components/ClickableCoords';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFleet } from '@/contexts/FleetContext';
@@ -145,8 +145,9 @@ function CombatReportCard({ report, onPress, onDelete, userId }: { report: Comba
 
 function TransportReportCard({ report, onPress, onDelete }: { report: TransportReport; onPress: () => void; onDelete: () => void }) {
   const isRecycle = report.mission_type === 'recycle';
-  const iconColor = isRecycle ? Colors.warning : Colors.success;
-  const Icon = isRecycle ? Recycle : Truck;
+  const isStation = report.mission_type === 'station';
+  const iconColor = isRecycle ? Colors.warning : (isStation ? Colors.silice : Colors.success);
+  const Icon = isRecycle ? Recycle : (isStation ? Anchor : Truck);
 
   const res = report.resources;
   const senderCoords = report.sender_coords;
@@ -173,7 +174,7 @@ function TransportReportCard({ report, onPress, onDelete }: { report: TransportR
           </TouchableOpacity>
           <View style={[styles.resultBadge, { backgroundColor: iconColor + '18', borderColor: iconColor + '40' }]}>
             <Text style={[styles.resultText, { color: iconColor }]}>
-              {isRecycle ? 'Recyclage' : (report.viewer_role === 'receiver' ? 'Reçu' : 'Livré')}
+              {isRecycle ? 'Recyclage' : (isStation ? 'Stationné' : (report.viewer_role === 'receiver' ? 'Reçu' : 'Livré'))}
             </Text>
           </View>
           <Text style={styles.reportTime}>{timeAgo(report.completed_at)}</Text>
@@ -181,7 +182,7 @@ function TransportReportCard({ report, onPress, onDelete }: { report: TransportR
       </View>
       {res && (res.fer > 0 || res.silice > 0 || res.xenogas > 0) && (
         <View style={styles.reportResources}>
-          <Text style={styles.lootLabel}>{isRecycle ? 'Collecté: ' : (report.viewer_role === 'receiver' ? 'Reçu: ' : 'Livré: ')}</Text>
+          <Text style={styles.lootLabel}>{isRecycle ? 'Collecté: ' : (isStation ? 'Stationné: ' : (report.viewer_role === 'receiver' ? 'Reçu: ' : 'Livré: '))}</Text>
           <Text style={styles.resText}>
             {res.fer > 0 && <Text style={{ color: Colors.fer }}>Fe: {formatNumber(res.fer)}  </Text>}
             {res.silice > 0 && <Text style={{ color: Colors.silice }}>Si: {formatNumber(res.silice)}  </Text>}

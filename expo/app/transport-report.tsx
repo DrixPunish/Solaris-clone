@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Truck, Recycle, Package, Rocket } from 'lucide-react-native';
+import { Truck, Recycle, Package, Rocket, Anchor } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFleet } from '@/contexts/FleetContext';
 import { SHIPS } from '@/constants/gameData';
@@ -46,10 +46,11 @@ export default function TransportReportScreen() {
   }
 
   const isRecycle = report.mission_type === 'recycle';
+  const isStation = report.mission_type === 'station';
   const senderCoords = report.sender_coords;
   const receiverCoords = report.receiver_coords;
   const date = new Date(report.completed_at).toLocaleString('fr-FR');
-  const accentColor = isRecycle ? Colors.warning : Colors.success;
+  const accentColor = isRecycle ? Colors.warning : (isStation ? Colors.silice : Colors.success);
 
   const res = report.resources;
   const isTransportWithResources = !isRecycle && res && (res.fer > 0 || res.silice > 0 || res.xenogas > 0);
@@ -64,7 +65,7 @@ export default function TransportReportScreen() {
             <Text style={styles.backText}>Retour</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {isRecycle ? 'Rapport de recyclage' : 'Rapport de transport'}
+            {isRecycle ? 'Rapport de recyclage' : (isStation ? 'Rapport de stationnement' : 'Rapport de transport')}
           </Text>
           <View style={{ width: 60 }} />
         </View>
@@ -73,11 +74,13 @@ export default function TransportReportScreen() {
           <View style={[styles.resultCard, { borderColor: accentColor + '40' }]}>
             {isRecycle ? (
               <Recycle size={28} color={accentColor} />
+            ) : isStation ? (
+              <Anchor size={28} color={accentColor} />
             ) : (
               <Truck size={28} color={accentColor} />
             )}
             <Text style={[styles.resultTitle, { color: accentColor }]}>
-              {isRecycle ? 'Mission de recyclage' : (report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées')}
+              {isRecycle ? 'Mission de recyclage' : (isStation ? (report.viewer_role === 'receiver' ? 'Flotte stationnée chez vous' : 'Flotte stationnée') : (report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées'))}
             </Text>
             <Text style={styles.dateText}>{date}</Text>
           </View>
@@ -113,7 +116,7 @@ export default function TransportReportScreen() {
               <View style={styles.sectionHeader}>
                 <Package size={16} color={Colors.success} />
                 <Text style={styles.sectionTitle}>
-                  {report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées'}
+                  {isStation ? 'Ressources transférées' : (report.viewer_role === 'receiver' ? 'Ressources reçues' : 'Ressources livrées')}
                 </Text>
               </View>
               <View style={styles.resourceGrid}>
@@ -171,7 +174,7 @@ export default function TransportReportScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Rocket size={16} color={Colors.primary} />
-                <Text style={styles.sectionTitle}>Flotte envoyée</Text>
+                <Text style={styles.sectionTitle}>{isStation ? 'Flotte stationnée' : 'Flotte envoyée'}</Text>
               </View>
               {Object.entries(report.ships).filter(([, c]) => c > 0).map(([id, count]) => (
                 <View key={id} style={styles.unitRow}>
