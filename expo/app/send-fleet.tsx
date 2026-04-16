@@ -143,27 +143,13 @@ export default function SendFleetScreen() {
   const [selectedShips, setSelectedShips] = useState<Record<string, number>>({});
   const cooldownRef = useRef(false);
   const [transportResources, setTransportResources] = useState({ fer: 0, silice: 0, xenogas: 0 });
-  const userChangedMissionRef = useRef(false);
-  const defaultAppliedRef = useRef(false);
 
 
   useEffect(() => {
-    const requested = params.defaultMission as MissionType | undefined;
-    const requestedAvailable = requested && availableMissionTypes.some(mt => mt.id === requested);
-
-    if (!userChangedMissionRef.current && requestedAvailable && missionType !== requested) {
-      console.log('[SendFleet] Applying requested defaultMission now that it is available:', requested);
-      setMissionType(requested as MissionType);
-      defaultAppliedRef.current = true;
-      return;
-    }
-
     if (!availableMissionTypes.some(mt => mt.id === missionType)) {
-      const fallback = availableMissionTypes[0]?.id ?? 'attack';
-      console.log('[SendFleet] Current missionType not available, falling back to:', fallback);
-      setMissionType(fallback);
+      setMissionType(availableMissionTypes[0]?.id ?? 'attack');
     }
-  }, [availableMissionTypes, missionType, params.defaultMission]);
+  }, [availableMissionTypes, missionType]);
 
   const planetShips = activePlanet.ships;
   const planetCoords = activePlanet.coordinates;
@@ -607,7 +593,6 @@ export default function SendFleetScreen() {
                     style={[styles.missionBtn, active && { borderColor: mt.color, backgroundColor: mt.color + '15' }]}
                     onPress={() => {
                       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      userChangedMissionRef.current = true;
                       setMissionType(mt.id);
                     }}
                     activeOpacity={0.7}
