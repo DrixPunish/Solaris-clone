@@ -406,7 +406,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     order: 21,
     title: 'Défense Quantique',
     description: 'Achetez un Bouclier Quantique pour renforcer vos défenses planétaires.',
-    explanation: 'Le Bouclier Quantique est une défense avancée qui protège votre planète contre les attaques ennemies. Il absorbe une partie des dégâts avant que vos tourelles ne soient touchées.',
+    explanation: 'Le Bouclier Quantique est une défense avancée qui protège votre empire contre les attaques ennemies. Toutes vos planètes sont protégées jusqu\'à la fin du Bouclier.',
     hint: 'Rendez-vous dans la boutique et achetez un Bouclier Quantique.',
     category: 'military',
     checkType: 'transaction_check',
