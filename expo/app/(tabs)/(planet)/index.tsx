@@ -467,15 +467,12 @@ export default function PlanetScreen() {
               label="Tutoriel"
               onPress={() => setShowTutorialModal(true)}
               color={Colors.xenogas}
-              accentBorder={Colors.xenogas}
             />
             <ActionButton
               icon={MessageSquare}
               label="Messages"
               onPress={() => router.push('/messages')}
               badge={unreadCount}
-              color={Colors.primary}
-              accentBorder={Colors.accent}
             />
           </View>
           <View style={actionStyles.row}>
@@ -489,7 +486,6 @@ export default function PlanetScreen() {
               label="Wallet"
               onPress={() => {}}
               color={Colors.solar}
-              accentBorder={Colors.solar}
             />
           </View>
         </View>
