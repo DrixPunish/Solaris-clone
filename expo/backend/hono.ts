@@ -4,10 +4,14 @@ import { cors } from "hono/cors";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
-import { startEventWorkerLoop, getEventWorkerStats } from "./eventWorker";
+import { getEventWorkerStats } from "./eventWorker";
   
 const app = new Hono();
-    
+
+app.get("/health", (c) => {
+  return c.json({ status: "ok" });
+});
+
 app.use("*", cors());
     
 app.use(
@@ -99,7 +103,7 @@ app.get("/debug/timers", async (c) => {
       id: t.id,
       end_time: t.end_time,
       end_time_type: typeof t.end_time,
-      start_time: t.start_time,
+      _time: t.start_time,
       timer_type: t.timer_type,
       target_id: t.target_id,
       target_level: t.target_level,
@@ -111,8 +115,5 @@ app.get("/debug/timers", async (c) => {
     })),
   });
 });
-
-startEventWorkerLoop(1000);
-console.log("[Backend] Solaris event worker loop started (1s interval, sole runtime engine)");
 
 export default app;
