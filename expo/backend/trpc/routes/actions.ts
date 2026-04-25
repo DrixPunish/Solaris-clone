@@ -689,7 +689,7 @@ export const actionsRouter = createTRPCRouter({
         return { success: false, error: "Tutorial step not found" };
       }
 
-      const { data: progress } = await supabase
+      let { data: progress } = await supabase
         .from('player_tutorial_progress')
         .select('current_step_id, current_step_index, claimed_rewards')
         .eq('user_id', userId)
