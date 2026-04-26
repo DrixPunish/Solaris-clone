@@ -8,11 +8,13 @@ import type { AppRouter } from "@/backend/trpc/app-router";
 export const trpc = createTRPCReact<AppRouter>();
 
 const getBaseUrl = () => {
-  const url = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-
+  const url =
+    process.env.EXPO_PUBLIC_API_BASE_URL ??
+    process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+  
   if (!url) {
     throw new Error(
-      "EXPO_PUBLIC_RORK_API_BASE_URL is not set",
+      "EXPO_PUBLIC_API_BASE_URL is not set (fallback EXPO_PUBLIC_RORK_API_BASE_URL also missing)",
     );
   }
 
