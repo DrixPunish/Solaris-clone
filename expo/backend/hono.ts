@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
-// import { getEventWorkerStats } from "./eventWorker";
+import { getEventWorkerStats } from "./eventWorker";
 
 const app = new Hono();
 
