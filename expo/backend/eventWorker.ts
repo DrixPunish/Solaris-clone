@@ -3,7 +3,7 @@ import { dispatchEvent } from '@/backend/eventHandlers';
 import type { GameEvent } from '@/backend/eventHandlers/types';
 import { logger } from '@/utils/logger';
 
-const WORKER_ID = `worker_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const WORKER_ID = `railway_worker_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const BATCH_SIZE = 10;
 const POLL_INTERVAL_MS = 1000;
 const LOCK_DURATION_SECONDS = 120;
