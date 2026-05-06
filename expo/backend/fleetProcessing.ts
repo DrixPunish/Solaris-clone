@@ -2,7 +2,6 @@ import { supabase } from '@/backend/supabase';
 import {
   processEspionage,
   simulateCombat,
-  getDefenseRebuildCount,
   getMantaRecupCargoCapacity,
 } from '@/utils/fleetCalculations';
 import {
@@ -324,6 +323,19 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
     ? sanitizeForJsonb(combatResult.roundLogs)
     : [];
 
+  const defenseRebuilds = combatResult.defenseRebuilds ?? {};
+
+  logger.log(
+    '[FleetProcessing][Attack] defenseRebuilds for mission',
+    mission.id,
+    JSON.stringify(defenseRebuilds),
+  );
+  logger.log(
+    '[FleetProcessing][Attack] defenderDefenseLosses for mission',
+    mission.id,
+    JSON.stringify(combatResult.defenderDefenseLosses),
+  );
+
   const baseReportPayload = {
     attacker_id: attackerPlayerId,
     defender_id: defenderPlayerId,
@@ -338,6 +350,7 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
     result: combatResult.result,
     attacker_losses: sanitizeForJsonb(combatResult.attackerLosses) ?? {},
     defender_losses: sanitizeForJsonb({ ...combatResult.defenderShipLosses, ...combatResult.defenderDefenseLosses }) ?? {},
+    defense_rebuilds: sanitizeForJsonb(defenseRebuilds) ?? {},
     loot: sanitizeForJsonb(combatResult.loot) ?? { fer: 0, silice: 0, xenogas: 0 },
     debris: sanitizeForJsonb(combatResult.debris) ?? { fer: 0, silice: 0 },
     combat_log: safeCombatLog,
@@ -351,6 +364,21 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
         const { error } = await supabase.from('combat_reports').insert(payload);
         if (error) {
           logger.log(`[FleetProcessing][Attack] INSERT FAILED ${viewerRole} (attempt ${attempt}):`, error.message);
+          logger.log(
+            '[FleetProcessing][Attack] INSERT FAILED',
+            viewerRole,
+            'payload.defense_rebuilds=',
+            JSON.stringify(payload.defense_rebuilds),
+            'message=',
+            error.message,
+            'details=',
+            (error as { details?: unknown }).details ?? null,
+            'hint=',
+            (error as { hint?: unknown }).hint ?? null,
+            'code=',
+            (error as { code?: unknown }).code ?? null,
+          );
+          
           if (attempt < 3) { await new Promise(r => setTimeout(r, 300 * attempt)); continue; }
           return false;
         }
@@ -369,12 +397,14 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
     await insertReport('defender');
   }
 
-  if (targetPlanetId) {
-    const defenseRebuilds = Object.fromEntries(
-      Object.entries(combatResult.defenderDefenseLosses).map(([id, count]) => [id, getDefenseRebuildCount(count)])
-    );
+  logger.log(
+    '[FleetProcessing][Attack] report payload defense_rebuilds',
+    mission.id,
+    JSON.stringify(baseReportPayload.defense_rebuilds),
+  );
 
-    await supabase.rpc('apply_attack_loot', {
+  if (targetPlanetId) {
+    const { data: lootRpcResult, error: lootRpcErr } = await supabase.rpc('apply_attack_loot', {
       p_planet_id: targetPlanetId,
       p_loot_fer: combatResult.loot.fer,
       p_loot_silice: combatResult.loot.silice,
@@ -383,6 +413,17 @@ export async function processAttackMission(mission: FleetMission): Promise<void>
       p_defense_losses: combatResult.defenderDefenseLosses,
       p_defense_rebuilds: defenseRebuilds,
     });
+
+    logger.log(
+      '[FleetProcessing][Attack] apply_attack_loot sent',
+      mission.id,
+      JSON.stringify({
+        defenseLosses: combatResult.defenderDefenseLosses,
+        defenseRebuilds,
+        rpcResult: lootRpcResult ?? null,
+        rpcError: lootRpcErr?.message ?? null,
+      }),
+    );
   }
 
   if (combatResult.debris && (combatResult.debris.fer > 0 || combatResult.debris.silice > 0)) {
