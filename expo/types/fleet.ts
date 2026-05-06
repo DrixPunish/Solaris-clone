@@ -119,6 +119,7 @@ export interface CombatReport {
   result: 'attacker_wins' | 'defender_wins' | 'draw';
   attacker_losses: Record<string, number> | null;
   defender_losses: Record<string, number> | null;
+  defense_rebuilds?: Record<string, number>;
   loot: { fer: number; silice: number; xenogas: number } | null;
   debris: { fer: number; silice: number } | null;
   combat_log: CombatLogEntry[] | null;
