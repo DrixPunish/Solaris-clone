@@ -27,8 +27,8 @@ app.get("/", (c) => {
   return c.json({
     status: "ok",
     message: "Solaris Backend API",
-    version: "4.0.0-event-only",
-    deployedAt: "2026-04-06T00:00:00Z",
+    version: "0.3.7-event-only",
+    deployedAt: "2026-05-06T00:00:00Z",
   });
 });
 
