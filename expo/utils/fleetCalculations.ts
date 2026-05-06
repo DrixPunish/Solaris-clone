@@ -506,6 +506,7 @@ export interface CombatSimResult {
   attackerLosses: Record<string, number>;
   defenderShipLosses: Record<string, number>;
   defenderDefenseLosses: Record<string, number>;
+  defenseRebuilds: Record<string, number>;
   loot: { fer: number; silice: number; xenogas: number };
   debris: { fer: number; silice: number };
   attackerSurvivingShips: Record<string, number>;
@@ -660,6 +661,12 @@ export function simulateCombat(
   const defenderShipLosses = countLosses(defenderShips, defenderUnits.filter(u => u.type === 'ship'), 'ship_');
   const defenderDefenseLosses = countLosses(defenderDefenses, defenderUnits.filter(u => u.type === 'defense'), 'def_');
 
+const defenseRebuilds = Object.fromEntries(
+  Object.entries(defenderDefenseLosses)
+    .map(([id, lost]) => [id, getDefenseRebuildCount(Number(lost) || 0)])
+    .filter(([, rebuilt]) => rebuilt > 0)
+);
+  
   let debrisFer = 0;
   let debrisSilice = 0;
   for (const [shipId, lost] of Object.entries(attackerLosses)) {
@@ -712,6 +719,7 @@ export function simulateCombat(
     attackerLosses,
     defenderShipLosses,
     defenderDefenseLosses,
+    defenseRebuilds,
     loot,
     debris: { fer: debrisFer, silice: debrisSilice },
     attackerSurvivingShips,
@@ -720,6 +728,17 @@ export function simulateCombat(
   };
 }
 
+const DEFENSE_REBUILD_RATE = 0.70;
+
 export function getDefenseRebuildCount(lost: number): number {
-  return Math.floor(lost * 0.7);
+  const safeLost = Math.max(0, Math.floor(lost));
+  let rebuilt = 0;
+
+  for (let i = 0; i < safeLost; i++) {
+    if (Math.random() < DEFENSE_REBUILD_RATE) {
+      rebuilt++;
+    }
+  }
+
+  return rebuilt;
 }

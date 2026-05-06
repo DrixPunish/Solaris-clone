@@ -244,9 +244,9 @@ export function getBuildingProductionAtLevel(buildingId: string, level: number, 
   const xenoTempFactor = getXenogasTempFactor(tempMax);
   switch (buildingId) {
     case 'ferMine':
-      return `${10 + Math.floor(30 * level * Math.pow(1.1, level) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer) * metalMult)}/h`;
+      return `${Math.floor(30 * level * Math.pow(1.1, level) * ratio * (pct.ferMine / 100) * (1 + plasmaBonus.fer) * metalMult)}/h`;
     case 'siliceMine':
-      return `${5 + Math.floor(20 * level * Math.pow(1.1, level) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice) * crystalMult)}/h`;
+      return `${Math.floor(20 * level * Math.pow(1.1, level) * ratio * (pct.siliceMine / 100) * (1 + plasmaBonus.silice) * crystalMult)}/h`;
     case 'xenogasRefinery':
       return `${Math.floor(10 * level * Math.pow(1.1, level) * ratio * (pct.xenogasRefinery / 100) * (1 + plasmaBonus.xenogas) * xenoTempFactor)}/h`;
     case 'solarPlant':
