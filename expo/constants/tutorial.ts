@@ -414,7 +414,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     checkValue: 1,
     validationSource: 'solar_transaction',
     reward: { type: 'resources', fer: 25000, silice: 25000, xenogas: 12500 },
-    navigateTo: '/(tabs)/shipyard?tab=defenses',
+    navigateTo: '/(tabs)/(planet)?scrollTo=quantumShield',
   },
   {
     id: 'ch4_computer_tech_1',
