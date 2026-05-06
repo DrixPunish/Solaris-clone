@@ -1,0 +1,1329 @@
+import React, { useRef, useEffect, useCallback, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, Animated, Modal, ScrollView, Platform, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { BookOpen, ChevronRight, Gift, X, Minimize2, Maximize2, CheckCircle, Circle, Lock, Sparkles, Info, ChevronDown, ChevronUp, ChevronsDown, Loader, AlertCircle } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import Colors from '@/constants/colors';
+import { useTutorial } from '@/contexts/TutorialContext';
+import { useGame } from '@/contexts/GameContext';
+import { TUTORIAL_CATEGORIES, TUTORIAL_CHAPTERS, TUTORIAL_STEPS, TutorialReward, TutorialChapter } from '@/constants/tutorial';
+import { formatNumber } from '@/utils/gameCalculations';
+
+function RewardBadge({ reward }: { reward: TutorialReward }) {
+  const parts: string[] = [];
+  if (reward.type === 'resources') {
+    if (reward.fer) parts.push(`${formatNumber(reward.fer)} Fer`);
+    if (reward.silice) parts.push(`${formatNumber(reward.silice)} Silice`);
+    if (reward.xenogas) parts.push(`${formatNumber(reward.xenogas)} Xenogas`);
+  } else if (reward.type === 'solar') {
+    if (reward.solar) parts.push(`${reward.solar} Solar`);
+  }
+  return (
+    <View style={styles.rewardBadge}>
+      <Gift size={10} color={Colors.solar} />
+      <Text style={styles.rewardText}>{parts.join(' + ')}</Text>
+    </View>
+  );
+}
+
+function ChapterHeader({
+  chapter,
+  isActive,
+  isComplete,
+  stepsDone,
+  stepsTotal,
+  isCollapsed,
+  onPress,
+}: {
+  chapter: TutorialChapter;
+  isActive: boolean;
+  isComplete: boolean;
+  stepsDone: number;
+  stepsTotal: number;
+  isCollapsed: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chapterHeader,
+        isActive && styles.chapterHeaderActive,
+        pressed && styles.chapterHeaderPressed,
+      ]}
+    >
+      <View style={styles.chapterHeaderLeft}>
+        {isComplete ? (
+          <CheckCircle size={16} color={Colors.success} />
+        ) : isActive ? (
+          <BookOpen size={16} color={Colors.primary} />
+        ) : (
+          <Lock size={14} color={Colors.textMuted} />
+        )}
+
+        <View style={styles.chapterTextWrap}>
+          <Text
+            style={[
+              styles.chapterTitle,
+              isActive && styles.chapterTitleActive,
+              !isActive && !isComplete && styles.chapterTitleLocked,
+            ]}
+          >
+            {chapter.title}
+          </Text>
+
+          <Text
+            style={[
+              styles.chapterDesc,
+              !isActive && !isComplete && styles.chapterDescLocked,
+            ]}
+            numberOfLines={2}
+          >
+            {chapter.description}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.chapterHeaderRight}>
+        <Text style={[styles.chapterCount, isActive && styles.chapterCountActive]}>
+          {stepsDone}/{stepsTotal}
+        </Text>
+        {isCollapsed ? (
+          <ChevronDown size={16} color={isActive ? Colors.primary : Colors.textSecondary} />
+        ) : (
+          <ChevronUp size={16} color={isActive ? Colors.primary : Colors.textSecondary} />
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+export function TutorialFullModal({
+  visible,
+  onClose,
+  onMinimize,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onMinimize?: () => void;
+}) {
+  const {
+    allSteps,
+    allChapters,
+    completedStepIds,
+    claimedRewards,
+    currentStepIndex,
+    claimReward,
+    advanceToNextStep,
+    isFinished,
+    completedCount,
+    totalSteps,
+    progress,
+    isCurrentStepCompleted,
+    currentStep,
+    toggleMinimized,
+    refreshValidation,
+  } = useTutorial();
+
+  const applyTutorialReward = useGame() as ReturnType<typeof useGame> & {
+    applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
+  const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
+  const stepOffsetsRef = useRef<Record<string, number>>({});
+  const [collapsedChapters, setCollapsedChapters] = useState<Record<string, boolean>>({});
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [isClaimLoading, setIsClaimLoading] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
+  const claimAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (claimError) {
+      const timer = setTimeout(() => setClaimError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [claimError]);
+
+  const buildInitialCollapsedState = useCallback(() => {
+    const next: Record<string, boolean> = {};
+
+    for (const chapter of allChapters) {
+      const chapterSteps = allSteps.filter(s => s.chapterId === chapter.id);
+      const isCurrentChapter = chapterSteps.some(step => step.id === currentStep?.id);
+      const isChapterComplete =
+        chapterSteps.length > 0 && chapterSteps.every(step => claimedRewards.includes(step.id));
+
+      next[chapter.id] = isCurrentChapter ? false : isChapterComplete;
+    }
+
+    return next;
+  }, [allChapters, allSteps, currentStep?.id, claimedRewards]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setCollapsedChapters(buildInitialCollapsedState());
+  }, [visible, buildInitialCollapsedState]);
+
+  const toggleChapter = useCallback((chapterId: string) => {
+    setCollapsedChapters(prev => ({
+      ...prev,
+      [chapterId]: !prev[chapterId],
+    }));
+  }, []);
+
+  const scrollToCurrentStep = useCallback(() => {
+    if (!visible || !currentStep?.id) return;
+
+    const y = stepOffsetsRef.current[currentStep.id];
+    if (typeof y !== 'number') return;
+
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, y - 24),
+      animated: true,
+    });
+  }, [visible, currentStep?.id]);
+
+  useEffect(() => {
+    if (!visible || !currentStep) return;
+
+    const currentChapterId = currentStep.chapterId;
+    setCollapsedChapters(prev => ({
+      ...buildInitialCollapsedState(),
+      [currentChapterId]: false,
+    }));
+
+    const timer = setTimeout(() => {
+      scrollToCurrentStep();
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [visible, currentStep, buildInitialCollapsedState, scrollToCurrentStep]);
+
+  const handleClaimFromList = useCallback(
+    async (stepId: string) => {
+      if (isClaimLoading) return;
+      setClaimError(null);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setClaimingId(stepId);
+      setIsClaimLoading(stepId);
+
+      try {
+        await refreshValidation();
+        const reward = claimReward(stepId);
+
+        if (!reward) {
+          setClaimingId(null);
+          setIsClaimLoading(null);
+          setClaimError('Récompense déjà récupérée');
+          return;
+        }
+
+        if (!applyTutorialReward?.applyTutorialReward) {
+          setClaimingId(null);
+          setIsClaimLoading(null);
+          return;
+        }
+
+        const result = await applyTutorialReward.applyTutorialReward(reward, stepId);
+
+        if (result.success) {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Animated.sequence([
+            Animated.timing(claimAnim, {
+              toValue: 1.15,
+              duration: 150,
+              useNativeDriver: true,
+            }),
+            Animated.timing(claimAnim, {
+              toValue: 1,
+              duration: 150,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            advanceToNextStep();
+          });
+        } else {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
+          if (
+            result.error?.includes('not validated') ||
+            result.error?.includes('complete the objective')
+          ) {
+            setClaimError('Objectif pas encore détecté. Ressayez dans quelques secondes.');
+          } else if (result.error?.includes('mismatch')) {
+            setClaimError('Désynchronisation. Rechargement...');
+            setTimeout(() => {
+              void refreshValidation();
+            }, 1000);
+          } else {
+            setClaimError(result.error ?? 'Erreur lors de la récupération');
+          }
+        }
+      } catch {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setClaimError('Erreur réseau. Ressayez.');
+      } finally {
+        setClaimingId(null);
+        setIsClaimLoading(null);
+      }
+    },
+    [
+      isClaimLoading,
+      refreshValidation,
+      claimReward,
+      applyTutorialReward,
+      claimAnim,
+      advanceToNextStep,
+    ]
+  );
+
+  const handleNavigate = useCallback(
+    (navigateTo?: string) => {
+      if (navigateTo) {
+        onClose();
+        setTimeout(() => {
+          const sep = navigateTo.includes('?') ? '&' : '?';
+          router.navigate(`${navigateTo}${sep}t=${Date.now()}` as never);
+        }, 300);
+      }
+    },
+    [router, onClose]
+  );
+
+  const toggleExplanation = useCallback((stepId: string) => {
+    setExpandedExplanation(prev => (prev === stepId ? null : stepId));
+  }, []);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <BookOpen size={20} color={Colors.primary} />
+              <Text style={styles.modalTitle}>Guide du Nephilim</Text>
+            </View>
+
+            <View style={styles.modalHeaderActions}>
+              <Pressable
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose();
+                  toggleMinimized();
+                  onMinimize?.();
+                }}
+                hitSlop={12}
+                style={styles.modalHeaderBtn}
+              >
+                <ChevronsDown size={20} color={Colors.textSecondary} />
+              </Pressable>
+
+              <Pressable onPress={onClose} hitSlop={12} style={styles.modalHeaderBtn}>
+                <X size={22} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.progressSection}>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${Math.round(progress * 100)}%` }]} />
+            </View>
+            <Text style={styles.progressText}>
+              {completedCount}/{totalSteps} missions {isFinished ? '• Terminé !' : ''}
+            </Text>
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            style={styles.modalScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {allChapters.map(chapter => {
+              const chapterSteps = allSteps.filter(s => s.chapterId === chapter.id);
+              const chapterDone = chapterSteps.filter(s => claimedRewards.includes(s.id)).length;
+              const isChapterComplete = chapterDone === chapterSteps.length;
+              const firstStepOrder = chapterSteps[0]?.order ?? 999;
+              const lastStepOrder = chapterSteps[chapterSteps.length - 1]?.order ?? 0;
+              const isChapterActive =
+                !isChapterComplete &&
+                currentStepIndex >= firstStepOrder &&
+                currentStepIndex <= lastStepOrder;
+              const isCollapsed = collapsedChapters[chapter.id] ?? false;
+
+              return (
+                <View key={chapter.id} style={styles.chapterBlock}>
+                  <ChapterHeader
+                    chapter={chapter}
+                    isActive={isChapterActive}
+                    isComplete={isChapterComplete}
+                    stepsDone={chapterDone}
+                    stepsTotal={chapterSteps.length}
+                    isCollapsed={isCollapsed}
+                    onPress={() => toggleChapter(chapter.id)}
+                  />
+
+                  {!isCollapsed &&
+                    chapterSteps.map(step => {
+                      const isCompleted = completedStepIds.has(step.id);
+                      const isClaimed = claimedRewards.includes(step.id);
+                      const isCurrent = step.id === currentStep?.id;
+                      const isLocked = step.order > currentStepIndex && !isClaimed;
+                      const canClaim = isCurrent && isCurrentStepCompleted && !isClaimed;
+                      const category = TUTORIAL_CATEGORIES[step.category];
+                      const isExplanationExpanded = expandedExplanation === step.id;
+
+                      return (
+                        <Animated.View
+                          key={step.id}
+                          onLayout={event => {
+                            stepOffsetsRef.current[step.id] = event.nativeEvent.layout.y;
+                          }}
+                          style={[
+                            styles.stepCard,
+                            isCurrent && styles.stepCardCurrent,
+                            isClaimed && styles.stepCardDone,
+                            isLocked && styles.stepCardLocked,
+                            claimingId === step.id ? { transform: [{ scale: claimAnim }] } : undefined,
+                          ]}
+                        >
+                          <View style={styles.stepLeftIcon}>
+                            {isClaimed ? (
+                              <CheckCircle size={20} color={Colors.success} />
+                            ) : canClaim ? (
+                              <Gift size={20} color={Colors.primary} />
+                            ) : isLocked ? (
+                              <Lock size={12} color={Colors.textMuted} />
+                            ) : (
+                              <Circle size={18} color={isCurrent ? Colors.primary : Colors.textMuted} />
+                            )}
+                          </View>
+
+                          <View style={styles.stepContent}>
+                            <View style={styles.stepTopRow}>
+                              <Text
+                                style={[
+                                  styles.stepTitle,
+                                  isClaimed && styles.stepTitleDone,
+                                  isLocked && styles.stepTitleLocked,
+                                ]}
+                              >
+                                {step.title}
+                              </Text>
+
+                              <View style={[styles.categoryBadge, { backgroundColor: category.color + '20' }]}>
+                                <Text style={[styles.categoryText, { color: category.color }]}>
+                                  {category.label}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <Text
+                              style={[
+                                styles.stepDesc,
+                                isLocked && styles.stepDescLocked,
+                              ]}
+                            >
+                              {isLocked
+                                ? 'Complétez les missions précédentes...'
+                                : step.description}
+                            </Text>
+
+                            {!isLocked && (
+                              <Pressable
+                                style={styles.explanationToggle}
+                                onPress={() => toggleExplanation(step.id)}
+                                hitSlop={4}
+                              >
+                                <Info size={11} color={Colors.textSecondary} />
+                                <Text style={styles.explanationToggleText}>
+                                  {isExplanationExpanded ? 'Masquer' : 'Pourquoi ?'}
+                                </Text>
+                                {isExplanationExpanded ? (
+                                  <ChevronUp size={11} color={Colors.textSecondary} />
+                                ) : (
+                                  <ChevronDown size={11} color={Colors.textSecondary} />
+                                )}
+                              </Pressable>
+                            )}
+
+                            {isExplanationExpanded && !isLocked && (
+                              <View style={styles.explanationBox}>
+                                <Text style={styles.explanationText}>{step.explanation}</Text>
+                              </View>
+                            )}
+
+                            {!isLocked && <RewardBadge reward={step.reward} />}
+
+                            {canClaim && (
+                              <Pressable
+                                style={[
+                                  styles.claimButtonList,
+                                  isClaimLoading === step.id && styles.claimButtonListLoading,
+                                ]}
+                                onPress={() => void handleClaimFromList(step.id)}
+                                disabled={isClaimLoading !== null}
+                              >
+                                {isClaimLoading === step.id ? (
+                                  <Loader size={14} color="#000" />
+                                ) : (
+                                  <Sparkles size={14} color="#000" />
+                                )}
+                                <Text style={styles.claimButtonListText}>
+                                  {isClaimLoading === step.id ? 'Vérification...' : 'Récupérer'}
+                                </Text>
+                              </Pressable>
+                            )}
+
+                            {claimError && claimingId === null && (
+                              <View style={styles.claimErrorBadge}>
+                                <AlertCircle size={11} color="#EF4444" />
+                                <Text style={styles.claimErrorText}>{claimError}</Text>
+                              </View>
+                            )}
+
+                            {isCurrent && !isCurrentStepCompleted && step.navigateTo && (
+                              <Pressable
+                                style={styles.goButton}
+                                onPress={() => handleNavigate(step.navigateTo)}
+                              >
+                                <Text style={styles.goButtonText}>Y aller</Text>
+                                <ChevronRight size={14} color={Colors.primary} />
+                              </Pressable>
+                            )}
+                          </View>
+                        </Animated.View>
+                      );
+                    })}
+                </View>
+              );
+            })}
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+export default function TutorialWidget() {
+  const {
+    currentStep, currentChapter, isCurrentStepCompleted, isCurrentStepClaimed,
+    isDismissed, isMinimized, isLoaded, isFinished,
+    claimReward, advanceToNextStep, dismissTutorial, toggleMinimized,
+    completedCount, totalSteps, progress, refreshValidation,
+  } = useTutorial();
+  const { state } = useGame();
+  const router = useRouter();
+  const [showFullModal, setShowFullModal] = useState(false);
+  const [showRewardAnimation, setShowRewardAnimation] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [isClaimingWidget, setIsClaimingWidget] = useState(false);
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const rewardScaleAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isLoaded && !isDismissed && !isFinished) {
+      Animated.spring(slideAnim, { toValue: 1, useNativeDriver: true, tension: 50, friction: 8 }).start();
+    }
+  }, [isLoaded, isDismissed, isFinished, slideAnim]);
+
+  useEffect(() => {
+    if (isCurrentStepCompleted && !isCurrentStepClaimed) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.05, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isCurrentStepCompleted, isCurrentStepClaimed, pulseAnim]);
+
+  const { applyTutorialReward } = useGame() as ReturnType<typeof useGame> & { applyTutorialReward?: (r: TutorialReward, stepId?: string) => Promise<{ success: boolean; error?: string }> };
+  const [widgetClaimError, setWidgetClaimError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (widgetClaimError) {
+      const timer = setTimeout(() => setWidgetClaimError(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [widgetClaimError]);
+
+  const handleClaim = useCallback(async () => {
+    if (!currentStep || isClaimingWidget) return;
+    setWidgetClaimError(null);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsClaimingWidget(true);
+
+    try {
+      await refreshValidation();
+
+      const reward = claimReward(currentStep.id);
+      if (!reward) {
+        console.log('[TUTORIAL CLAIM WIDGET] claimReward returned null for:', currentStep.id);
+        setIsClaimingWidget(false);
+        setWidgetClaimError('Récompense déjà récupérée');
+        return;
+      }
+
+      if (!applyTutorialReward) {
+        setIsClaimingWidget(false);
+        return;
+      }
+
+      console.log('[TUTORIAL CLAIM WIDGET] Calling server for step:', currentStep.id);
+      const result = await applyTutorialReward(reward, currentStep.id);
+
+      if (result.success) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setShowRewardAnimation(true);
+        Animated.sequence([
+          Animated.spring(rewardScaleAnim, { toValue: 1, useNativeDriver: true, tension: 100, friction: 6 }),
+          Animated.delay(600),
+          Animated.timing(rewardScaleAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]).start(() => {
+          setShowRewardAnimation(false);
+          rewardScaleAnim.setValue(0);
+        });
+        advanceToNextStep();
+      } else {
+        console.log('[TUTORIAL CLAIM WIDGET] Server rejected:', result.error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (result.error?.includes('not validated') || result.error?.includes('complete the objective')) {
+          setWidgetClaimError('Objectif pas encore détecté. Réessayez.');
+        } else if (result.error?.includes('mismatch')) {
+          setWidgetClaimError('Désynchronisation. Rechargement...');
+          setTimeout(() => void refreshValidation(), 1000);
+        } else {
+          setWidgetClaimError(result.error ?? 'Erreur lors de la récupération');
+        }
+      }
+    } catch (e) {
+      console.log('[TUTORIAL CLAIM WIDGET] Exception:', e);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setWidgetClaimError('Erreur réseau. Réessayez.');
+    } finally {
+      setIsClaimingWidget(false);
+    }
+  }, [currentStep, claimReward, applyTutorialReward, rewardScaleAnim, advanceToNextStep, isClaimingWidget, refreshValidation]);
+
+  const handleNavigate = useCallback(() => {
+    if (currentStep?.navigateTo) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const nav = currentStep.navigateTo;
+      const sep = nav.includes('?') ? '&' : '?';
+      router.navigate(`${nav}${sep}_t=${Date.now()}` as never);
+    }
+  }, [currentStep, router]);
+
+  const handleDismiss = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+      dismissTutorial();
+    });
+  }, [dismissTutorial, slideAnim]);
+
+  if (!isLoaded || isDismissed || isFinished || !currentStep || !state.username) return null;
+
+  const category = TUTORIAL_CATEGORIES[currentStep.category];
+  const canClaim = isCurrentStepCompleted && !isCurrentStepClaimed;
+
+  if (isMinimized) {
+    return (
+      <Animated.View style={[
+        styles.minimizedContainer,
+        { transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }] },
+      ]}>
+        <Pressable
+          style={styles.minimizedButton}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            toggleMinimized();
+          }}
+        >
+          <BookOpen size={16} color={Colors.primary} />
+          <View style={styles.minimizedProgress}>
+            <View style={[styles.minimizedProgressFill, { width: `${Math.round(progress * 100)}%` }]} />
+          </View>
+          <Text style={styles.minimizedText}>{completedCount}/{totalSteps}</Text>
+          {canClaim && <View style={styles.claimDot} />}
+        </Pressable>
+      </Animated.View>
+    );
+  }
+
+  return (
+    <>
+      <Animated.View style={[
+        styles.container,
+        {
+          transform: [
+            { translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] }) },
+            { scale: canClaim ? pulseAnim : 1 },
+          ],
+        },
+      ]}>
+        <View style={[styles.categoryStrip, { backgroundColor: category.color }]} />
+
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <BookOpen size={14} color={Colors.primary} />
+            <Text style={styles.headerTitle}>
+              {currentChapter ? currentChapter.title : 'Mission'} — {completedCount + 1}/{totalSteps}
+            </Text>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable onPress={() => setShowFullModal(true)} hitSlop={8} style={styles.headerBtn}>
+              <Maximize2 size={14} color={Colors.textSecondary} />
+            </Pressable>
+            <Pressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMinimized(); }} hitSlop={8} style={styles.headerBtn}>
+              <ChevronsDown size={14} color={Colors.textSecondary} />
+            </Pressable>
+            <Pressable onPress={handleDismiss} hitSlop={8} style={styles.headerBtn}>
+              <X size={14} color={Colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.body}>
+          <Text style={styles.stepName}>{currentStep.title}</Text>
+          <Text style={styles.stepDescription}>{currentStep.description}</Text>
+
+          {!isCurrentStepCompleted && (
+            <Text style={styles.hintText}>{currentStep.hint}</Text>
+          )}
+
+          <Pressable
+            style={styles.explanationToggleWidget}
+            onPress={() => setShowExplanation(prev => !prev)}
+            hitSlop={4}
+          >
+            <Info size={11} color={Colors.textSecondary} />
+            <Text style={styles.explanationToggleText}>
+              {showExplanation ? 'Masquer' : 'Pourquoi cette mission ?'}
+            </Text>
+          </Pressable>
+
+          {showExplanation && (
+            <View style={styles.explanationBoxWidget}>
+              <Text style={styles.explanationText}>{currentStep.explanation}</Text>
+            </View>
+          )}
+
+          <RewardBadge reward={currentStep.reward} />
+        </View>
+
+        <View style={styles.footer}>
+          {canClaim ? (
+            <>
+              <Pressable style={[styles.claimButton, isClaimingWidget && styles.claimButtonLoading]} onPress={() => void handleClaim()} disabled={isClaimingWidget}>
+                {isClaimingWidget ? (
+                  <Loader size={16} color="#000" />
+                ) : (
+                  <Sparkles size={16} color="#000" />
+                )}
+                <Text style={styles.claimButtonText}>
+                  {isClaimingWidget ? 'Vérification...' : 'Récupérer la récompense'}
+                </Text>
+              </Pressable>
+              {widgetClaimError && !isClaimingWidget && (
+                <View style={styles.claimErrorBadge}>
+                  <AlertCircle size={11} color="#EF4444" />
+                  <Text style={styles.claimErrorText}>{widgetClaimError}</Text>
+                </View>
+              )}
+            </>
+          ) : !isCurrentStepCompleted && currentStep.navigateTo ? (
+            <Pressable style={styles.navigateButton} onPress={handleNavigate}>
+              <Text style={styles.navigateButtonText}>Y aller</Text>
+              <ChevronRight size={16} color={Colors.primary} />
+            </Pressable>
+          ) : (
+            <View style={styles.inProgressBar}>
+              <View style={styles.inProgressDot} />
+              <Text style={styles.inProgressText}>En cours...</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.progressBarSmall}>
+          <View style={[styles.progressBarSmallFill, { width: `${Math.round(progress * 100)}%` }]} />
+        </View>
+      </Animated.View>
+
+      {showRewardAnimation && (
+        <View style={styles.rewardOverlay} pointerEvents="none">
+          <Animated.View style={[
+            styles.rewardPopup,
+            { transform: [{ scale: rewardScaleAnim }] },
+          ]}>
+            <Gift size={32} color={Colors.primary} />
+            <Text style={styles.rewardPopupText}>Récompense récupérée !</Text>
+          </Animated.View>
+        </View>
+      )}
+
+      <TutorialFullModal visible={showFullModal} onClose={() => setShowFullModal(false)} onMinimize={() => setShowFullModal(false)} />
+    </>
+  );
+}
+
+export function TutorialReopenButton() {
+  const { isDismissed, isFinished, reopenTutorial, isLoaded } = useTutorial();
+
+  if (!isLoaded || !isDismissed || isFinished) return null;
+
+  return (
+    <Pressable
+      style={styles.reopenButton}
+      onPress={() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        reopenTutorial();
+      }}
+    >
+      <BookOpen size={14} color={Colors.primary} />
+      <Text style={styles.reopenText}>Tutoriel</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute' as const,
+    bottom: Platform.OS === 'web' ? 90 : 100,
+    left: 12,
+    right: 12,
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 16,
+      elevation: 20,
+    } : {}),
+  },
+  categoryStrip: {
+    height: 3,
+    width: '100%',
+  },
+  chapterHeaderPressed: {
+  opacity: 0.92,
+},
+chapterHeaderRight: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+  marginLeft: 12,
+},
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerBtn: {
+    padding: 4,
+  },
+  body: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  stepName: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    marginBottom: 3,
+  },
+  stepDescription: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+    marginBottom: 6,
+  },
+  hintText: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontStyle: 'italic' as const,
+    marginBottom: 6,
+    opacity: 0.8,
+  },
+  explanationToggleWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    alignSelf: 'flex-start' as const,
+  },
+  explanationBoxWidget: {
+    backgroundColor: Colors.primary + '0A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.primary + '40',
+  },
+  rewardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.solar + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start' as const,
+  },
+  rewardText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.solar,
+  },
+  footer: {
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    paddingTop: 2,
+  },
+  claimButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  claimButtonText: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: '#000',
+  },
+  navigateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '15',
+    borderRadius: 10,
+    paddingVertical: 9,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  navigateButtonText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  inProgressBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  inProgressDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.warning,
+  },
+  inProgressText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  progressBarSmall: {
+    height: 2,
+    backgroundColor: Colors.border,
+  },
+  progressBarSmallFill: {
+    height: 2,
+    backgroundColor: Colors.primary,
+  },
+  minimizedContainer: {
+    position: 'absolute' as const,
+    bottom: Platform.OS === 'web' ? 90 : 100,
+    right: 12,
+  },
+  minimizedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 10,
+    } : {}),
+  },
+  minimizedProgress: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  minimizedProgressFill: {
+    height: 4,
+    backgroundColor: Colors.primary,
+    borderRadius: 2,
+  },
+  minimizedText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+  },
+  claimDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.success,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalHeaderBtn: {
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    color: Colors.text,
+  },
+  progressSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressBarFill: {
+    height: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  modalScroll: {
+    paddingHorizontal: 16,
+  },
+  chapterBlock: {
+    marginBottom: 16,
+  },
+  chapterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chapterHeaderActive: {
+    borderColor: Colors.primary + '40',
+    backgroundColor: Colors.primary + '08',
+  },
+  chapterHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  chapterTextWrap: {
+    flex: 1,
+  },
+  chapterTitle: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    marginBottom: 2,
+  },
+  chapterTitleActive: {
+    color: Colors.primary,
+  },
+  chapterTitleLocked: {
+    color: Colors.textMuted,
+  },
+  chapterDesc: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 15,
+  },
+  chapterDescLocked: {
+    color: Colors.textMuted,
+  },
+  chapterCount: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.textSecondary,
+    marginLeft: 8,
+  },
+  chapterCountActive: {
+    color: Colors.primary,
+  },
+  stepCard: {
+    flexDirection: 'row',
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    marginBottom: 6,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginLeft: 12,
+  },
+  stepCardCurrent: {
+    borderColor: Colors.primary + '50',
+    backgroundColor: Colors.primary + '08',
+  },
+  stepCardDone: {
+    opacity: 0.6,
+  },
+  stepCardLocked: {
+    opacity: 0.35,
+  },
+  stepLeftIcon: {
+    width: 28,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  stepTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    flex: 1,
+  },
+  stepTitleDone: {
+    textDecorationLine: 'line-through' as const,
+    color: Colors.textSecondary,
+  },
+  stepTitleLocked: {
+    color: Colors.textMuted,
+  },
+  categoryBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  categoryText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+  },
+  stepDesc: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 15,
+    marginBottom: 4,
+  },
+  stepDescLocked: {
+    color: Colors.textMuted,
+    fontStyle: 'italic' as const,
+  },
+  explanationToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    alignSelf: 'flex-start' as const,
+  },
+  explanationToggleText: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
+  },
+  explanationBox: {
+    backgroundColor: Colors.primary + '0A',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.primary + '40',
+  },
+  explanationText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+    fontStyle: 'italic' as const,
+  },
+  claimButtonList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    gap: 6,
+    alignSelf: 'flex-start' as const,
+  },
+  claimButtonListText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: '#000',
+  },
+  claimButtonListLoading: {
+    opacity: 0.7,
+  },
+  claimButtonLoading: {
+    opacity: 0.7,
+  },
+  goButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 4,
+    alignSelf: 'flex-start' as const,
+  },
+  goButtonText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.primary,
+  },
+  rewardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  rewardPopup: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: Colors.primary,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.4,
+      shadowRadius: 20,
+      elevation: 30,
+    } : {}),
+  },
+  rewardPopupText: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    color: Colors.primary,
+  },
+  reopenButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.card,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 12,
+  },
+  reopenText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+  },
+  claimErrorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#EF444415',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#EF444430',
+  },
+  claimErrorText: {
+    fontSize: 11,
+    color: '#EF4444',
+    fontWeight: '600' as const,
+    flex: 1,
+  },
+});
