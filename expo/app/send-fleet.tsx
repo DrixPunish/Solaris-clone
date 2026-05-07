@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, RefreshControl } from 'react-native';
+import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Rocket, Crosshair, Truck, ScanEye, Minus, Plus, ArrowRight, Clock, Package, Recycle, Globe, Warehouse, Fuel, Gauge, AlertTriangle, Cpu, Navigation } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -36,8 +36,25 @@ export default function SendFleetScreen() {
     defaultMission: string;
   }>();
   const router = useRouter();
-  const { state, userId, activePlanet } = useGame();
-  const { sendFleet, isSending } = useFleet();
+  const { state, userId, activePlanet, refreshGameState } = useGame();
+  const { sendFleet, isSending, refreshFleetState } = useFleet();
+  const [sendFleetRefreshing, setSendFleetRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[SendFleet] Screen focused, refreshing game + fleet state');
+      void Promise.all([refreshGameState(), refreshFleetState()]);
+    }, [refreshGameState, refreshFleetState]),
+  );
+
+  const onSendFleetRefresh = useCallback(async () => {
+    setSendFleetRefreshing(true);
+    try {
+      await Promise.all([refreshGameState(), refreshFleetState()]);
+    } finally {
+      setSendFleetRefreshing(false);
+    }
+  }, [refreshGameState, refreshFleetState]);
 
   const targetCoords = useMemo<[number, number, number]>(() => [
     parseInt(params.targetGalaxy ?? '1', 10),
@@ -535,7 +552,18 @@ export default function SendFleetScreen() {
             <View style={{ width: 60 }} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={sendFleetRefreshing}
+                onRefresh={onSendFleetRefresh}
+                tintColor={Colors.primary}
+                colors={[Colors.primary]}
+              />
+            }
+          >
             {isLoadingInitialResources && (
               <View style={styles.resourceLoadingBanner}>
                 <ActivityIndicator size="small" color={Colors.primary} />
