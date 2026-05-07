@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Modal, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, TextInput, Modal, Animated, Image, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Globe, User, CircleDot, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Mail, ScanEye, Crosshair, Truck, Sparkles, Recycle, X, Flag, MapPin, Warehouse, Navigation, Zap } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useGame } from '@/contexts/GameContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,11 +49,13 @@ const MAX_GALAXIES = 5;
 const MAX_SYSTEMS = 20;
 
 export default function GalaxyScreen() {
-  const { state, activePlanetId, activePlanet } = useGame();
+  const { state, activePlanetId, activePlanet, refreshGameState } = useGame();
   const { user } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams<{ g?: string; ss?: string }>();
-
+  const queryClient = useQueryClient();
+  const [atlasRefreshing, setAtlasRefreshing] = useState(false);
+  
   const [viewGalaxy, setViewGalaxy] = useState(() => {
     const g = params.g ? parseInt(params.g, 10) : NaN;
     return !isNaN(g) && g >= 1 && g <= MAX_GALAXIES ? g : state.coordinates[0];
@@ -65,6 +67,28 @@ export default function GalaxyScreen() {
   const [debrisModal, setDebrisModal] = useState<{ pos: number; debris: DebrisField } | null>(null);
   const [fadeAnim] = useState(() => new Animated.Value(0));
 
+/**
+   * Invalidates queries owned by the Atlas/galaxy view (planets, debris, scores, sprites).
+   */
+  const refreshAtlasState = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['galaxy'] }),
+      queryClient.invalidateQueries({ queryKey: ['debris_fields'] }),
+      queryClient.invalidateQueries({ queryKey: ['player_scores_galaxy'] }),
+      queryClient.invalidateQueries({ queryKey: ['planet_sprites'] }),
+    ]);
+  }, [queryClient]);
+
+  const onAtlasRefresh = useCallback(async () => {
+    setAtlasRefreshing(true);
+    try {
+      await Promise.all([refreshAtlasState(), refreshGameState()]);
+    } finally {
+      setAtlasRefreshing(false);
+    }
+  }, [refreshAtlasState, refreshGameState]);
+
+  
   React.useEffect(() => {
     if (params.g || params.ss) {
       const g = params.g ? parseInt(params.g, 10) : NaN;
@@ -487,7 +511,18 @@ export default function GalaxyScreen() {
     <View style={styles.container}>
       <StarField starCount={120} height={2400} />
       <ResourceBar />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={atlasRefreshing}
+            onRefresh={onAtlasRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
+      >
         <View style={styles.heroSection}>
           <StarField starCount={50} height={160} />
           <LinearGradient
