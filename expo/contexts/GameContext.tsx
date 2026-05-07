@@ -493,7 +493,22 @@ export const [GameProvider, useGame] = createContextHook(() => {
   const resyncFromServerRef = useRef(resyncFromServer);
   resyncFromServerRef.current = resyncFromServer;
 
+/**
+   * Public wrapper used across the app to refresh the full game state from the server.
+   * Delegates to the most complete sync mechanism available.
+   */
+  const refreshGameState = useCallback(async () => {
+    await resyncFromServerRef.current();
+  }, []);
 
+  const didInitialRefreshRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!userId || !isLoaded) return;
+    if (didInitialRefreshRef.current === userId) return;
+    didInitialRefreshRef.current = userId;
+    console.log('[GameContext] Initial app-open refresh for user', userId);
+    void refreshGameState();
+  }, [userId, isLoaded, refreshGameState]);
 
 
 
@@ -1979,6 +1994,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     setUsername,
     renamePlanet,
     forceResync: resyncFromServer,
+    refreshGameState,
     refreshResources,
     isRefreshing,
     needsUsername,
@@ -2022,7 +2038,7 @@ export const [GameProvider, useGame] = createContextHook(() => {
     state, production, upgradeBuilding, upgradeResearch, buildShipQueue, buildDefenseQueue,
     rushWithSolar, rushShipyardWithSolar, cancelUpgrade, cancelShipyardQueue, getTimerForId,
     isUpgrading, getShipyardQueueItem, getMaxBuildableQuantity, setUsername, renamePlanet,
-    resyncFromServer, refreshResources, isRefreshing, needsUsername, userId, userEmail, isLoading,
+    resyncFromServer, refreshGameState, refreshResources, isRefreshing, needsUsername, userId, userEmail, isLoading,
     addColony, removeColony, renameColony, upgradeColonyBuilding, buildColonyShipQueue,
     buildColonyDefenseQueue, cancelColonyUpgrade, upgradeColonyResearch, rushColonyWithSolar,
     cancelColonyShipyardQueue, rushColonyShipyardWithSolar, getColonyMaxBuildableQuantity,
