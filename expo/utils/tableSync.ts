@@ -182,6 +182,25 @@ export async function loadFullStateFromTables(userId: string): Promise<GameState
   const allPlanetIds = allPlanets.map((p: { id: string }) => p.id as string);
   const colonyPlanets = allPlanets.filter((p: { is_main: boolean }) => !p.is_main);
 
+// Materialize production for every planet BEFORE reading planet_resources, so that
+  // refreshes (app open, Atlas pull-to-refresh, manual refresh) always reflect the
+  // resources accumulated since the last server-side materialization.
+  try {
+    const matResults = await Promise.all(
+      allPlanetIds.map(pid =>
+        supabase.rpc('materialize_planet_resources', { p_planet_id: pid, p_user_id: userId })
+      )
+    );
+    const failed = matResults.filter(r => r.error).map(r => r.error?.message);
+    if (failed.length > 0) {
+      console.warn('[tableSync] materialize_planet_resources errors:', failed);
+    } else {
+      console.log('[tableSync] Materialized', allPlanetIds.length, 'planet(s) before read');
+    }
+  } catch (matErr) {
+    console.warn('[tableSync] materialize_planet_resources crashed (continuing with raw values):', matErr);
+  }
+    
   const [resRes, buildRes, researchRes, shipsRes, defensesRes, timersRes, queueRes, playerRes] = await Promise.all([
     supabase.from('planet_resources').select('planet_id, fer, silice, xenogas, energy').in('planet_id', allPlanetIds),
     supabase.from('planet_buildings').select('planet_id, building_id, level').in('planet_id', allPlanetIds),
