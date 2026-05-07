@@ -275,6 +275,13 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     void queryClient.invalidateQueries({ queryKey: ['transport_reports'] });
   }, [queryClient]);
 
+const refreshFleetState = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['fleet_missions'] }),
+      queryClient.invalidateQueries({ queryKey: [['world', 'getBashingStatus']] }),
+    ]);
+  }, [queryClient]);
+  
   const deleteEspionageReportMutation = trpc.world.deleteEspionageReport.useMutation();
   const deleteAllEspionageReportsMutation = trpc.world.deleteAllEspionageReports.useMutation();
   const deleteCombatReportMutation = trpc.world.deleteCombatReport.useMutation();
@@ -424,6 +431,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     sendError,
     refreshMissions,
     refreshReports,
+    refreshFleetState,
     deleteEspionageReport,
     deleteCombatReport,
     deleteTransportReport,
@@ -453,6 +461,7 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     sendError,
     refreshMissions,
     refreshReports,
+    refreshFleetState,
     deleteEspionageReport,
     deleteCombatReport,
     deleteTransportReport,
