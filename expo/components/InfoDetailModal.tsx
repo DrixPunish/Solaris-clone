@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Platform } from '
 import { X, BookOpen, BarChart3, Coins, Zap, Clock, TrendingUp, CheckCircle, XCircle, Navigation, Crosshair } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { BUILDINGS, RESEARCH, SHIPS, DEFENSES } from '@/constants/gameData';
-import { BUILDING_LORE, RESEARCH_LORE, SHIP_LORE, DEFENSE_LORE } from '@/constants/lore';
+import { BUILDING_LORE, RESEARCH_LORE, SHIP_LORE, DEFENSE_LORE, getShipLore } from '@/constants/lore';
+import { useGame } from '@/contexts/GameContext';
 import { calculateCost, calculateUpgradeTime, calculateResearchTime, calculateShipBuildTime, formatNumber, formatTime, formatSpeed, getBoostedShipStats, getBoostedDefenseStats, getCombatBoosts, getCargoBoost, getBuildingProductionAtLevel, getPlasmaProductionBonus, getNeuralMeshLabBonus, getMineEnergyConsumption, getSolarPlantProduction } from '@/utils/gameCalculations';
 import { getShipDriveType, getShipSpeed, RAPIDFIRE_TABLE } from '@/utils/fleetCalculations';
 import { getPrereqLabel } from '@/utils/prereqLabels';
@@ -35,6 +36,7 @@ function PrereqItem({ prereq, buildings, research }: { prereq: Prerequisite; bui
 }
 
 export default function InfoDetailModal({ visible, onClose, itemId, itemType, currentLevel, buildings, research, ships, colonies }: InfoDetailModalProps) {
+  const { state, activePlanet } = useGame();
   const data = useMemo(() => {
     if (itemType === 'building') return BUILDINGS.find(b => b.id === itemId);
     if (itemType === 'research') return RESEARCH.find(r => r.id === itemId);
@@ -43,14 +45,25 @@ export default function InfoDetailModal({ visible, onClose, itemId, itemType, cu
     return null;
   }, [itemId, itemType]);
 
+  const temperatureMax = useMemo(() => {
+    if (!activePlanet) return state.temperatureMax;
+
+    if (activePlanet.isColony) {
+      const colony = state.colonies?.find(c => c.id === activePlanet.id);
+      return colony?.temperatureMax ?? state.temperatureMax;
+    }
+
+    return state.temperatureMax;
+  }, [activePlanet, state.colonies, state.temperatureMax]);
+  
   const lore = useMemo(() => {
     if (itemType === 'building') return BUILDING_LORE[itemId] ?? '';
     if (itemType === 'research') return RESEARCH_LORE[itemId] ?? '';
-    if (itemType === 'ship') return SHIP_LORE[itemId] ?? '';
+    if (itemType === 'ship') return getShipLore(itemId, temperatureMax);
     if (itemType === 'defense') return DEFENSE_LORE[itemId] ?? '';
     return '';
-  }, [itemId, itemType]);
-
+  }, [itemId, itemType, temperatureMax]);
+  
   const roboticsLevel = buildings.roboticsFactory ?? 0;
   const naniteLevel = buildings.naniteFactory ?? 0;
   const shipyardLevel = buildings.shipyard ?? 1;
