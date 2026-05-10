@@ -1,3 +1,5 @@
+import { getHeliosEnergyPerUnit } from '../utils/gameCalculations';
+
 export const BUILDING_LORE: Record<string, string> = {
   ferMine: "Enfouie dans les veines tectoniques de la planète, la Ferro Mine extrait inlassablement le minerai brut qui alimentera votre empire. Chaque niveau supplémentaire creuse plus profondément dans le manteau planétaire.",
   siliceMine: "Les cristaux de silice, formés sous des pressions colossales depuis des millénaires, sont la clé des technologies avancées. Cette mine exploite les gisements cristallins avec une précision chirurgicale.",
@@ -46,8 +48,19 @@ export const SHIP_LORE: Record<string, string> = {
   colonyShip: "La Barge Coloniale embarque tout le nécessaire pour établir une nouvelle colonie : habitats, générateurs, et les premiers colons prêts à conquérir un nouveau monde.",
   mantaRecup: "La Manta Recup est équipée de bras magnétiques géants qui récupèrent les débris métalliques flottant dans le vide après une bataille spatiale.",
   spectreSonde: "Furtive et presque indétectable, la Spectre Sonde infiltre les systèmes ennemis pour collecter des renseignements précieux sur leurs forces et ressources.",
-  heliosRemorqueur: "Ce satellite solaire orbital capture l'énergie stellaire et la transmet directement à vos installations au sol. +30 énergie par unité.",
 };
+
+export function getShipLore(shipId: string, temperatureMax?: number): string {
+  if (shipId === 'heliosRemorqueur') {
+    const energyPerUnit = getHeliosEnergyPerUnit(temperatureMax);
+    return [
+      "Ce satellite solaire orbital capture l'énergie stellaire et la transmet directement à vos installations au sol.",
+      `Produit +${energyPerUnit.toFixed(1)} énergie par unité sur cette planète.`,
+    ].join(' ');
+  }
+
+  return SHIP_LORE[shipId] ?? '';
+}
 
 export const DEFENSE_LORE: Record<string, string> = {
   kineticTurret: "Simple mais terriblement efficace, la tourelle cinétique projette des salves de projectiles métalliques à vitesse hypersonique. Le cauchemar des chasseurs légers.",
