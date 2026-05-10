@@ -200,41 +200,34 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
   });
 
   const combatReportsQuery = useInfiniteQuery({
-    queryKey: ['combat_reports', userId],
-    enabled: !!userId,
-    initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
-      if (!userId) return [];
+  queryKey: ['combat_reports', userId],
+  enabled: !!userId,
+  initialPageParam: 0,
+  queryFn: async ({ pageParam }) => {
+    if (!userId) return [];
 
-      const from = pageParam * REPORTS_PAGE_SIZE;
-      const to = from + REPORTS_PAGE_SIZE - 1;
+    const from = pageParam * REPORTS_PAGE_SIZE;
+    const to = from + REPORTS_PAGE_SIZE - 1;
 
-      const { data, error } = await supabase
-        .from('combat_reports')
-        .select('*')
-        .or(`attacker_id.eq.${userId},defender_id.eq.${userId}`)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+    const { data, error } = await supabase
+      .from('combat_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
-      if (error) {
-        console.log('[FleetContext] Error loading combat reports:', error.message);
-        return [];
-      }
+    if (error) {
+      console.log('[FleetContext] Error loading combat reports:', error.message);
+      return [];
+    }
 
-      const filtered = (data ?? []).filter((r: Record<string, unknown>) => {
-        if (r.viewer_role === 'attacker' && r.attacker_id === userId) return true;
-        if (r.viewer_role === 'defender' && r.defender_id === userId) return true;
-        return false;
-      });
-
-      return filtered as CombatReport[];
-    },
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < REPORTS_PAGE_SIZE) return undefined;
-      return allPages.length;
-    },
-    staleTime: 30000,
-  });
+    return (data ?? []) as CombatReport[];
+  },
+  getNextPageParam: (lastPage, allPages) => {
+    if (lastPage.length < REPORTS_PAGE_SIZE) return undefined;
+    return allPages.length;
+  },
+  staleTime: 30000,
+});
 
   const activePlanet = useMemo(() => ({
     id: gamActivePlanet.id,
@@ -275,13 +268,13 @@ export const [FleetProvider, useFleet] = createContextHook(() => {
     void queryClient.invalidateQueries({ queryKey: ['transport_reports'] });
   }, [queryClient]);
 
-const refreshFleetState = useCallback(async () => {
+  const refreshFleetState = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['fleet_missions'] }),
       queryClient.invalidateQueries({ queryKey: [['world', 'getBashingStatus']] }),
     ]);
   }, [queryClient]);
-  
+
   const deleteEspionageReportMutation = trpc.world.deleteEspionageReport.useMutation();
   const deleteAllEspionageReportsMutation = trpc.world.deleteAllEspionageReports.useMutation();
   const deleteCombatReportMutation = trpc.world.deleteCombatReport.useMutation();
