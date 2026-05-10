@@ -209,8 +209,19 @@ export default function SendFleetScreen() {
   }, [fetchServerResources]);
 
   const availableShips = useMemo(() => {
-    return SHIPS.filter(s => (planetShips[s.id] ?? 0) > 0);
-  }, [planetShips]);
+  return SHIPS.filter(s => {
+    if ((planetShips[s.id] ?? 0) <= 0) return false;
+
+    if (
+      s.id === 'heliosRemorqueur' &&
+      ['attack', 'station', 'transport', 'recycle'].includes(missionType)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}, [planetShips, missionType]);
 
   const isEspionage = missionType === 'espionage';
   const isColonize = missionType === 'colonize';
